@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -17,12 +18,12 @@ import (
 
 // startTwice releases a Work's first execution and begins its second,
 // launched as current-process; it answers the first and the second.
-func startTwice(t *testing.T, db *xorm.Engine) (*AgentExecutionRepository, *domain.AgentExecution, *domain.AgentExecution) {
+func startTwice(t *testing.T, db *xorm.Engine, jdb *jimuxorm.DB) (*AgentExecutionRepository, *domain.AgentExecution, *domain.AgentExecution) {
 	t.Helper()
 	ctx := context.Background()
 	provider, _, _ := sandboxClient(t)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
-	executions := NewAgentExecutionRepository(db, time.Now)
+	p := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	executions := NewAgentExecutionRepository(jdb, time.Now)
 	launched := func(processID string) *domain.AgentExecution {
 		record, err := register(ctx, p, request(), testMounts)
 		require.NoError(t, err)
@@ -58,7 +59,9 @@ func TestProcessObservationDistinguishesRetiredEnvironmentFromCurrentStart(t *te
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	executions, first, second := startTwice(t, db)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	executions, first, second := startTwice(t, db, jdb)
 
 	latest, err := executions.Latest(ctx, second.WorkID)
 	require.NoError(t, err)
@@ -88,7 +91,9 @@ func TestLateComputeRequestCannotDeleteRunningCurrentProcess(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	executions, first, second := startTwice(t, db)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	executions, first, second := startTwice(t, db, jdb)
 	retired, err := second.Retire(domain.WorkComputeReleaseRequested{WorkID: second.WorkID, StartAdmittedAt: first.StartAdmittedAt, Cause: domain.RetiredUnreached}, time.Now())
 	require.NoError(t, err)
 	require.False(t, retired, "an old request cannot retire the current execution")

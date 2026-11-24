@@ -51,7 +51,11 @@ func (s *CatalogStore) RetireSources(ctx context.Context, configured []string) (
 		for _, name := range configured {
 			statement = append(statement, name)
 		}
-		affected, err := s.engine.Context(ctx).Exec(statement...)
+		session, err := s.db.Session(ctx)
+		if err != nil {
+			return result, err
+		}
+		affected, err := session.Exec(statement...)
 		if err != nil {
 			return result, oops.With("operation", "marketplace.source.retire_entries").Wrap(err)
 		}
@@ -62,7 +66,11 @@ func (s *CatalogStore) RetireSources(ctx context.Context, configured []string) (
 	removed := map[string]bool{}
 	for {
 		var rows []retiringReleaseDO
-		if err := s.engine.Context(ctx).Where("deleted_at = 0").NotIn("source", configured).Asc("id").Limit(retirementBatch).Find(&rows); err != nil {
+		session, err := s.db.Session(ctx)
+		if err != nil {
+			return result, err
+		}
+		if err := session.Where("deleted_at = 0").NotIn("source", configured).Asc("id").Limit(retirementBatch).Find(&rows); err != nil {
 			return result, oops.With("operation", "marketplace.source.read_retiring").Wrap(err)
 		}
 		if len(rows) == 0 {
@@ -82,7 +90,11 @@ func (s *CatalogStore) RetireSources(ctx context.Context, configured []string) (
 			}
 			ids = append(ids, row.ID)
 		}
-		affected, err := s.engine.Context(ctx).Table("marketplace_plugin_release").Where("deleted_at = 0").In("id", ids).Incr("version").Update(map[string]any{"deleted_at": now, "updated_at": now})
+		session, err = s.db.Session(ctx)
+		if err != nil {
+			return result, err
+		}
+		affected, err := session.Table("marketplace_plugin_release").Where("deleted_at = 0").In("id", ids).Incr("version").Update(map[string]any{"deleted_at": now, "updated_at": now})
 		if err != nil {
 			return result, oops.With("operation", "marketplace.source.retire_releases").Wrap(err)
 		}
@@ -107,7 +119,11 @@ func (s *CatalogStore) referencedArchives(ctx context.Context, configured []stri
 	cursor := ""
 	for {
 		var rows []retiringReleaseDO
-		if err := s.engine.Context(ctx).Cols("id", "metadata").Where("deleted_at = 0 AND id > ?", cursor).In("source", configured).Asc("id").Limit(500).Find(&rows); err != nil {
+		session, err := s.db.Session(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := session.Cols("id", "metadata").Where("deleted_at = 0 AND id > ?", cursor).In("source", configured).Asc("id").Limit(500).Find(&rows); err != nil {
 			return nil, oops.With("operation", "marketplace.source.read_referenced").Wrap(err)
 		}
 		for _, row := range rows {

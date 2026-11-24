@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
@@ -67,6 +68,8 @@ func TestPreparationWaitsForExecdBeforeItsFirstCommand(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	launch := request()
 	launch.WorkID = uuid.NewString()
 	record := preparedRecord(t, db, launch)
@@ -93,7 +96,7 @@ func TestPreparationWaitsForExecdBeforeItsFirstCommand(t *testing.T) {
 	t.Cleanup(server.Close)
 	client, err := execd.NewClient(server.Client(), server.URL, "fixture-token")
 	require.NoError(t, err)
-	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
+	n := &NativeConnections{provisioning: &Provisioning{records: records{db: jdb}, now: time.Now}}
 
 	_, err = n.prepareEnvironment(ctx, &record, client, launch)
 
@@ -122,6 +125,8 @@ func TestPreparationReportsAnOutcomeForEveryPlannedRepository(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	launch := request()
 	launch.WorkID = uuid.NewString()
 	launch.RepositorySelection, launch.RemainingRepositories = checkoutSelection(), []string{"github:1", "github:2"}
@@ -130,7 +135,7 @@ func TestPreparationReportsAnOutcomeForEveryPlannedRepository(t *testing.T) {
 	client, created := preparationServer(t, `{"checkout":{"repositoryId":"github:1","targetPath":"/workspace/repos/api","checkedOut":true,"reason":""}}`, 1)
 	// Controlplane takes no part in checkout beyond sending the plan: this
 	// Provisioning has no storage root, so it cannot write the workspace.
-	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
+	n := &NativeConnections{provisioning: &Provisioning{records: records{db: jdb}, now: time.Now}}
 
 	report, err := n.prepareEnvironment(ctx, &record, client, launch)
 
@@ -157,12 +162,14 @@ func TestPreparationEndedAtItsBoundTimesOutUnsettledCheckouts(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	launch := request()
 	launch.WorkID = uuid.NewString()
 	launch.RepositorySelection, launch.RemainingRepositories = checkoutSelection(), []string{"github:1", "github:2"}
 	record := preparedRecord(t, db, launch)
 	client, _ := preparationServer(t, `{"checkout":{"repositoryId":"github:1","targetPath":"/workspace/repos/api","checkedOut":false,"reason":"fatal: could not read Username"}}`, timeoutExitCode)
-	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
+	n := &NativeConnections{provisioning: &Provisioning{records: records{db: jdb}, now: time.Now}}
 
 	report, err := n.prepareEnvironment(ctx, &record, client, launch)
 
@@ -181,13 +188,15 @@ func TestNextStartChecksOutOnlyWhatTheFirstStartLeft(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	definitions := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Fixture Agent", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}})
 	require.NoError(t, err)
 	require.NoError(t, definitions.Save(ctx, definition))
 	definition, err = definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
-	works := infrastructure.NewAgentWorkRepository(db, time.Now)
+	works := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: definition.RepresentedPerson(), WorkLayout: domain.DefaultWorkLayout(), Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	work.RepositorySelection = checkoutSelection()

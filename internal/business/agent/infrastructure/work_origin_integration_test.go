@@ -13,6 +13,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
@@ -34,32 +35,35 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	dsn := mysqltest.Database(t)
-	open := func() *xorm.Engine {
+	open := func() (*xorm.Engine, *jimuxorm.DB) {
 		db, err := xorm.NewEngine("mysql", dsn)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })
-		return db
+		jdb, err := jimuxorm.New(db)
+		require.NoError(t, err)
+		return db, jdb
 	}
-	db := open()
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
+	db, jdb := open()
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
 	ids := map[string]string{}
 	definitions := map[string]string{}
 	for _, purpose := range []string{"work", "case_coordinator"} {
 		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: purpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: purpose}})
 		require.NoError(t, err)
 		require.NoError(t, agents.Save(ctx, definition))
-		id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}})
+		id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}})
 		require.NoError(t, err)
 		ids[purpose], definitions[purpose] = id, definition.ID
 	}
-	feedback := newRuns(t, db, sessions)
+	feedback := newRuns(t, jdb, sessions)
 	feedback.exit(ctx, ids["work"])
 	feedback.release(ctx, ids["work"])
 	require.NoError(t, command.NewCloseWorkHandler(sessions, auth, feedback.executions, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: ids["work"], RequestID: "close"}))
 	require.NoError(t, db.Close())
-	origins := infrastructure.NewWorkQueryRepository(open())
+	_, reopened := open()
+	origins := infrastructure.NewWorkQueryRepository(reopened)
 	app := &application.Application{Queries: application.Queries{GetWorkOrigin: query.NewGetWorkOriginHandler(origins), ResolveWorkStarts: query.NewResolveWorkStartsHandler(origins)}}
 	handler := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterAgentServiceHandler(s, transport.NewAgentHandler(app, "control"))
@@ -114,7 +118,8 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 	unauthenticated := &agentprivatev1.ResolveWorkStartsRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project"}, WorkIds: []string{ids["work"]}}
 	_, err = client.ResolveWorkStarts(ctx, unauthenticated)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	retained, err := infrastructure.NewAgentWorkRepository(open(), time.Now).Get(ctx, ids["work"])
+	_, reopened = open()
+	retained, err := infrastructure.NewAgentWorkRepository(reopened, time.Now).Get(ctx, ids["work"])
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosed, retained.State, "attribution reads cannot restart or reopen the source")
 }

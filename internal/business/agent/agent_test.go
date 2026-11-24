@@ -15,6 +15,8 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	"github.com/go-jimu/components/transaction"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
@@ -40,6 +42,8 @@ func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
 	app := fx.New(agent.Module, sessionStateTransport(t), fx.NopLogger, storageStub(),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return nil }, fx.ResultTags(`name:"execution"`))),
+		fx.Provide(fx.Annotate(func() *jimuxorm.DB { return nil }, fx.ResultTags(`name:"execution"`))),
+		fx.Provide(fx.Annotate(func() transaction.Transactor { return nil }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
 		fx.Provide(func() command.DispatcherPort { return unusedExecutionPort{} }),
 	)

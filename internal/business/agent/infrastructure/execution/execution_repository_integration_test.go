@@ -11,6 +11,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -20,12 +21,16 @@ import (
 
 const usedAuthorization = "01900000-0000-7000-8000-0000000000a1"
 
-func executionDatabase(t *testing.T) *xorm.Engine {
+// executionDatabase is a leased schema's engine, for raw reads, and the
+// go-jimu adapter over it the repositories use.
+func executionDatabase(t *testing.T) (*xorm.Engine, *jimuxorm.DB) {
 	t.Helper()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	return db
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	return db, jdb
 }
 
 // begin saves a new execution of the Work and loads it back.
@@ -60,9 +65,9 @@ func retire(t *testing.T, repository *AgentExecutionRepository, run *domain.Agen
 
 func TestAgentExecutionRepositoryRoundTripsUnderItsVersion(t *testing.T) {
 	ctx := context.Background()
-	db := executionDatabase(t)
+	_, jdb := executionDatabase(t)
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(db, func() time.Time { return now })
+	repository := NewAgentExecutionRepository(jdb, func() time.Time { return now })
 
 	_, err := repository.Get(ctx, "01900000-0000-7000-8000-00000000ffff")
 	require.ErrorIs(t, err, domain.ErrExecutionNotFound)
@@ -138,9 +143,9 @@ func TestAgentExecutionRepositoryRoundTripsUnderItsVersion(t *testing.T) {
 
 func TestAgentExecutionRepositoryAdmitsOneUnretiredExecutionPerWork(t *testing.T) {
 	ctx := context.Background()
-	db := executionDatabase(t)
+	_, jdb := executionDatabase(t)
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(db, func() time.Time { return now })
+	repository := NewAgentExecutionRepository(jdb, func() time.Time { return now })
 	first := begin(t, repository, "admission", now, domain.RealizationCloud)
 
 	launch := request()
@@ -162,10 +167,10 @@ func TestAgentExecutionRepositoryAdmitsOneUnretiredExecutionPerWork(t *testing.T
 
 func TestExecutionQueryRepositoryFindsTheExecutionsAChangeConcerns(t *testing.T) {
 	ctx := context.Background()
-	db := executionDatabase(t)
+	_, jdb := executionDatabase(t)
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(db, func() time.Time { return now })
-	lookups := infrastructure.NewExecutionQueryRepository(db)
+	repository := NewAgentExecutionRepository(jdb, func() time.Time { return now })
+	lookups := infrastructure.NewExecutionQueryRepository(jdb)
 
 	live := begin(t, repository, "lookup-live", now, domain.RealizationCloud)
 	retired := begin(t, repository, "lookup-retired", now, domain.RealizationCloud)
@@ -215,9 +220,9 @@ func TestExecutionQueryRepositoryFindsTheExecutionsAChangeConcerns(t *testing.T)
 // a run that checked nothing out has none.
 func TestAgentExecutionRepositoryRoundTripsCheckoutResults(t *testing.T) {
 	ctx := context.Background()
-	db := executionDatabase(t)
+	_, jdb := executionDatabase(t)
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(db, func() time.Time { return now })
+	repository := NewAgentExecutionRepository(jdb, func() time.Time { return now })
 	launch := request()
 	launch.WorkID = "checkout-round-trip"
 	launch.RepositorySelection, launch.RemainingRepositories = checkoutSelection(), []string{"github:1", "github:2"}

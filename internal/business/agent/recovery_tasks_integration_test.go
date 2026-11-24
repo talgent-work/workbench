@@ -87,7 +87,7 @@ func TestFailedSweepDoesNotSuppressLaterSweeps(t *testing.T) {
 		}),
 		storageStub(),
 		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
-		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
+		mysqltest.Provide(t, "execution", db),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
 		fx.Provide(func() command.DispatcherPort { return port }),
 	)

@@ -32,13 +32,13 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
 	models := query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deepseek"}, Name: "DeepSeek", Vendor: "deepseek", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "max"}, query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "glm"}, Name: "GLM 5.3", Vendor: "zhipu"})
-	create := creationCoordinator(f.db, &creationCapacity{}, nil, models, &personalStartupCatalog{})
+	create := creationCoordinator(f.jdb, &creationCapacity{}, nil, models, &personalStartupCatalog{})
 	id, err := create.Handle(ctx, f.request)
 	require.NoError(t, err)
 	requireStartRequested(t, f.sessions, id)
 	thinking := &workThinking{}
-	owners := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
-	views := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(f.db), models)
+	owners := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
+	views := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(f.jdb), models)
 	app := &application.Application{Works: f.sessions, Harness: thinking, WorkPrincipals: owners, WorkQueries: views, Models: models, Queries: application.Queries{
 		GetWork:     query.NewGetWorkHandler(f.agents, f.sessions, owners, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
 		GetWorkView: query.NewGetWorkViewHandler(owners, views),

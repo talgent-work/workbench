@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -62,17 +62,17 @@ type runs struct {
 	feedback     *command.ApplyExecutionFeedbackHandler
 }
 
-func newRuns(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository) *runs {
+func newRuns(t testing.TB, db *jimuxorm.DB, works domain.AgentWorkRepository) *runs {
 	return newRunsAt(t, db, works, time.Now)
 }
 
-func newRunsAt(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, now func() time.Time) *runs {
+func newRunsAt(t testing.TB, db *jimuxorm.DB, works domain.AgentWorkRepository, now func() time.Time) *runs {
 	return newRunsWith(t, db, works, now, &commandtest.InputBuffer{})
 }
 
 // newRunsWith reads the Work's input buffer and its process's observation
 // from buffer.
-func newRunsWith(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, now func() time.Time, buffer command.DispatcherPort) *runs {
+func newRunsWith(t testing.TB, db *jimuxorm.DB, works domain.AgentWorkRepository, now func() time.Time, buffer command.DispatcherPort) *runs {
 	executions := execution.NewAgentExecutionRepository(db, now)
 	coordination := command.NewExecutionCoordination(now, works, commandtest.Definitions{}, executions, computertest.Checked(startupAuthority{}), buffer)
 	return &runs{t: t, now: now, works: works, executions: executions, coordination: coordination,
@@ -239,7 +239,7 @@ func requireStartRequested(t testing.TB, works domain.AgentWorkRepository, workI
 }
 
 // executionsOf is the AgentExecution repository over db.
-func executionsOf(db *xorm.Engine) *execution.AgentExecutionRepository {
+func executionsOf(db *jimuxorm.DB) *execution.AgentExecutionRepository {
 	return execution.NewAgentExecutionRepository(db, time.Now)
 }
 

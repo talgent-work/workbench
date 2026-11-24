@@ -15,8 +15,8 @@ import (
 	"connectrpc.com/connect/v2/connecthttp"
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"go.uber.org/fx"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/storage/public/v1/storagepublicv1connect"
@@ -30,7 +30,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/storage/transport/taskprocessor"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 )
 
@@ -188,7 +188,7 @@ func parseDuration(value string, fallback time.Duration) (time.Duration, error) 
 
 var Module = fx.Module(
 	"domain.storage",
-	pkgmysql.Bind(Database),
+	database.Bind(Database),
 	// Each lane's tasks go through that lane's own client.
 	fx.Provide(fx.Annotate(newApplication, fx.ParamTags(``, ``, pkgtaskqueue.EnqueuerTag(PreviewQueue), pkgtaskqueue.EnqueuerTag(MaintenanceQueue)))),
 	fx.Provide(
@@ -211,9 +211,9 @@ const PreviewQueue = applicationtask.Queue
 // and lapsed Preview Copies and repairs the Mapped View on.
 const MaintenanceQueue = applicationtask.MaintenanceQueue
 
-func newApplication(config Config, engine *xorm.Engine, renderings, maintenance componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
+func newApplication(config Config, db *jimuxorm.DB, renderings, maintenance componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
 	tasks := application.TaskLanes{Renderings: renderings, Maintenance: maintenance}
-	return assemble(config, infrastructure.NewDirectoryRepository(engine), infrastructure.NewDirectoryQueries(engine), tasks, bus, logger)
+	return assemble(config, infrastructure.NewDirectoryRepository(db), infrastructure.NewDirectoryQueries(db), tasks, bus, logger)
 }
 
 // prepareMappedView creates the standing paths' folders at start, which the

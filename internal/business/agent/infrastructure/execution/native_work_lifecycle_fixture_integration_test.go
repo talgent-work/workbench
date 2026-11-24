@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -73,26 +74,28 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	works := infrastructure.NewAgentWorkRepository(db, time.Now)
-	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	works := infrastructure.NewAgentWorkRepository(jdb, time.Now)
+	definitions := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
 	dispatchServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected Dispatcher call %s", r.URL.Path)
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(dispatchServer.Close)
 	provider, _, external := sandboxClient(t)
-	credentials, err := NewSandboxCredentials(db, provider.client, provider.config.Models, http.DefaultClient, "encrypted-network")
+	credentials, err := NewSandboxCredentials(db, jdb, provider.client, provider.config.Models, http.DefaultClient, "encrypted-network")
 	require.NoError(t, err)
 	policy, err := provider.networkPolicy(ctx)
 	require.NoError(t, err)
 	external.vault.policy = policy
-	provisioning := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	provisioning := NewProvisioning(jdb, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	connections, err := NewNativeConnections(provisioning, credentials, dispatchServer.Client(), dispatchServer.URL, "lifecycle-control")
 	require.NoError(t, err)
 	readings := &streamReadings{}
 	environment, err := NewExecutionEnvironment(provisioning, connections, readings, nil)
 	require.NoError(t, err)
-	executions := NewAgentExecutionRepository(db, time.Now)
+	executions := NewAgentExecutionRepository(jdb, time.Now)
 	harness := commandtest.NewHarness()
 	computers := &cloudDesks{}
 	services := &swappableServices{current: authorizationcatalogtest.NoServices{}}

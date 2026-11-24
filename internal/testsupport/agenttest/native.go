@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -48,8 +49,10 @@ func platformConnector(t testing.TB, dsn, address string) domain.SelectedConnect
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	connectors := marketinfra.NewConnectorRepository(db)
-	app := marketapp.NewApplication(nil, nil, nil, nil, nil, marketapp.ConnectorDependencies{Catalog: connectors, Installed: marketinfra.NewInstalledConnectorRepository(db), CatalogQueries: connectors, InstalledQueries: marketinfra.NewInstalledConnectorRepository(db)})
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	connectors := marketinfra.NewConnectorRepository(jdb)
+	app := marketapp.NewApplication(nil, nil, nil, nil, nil, marketapp.ConnectorDependencies{Catalog: connectors, Installed: marketinfra.NewInstalledConnectorRepository(jdb), CatalogQueries: connectors, InstalledQueries: marketinfra.NewInstalledConnectorRepository(jdb)})
 	ctx := context.Background()
 	require.NoError(t, app.EstablishPlatformConnector(ctx, marketapp.PlatformConnector{Name: "talgent", Configuration: marketdomain.MCPConfiguration{Type: "http", URL: address}}))
 	mux := http.NewServeMux()

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	drivermysql "github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
 	"xorm.io/xorm"
@@ -30,13 +31,13 @@ var (
 // one Directory, and a mapped path's key keeps two Directories from being
 // mapped at one path.
 type DirectoryRepository struct {
-	engine *xorm.Engine
+	db *jimuxorm.DB
 }
 
 var _ domain.DirectoryRepository = (*DirectoryRepository)(nil)
 
-func NewDirectoryRepository(engine *xorm.Engine) *DirectoryRepository {
-	return &DirectoryRepository{engine: engine}
+func NewDirectoryRepository(db *jimuxorm.DB) *DirectoryRepository {
+	return &DirectoryRepository{db: db}
 }
 
 func (r *DirectoryRepository) Get(ctx context.Context, id domain.DirectoryID) (*domain.Directory, error) {
@@ -49,7 +50,11 @@ func (r *DirectoryRepository) GetBySpaceToken(ctx context.Context, token string)
 
 func (r *DirectoryRepository) get(ctx context.Context, condition string, values []any, absent error) (*domain.Directory, error) {
 	row := new(directoryDO)
-	found, err := r.engine.Context(ctx).Cols(directoryColumns...).Where(condition+" AND deleted_at = 0", values...).Get(row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Cols(directoryColumns...).Where(condition+" AND deleted_at = 0", values...).Get(row)
 	if err != nil {
 		return nil, oops.With("operation", "storage.directory.get").Wrap(err)
 	}
@@ -57,13 +62,21 @@ func (r *DirectoryRepository) get(ctx context.Context, condition string, values 
 		return nil, absent
 	}
 	var links []shareLinkDO
-	err = r.engine.Context(ctx).Cols(shareLinkColumns...).
+	session, err = r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Cols(shareLinkColumns...).
 		Where("owner_key = ? AND directory_name = ? AND deleted_at = 0", row.OwnerKey, row.Name).Asc("created_at", "token").Find(&links)
 	if err != nil {
 		return nil, oops.With("operation", "storage.share_links.list", "owner_key", row.OwnerKey).Wrap(err)
 	}
 	var mappings []mappingDO
-	err = r.engine.Context(ctx).Cols(mappingColumns...).
+	session, err = r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Cols(mappingColumns...).
 		Where("owner_key = ? AND directory_name = ?", row.OwnerKey, row.Name).Asc("path").Find(&mappings)
 	if err != nil {
 		return nil, oops.With("operation", "storage.mappings.list", "owner_key", row.OwnerKey).Wrap(err)
@@ -73,7 +86,11 @@ func (r *DirectoryRepository) get(ctx context.Context, condition string, values 
 
 func (r *DirectoryRepository) GetByShareToken(ctx context.Context, token string) (*domain.Directory, error) {
 	link := new(shareLinkDO)
-	found, err := r.engine.Context(ctx).Cols("owner_key", "directory_name").Where("token = ? AND deleted_at = 0", token).Get(link)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Cols("owner_key", "directory_name").Where("token = ? AND deleted_at = 0", token).Get(link)
 	if err != nil {
 		return nil, oops.With("operation", "storage.share_link.get").Wrap(err)
 	}
@@ -88,19 +105,13 @@ func (r *DirectoryRepository) Save(ctx context.Context, directory *domain.Direct
 	if len(row.OwnerKey) > maxOwnerKeyBytes {
 		return domain.ErrInvalidLocator
 	}
-	session := r.engine.NewSession().Context(ctx)
-	defer session.Close()
-	if err := session.Begin(); err != nil {
-		return oops.With("operation", "storage.directory.begin").Wrap(err)
-	}
-	if err := saveDirectory(session, row, directory); err != nil {
-		_ = session.Rollback()
-		return err
-	}
-	if err := session.Commit(); err != nil {
-		return oops.With("operation", "storage.directory.commit", "owner_key", row.OwnerKey).Wrap(err)
-	}
-	return nil
+	return r.db.Manager().WithinOrJoin(ctx, func(ctx context.Context) error {
+		session, err := r.db.Session(ctx)
+		if err != nil {
+			return err
+		}
+		return saveDirectory(session, row, directory)
+	})
 }
 
 func saveDirectory(tx *xorm.Session, row *directoryDO, directory *domain.Directory) error {

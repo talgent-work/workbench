@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
@@ -19,11 +20,11 @@ import (
 	"xorm.io/xorm"
 )
 
-func completionHandler(db *xorm.Engine) *command.CloseWorkHandler {
+func completionHandler(db *jimuxorm.DB) *command.CloseWorkHandler {
 	return completionHandlerOver(db, infrastructure.NewAgentWorkRepository(db, time.Now))
 }
 
-func completionHandlerOver(db *xorm.Engine, works domain.AgentWorkRepository) *command.CloseWorkHandler {
+func completionHandlerOver(db *jimuxorm.DB, works domain.AgentWorkRepository) *command.CloseWorkHandler {
 	return command.NewCloseWorkHandler(works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), executionsOf(db), &commandtest.InputBuffer{})
 }
 
@@ -34,9 +35,9 @@ func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testin
 	f := newWorkCreationFixture(t)
 	ref, err := f.creation(nil, computertest.Checked(startupAuthority{})).Handle(ctx, f.request)
 	require.NoError(t, err)
-	feedback := newRuns(t, f.db, f.sessions)
+	feedback := newRuns(t, f.jdb, f.sessions)
 	feedback.ready(ctx, ref)
-	handler := completionHandler(f.db)
+	handler := completionHandler(f.jdb)
 	request := command.WorkControl{SubjectID: "owner", WorkID: ref, RequestID: uuid.NewString()}
 	require.ErrorIs(t, handler.Handle(ctx, request), domain.ErrWorkTransition, "an initial task input not handed off prevents closure")
 	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, ref))
@@ -51,7 +52,9 @@ func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testin
 	other, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = other.Close() })
-	reconnected := completionHandler(other)
+	otherDB, err := jimuxorm.New(other)
+	require.NoError(t, err)
+	reconnected := completionHandler(otherDB)
 	require.NoError(t, reconnected.Handle(ctx, request), "a lost response retries the same accepted closure")
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.ExecutionExited}))
 	feedback.release(ctx, ref)
@@ -59,7 +62,7 @@ func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testin
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, stopped.State)
 	require.NoError(t, reconnected.ApplyKeptClose(ctx, ref))
-	closed, err := infrastructure.NewAgentWorkRepository(other, time.Now).Get(ctx, ref)
+	closed, err := infrastructure.NewAgentWorkRepository(otherDB, time.Now).Get(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosed, closed.State)
 	require.Equal(t, request.RequestID, closed.CloseRequestReference)
@@ -83,11 +86,11 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 			observed, err := f.sessions.Get(ctx, id)
 			require.NoError(t, err)
 			require.Equal(t, domain.WorkFailed, observed.State)
-			restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+			restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 			retry := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			request := command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			if startupFirst {
-				handler := completionHandlerOver(f.db, workReadBarrier{AgentWorkRepository: f.sessions, done: new(bool), after: func() {
+				handler := completionHandlerOver(f.jdb, workReadBarrier{AgentWorkRepository: f.sessions, done: new(bool), after: func() {
 					_, err := restart.Handle(ctx, retry)
 					require.NoError(t, err)
 				}})
@@ -95,9 +98,9 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 				actual, err := f.sessions.Get(ctx, id)
 				require.NoError(t, err)
 				require.Equal(t, domain.WorkStarting, actual.State)
-				require.ErrorIs(t, completionHandler(f.db).Handle(ctx, request), domain.ErrWorkTransition)
+				require.ErrorIs(t, completionHandler(f.jdb).Handle(ctx, request), domain.ErrWorkTransition)
 			} else {
-				require.NoError(t, completionHandler(f.db).Handle(ctx, request))
+				require.NoError(t, completionHandler(f.jdb).Handle(ctx, request))
 				_, err := restart.Handle(ctx, retry)
 				require.ErrorIs(t, err, domain.ErrWorkTransition)
 				actual, err := f.sessions.Get(ctx, id)

@@ -16,7 +16,11 @@ func (r *ExecutionQueryRepository) ReadRepositoryPreparation(ctx context.Context
 		RepositorySelection string `xorm:"repository_selection"`
 		RepositoryCheckouts string `xorm:"repository_checkouts"`
 	}
-	found, err := r.db.Context(ctx).Table("agent_session").Cols("repository_selection", "repository_checkouts").Where("id = ? AND deleted_at = 0", workID).Get(&row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Table("agent_session").Cols("repository_selection", "repository_checkouts").Where("id = ? AND deleted_at = 0", workID).Get(&row)
 	if err != nil {
 		return nil, oops.With("operation", "read_repository_preparation").Wrap(err)
 	}
@@ -48,7 +52,11 @@ func (r *ExecutionQueryRepository) ReadServiceAccess(ctx context.Context, workID
 	}
 	// Deliberately include retired executions: a stopped Work retains its last
 	// observations. A newer execution's empty projection supersedes old results.
-	found, err := r.db.Context(ctx).Table("agent_execution").Cols("service_access_json").Where("session_id = ?", workID).Desc("created_at").Desc("id").Get(&row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Table("agent_execution").Cols("service_access_json").Where("session_id = ?", workID).Desc("created_at").Desc("id").Get(&row)
 	if err != nil {
 		return nil, oops.With("operation", "read_work_service_access").Wrap(err)
 	}

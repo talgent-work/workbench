@@ -14,6 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -33,9 +34,11 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
@@ -54,10 +57,12 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	agents = infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth = access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
-	reader := infrastructure.NewWorkQueryRepository(db)
+	jdb, err = jimuxorm.New(db)
+	require.NoError(t, err)
+	agents = infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions = infrastructure.NewAgentWorkRepository(jdb, time.Now)
+	auth = access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
+	reader := infrastructure.NewWorkQueryRepository(jdb)
 	submitted, err := reader.ListSubmittedPreparations(ctx, "", 100)
 	require.NoError(t, err)
 	require.Len(t, submitted, 1, "a committed Work already carries a discoverable first start")
@@ -74,7 +79,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.True(t, submitted[0].Submitted, "first admission is committed with the original input")
 	require.Equal(t, []string{"123"}, session.LaunchSpecification().RemainingRepositories)
 	requireStartRequested(t, sessions, session.ID)
-	observed, err := infrastructure.NewExecutionQueryRepository(db).ReadRepositoryPreparation(ctx, session.ID)
+	observed, err := infrastructure.NewExecutionQueryRepository(jdb).ReadRepositoryPreparation(ctx, session.ID)
 	require.NoError(t, err)
 	require.Empty(t, observed, "no repository has a checkout outcome yet")
 
@@ -96,14 +101,14 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.True(t, prepared.InputPrepared)
 	require.True(t, prepared.InputBuffered)
 	require.Len(t, prepared.Checkouts, 1)
-	observed, err = infrastructure.NewExecutionQueryRepository(db).ReadRepositoryPreparation(ctx, ref)
+	observed, err = infrastructure.NewExecutionQueryRepository(jdb).ReadRepositoryPreparation(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, []agentquery.RepositoryPreparation{{RepositoryID: "123", TargetPath: prepared.Checkouts[0].TargetPath, Reason: string(domain.CheckoutUnavailable)}}, observed)
 	continued, err := sessions.Get(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkWorking, continued.State)
 	require.False(t, continued.RecordRepositoryCheckouts(domain.ExecutionCheckoutsEnded{WorkID: ref, Checkouts: []domain.RepositoryCheckout{{RepositoryID: "123", CheckedOut: true}}}), "a later report never replays the degraded checkout")
-	unchanged, err := infrastructure.NewExecutionQueryRepository(db).ReadRepositoryPreparation(ctx, ref)
+	unchanged, err := infrastructure.NewExecutionQueryRepository(jdb).ReadRepositoryPreparation(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, observed, unchanged)
 	// A repeat with new transport IDs locates the original Work and input;
@@ -125,7 +130,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	reused, err := prepareNew(ctx, creation, repeat)
 	require.NoError(t, err)
 	require.Equal(t, ref, reused)
-	retained, err := infrastructure.NewExecutionQueryRepository(db).ReadRepositoryPreparation(ctx, ref)
+	retained, err := infrastructure.NewExecutionQueryRepository(jdb).ReadRepositoryPreparation(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, observed, retained, "the reuse keeps the original selection and outcomes")
 	requireStartRequested(t, sessions, ref)

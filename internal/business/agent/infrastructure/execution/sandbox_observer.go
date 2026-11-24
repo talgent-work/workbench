@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -13,7 +14,6 @@ import (
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"xorm.io/xorm"
 )
 
 // BatchSandboxes are the OpenSandbox custom resources that are the authority
@@ -51,7 +51,7 @@ type SandboxObserver struct {
 // wakes every unreleased execution once per interval.
 const observationRetries = 10
 
-func NewSandboxObserver(client dynamic.Interface, namespace string, db *xorm.Engine, wake func(context.Context, string) error, logger *slog.Logger) (*SandboxObserver, error) {
+func NewSandboxObserver(client dynamic.Interface, namespace string, db *jimuxorm.DB, wake func(context.Context, string) error, logger *slog.Logger) (*SandboxObserver, error) {
 	if client == nil || namespace == "" || db == nil || wake == nil || logger == nil {
 		return nil, errors.New("agent: sandbox observation needs a client, namespace, records and wake")
 	}

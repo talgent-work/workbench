@@ -11,6 +11,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
@@ -32,9 +33,9 @@ import (
 func TestExecutionArchiveRPCRequiresAStoppedWork(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	run := newRuns(t, f.db, f.sessions)
+	run := newRuns(t, f.jdb, f.sessions)
 	stoppedRun := run.latest(ctx, id)
-	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
 	handler := command.NewCloseWorkHandler(f.sessions, authorization, run.executions, &commandtest.InputBuffer{})
 	app := &application.Application{Works: f.sessions, Commands: application.Commands{CloseWork: handler}}
 	endpoint := connecttest.Handler(func(s *connect.Server) {
@@ -74,7 +75,7 @@ func TestExecutionArchiveRPCRequiresAStoppedWork(t *testing.T) {
 	require.Equal(t, domain.WorkClosed, closed.State)
 	require.Equal(t, before.LocatedLayout, closed.LocatedLayout)
 	require.Equal(t, before.HarnessProcess, closed.HarnessProcess, "archive keeps the last process facts")
-	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, authorization, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, authorization, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
 	created, err := create.Handle(ctx, command.CreateWork{WorkCaller: before.WorkCaller, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID})
 	require.NoError(t, err)
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(archive("owner", "control", created)), "a newly admitted Starting Work cannot be archived")
@@ -94,11 +95,11 @@ func TestExecutionArchiveRPCRequiresAStoppedWork(t *testing.T) {
 	stopped, err := f.sessions.Get(ctx, created)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, stopped.State)
-	ids, err := infrastructure.NewExecutionQueryRepository(f.db).ListWorkIDs(ctx, "", 1000)
+	ids, err := infrastructure.NewExecutionQueryRepository(f.jdb).ListWorkIDs(ctx, "", 1000)
 	require.NoError(t, err)
 	require.Contains(t, ids, created, "recovery finds a stopped Work that kept a close")
 	require.NoError(t, handler.ApplyKeptClose(ctx, created))
-	ids, err = infrastructure.NewExecutionQueryRepository(f.db).ListWorkIDs(ctx, "", 1000)
+	ids, err = infrastructure.NewExecutionQueryRepository(f.jdb).ListWorkIDs(ctx, "", 1000)
 	require.NoError(t, err)
 	closedNow, err := f.sessions.Get(ctx, created)
 	require.NoError(t, err)
@@ -136,10 +137,12 @@ func TestExecutionArchiveAndResumeCannotBothCommitFromStoppedRevision(t *testing
 			other, err := xorm.NewEngine("mysql", f.dsn)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = other.Close() })
-			observer := infrastructure.NewAgentWorkRepository(other, time.Now)
-			run := newRuns(t, f.db, f.sessions)
+			otherDB, err := jimuxorm.New(other)
+			require.NoError(t, err)
+			observer := infrastructure.NewAgentWorkRepository(otherDB, time.Now)
+			run := newRuns(t, f.jdb, f.sessions)
 			stoppedRun := run.latest(ctx, id)
-			authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
+			authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
 			resume := command.NewResumeWorkHandler(time.Now, observer, f.agents, authorization, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 			request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			var works domain.AgentWorkRepository = f.sessions
@@ -180,8 +183,8 @@ func (r archiveLostSave) Save(ctx context.Context, session *domain.AgentWork) er
 func TestExecutionArchiveRecoversCloseFromAgentAfterCommitAcknowledgementLoss(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	run := newRuns(t, f.db, f.sessions)
-	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
+	run := newRuns(t, f.jdb, f.sessions)
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
 	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	admitted := run.latest(ctx, ref)
@@ -202,14 +205,16 @@ func TestExecutionArchiveRecoversCloseFromAgentAfterCommitAcknowledgementLoss(t 
 	other, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = other.Close() })
-	sessions := infrastructure.NewAgentWorkRepository(other, time.Now)
+	otherDB, err := jimuxorm.New(other)
+	require.NoError(t, err)
+	sessions := infrastructure.NewAgentWorkRepository(otherDB, time.Now)
 	closing, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosing, closing.State)
 	require.Equal(t, requestID, closing.StopRequestReference)
 	recovery := command.NewRecoverWorkHandler(time.Now, sessions, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil)
 	require.NoError(t, recovery.Handle(ctx, id))
-	stopped := newRuns(t, other, sessions)
+	stopped := newRuns(t, otherDB, sessions)
 	asked := stopped.latest(ctx, ref)
 	require.Equal(t, requestID, asked.ExitRequest.StopRequestID, "recovery passes the retained close's stop on")
 	require.Equal(t, admitted.ID, asked.ID, "the stop reaches the same admitted execution, not a new one")

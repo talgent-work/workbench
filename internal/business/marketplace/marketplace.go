@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
@@ -19,10 +20,9 @@ import (
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
-	"xorm.io/xorm"
 )
 
 // Directory is a private namespace on the existing mounted content volume.
@@ -78,12 +78,12 @@ var Module = fx.Module("domain.marketplace",
 	ConnectionsModule,
 	SynchronizationModule,
 	pkgtaskqueue.Bind(Queue),
-	pkgmysql.Bind(Database),
-	fx.Provide(func(config Config, engine *xorm.Engine, logger *slog.Logger) (*infrastructure.CatalogStore, error) {
+	database.Bind(Database),
+	fx.Provide(func(config Config, db *jimuxorm.DB, logger *slog.Logger) (*infrastructure.CatalogStore, error) {
 		if err := config.Validate(); err != nil {
 			return nil, err
 		}
-		return infrastructure.NewCatalogStore(engine, config.Directory, config.Name, config.Owner, logger)
+		return infrastructure.NewCatalogStore(db, config.Directory, config.Name, config.Owner, logger)
 	}),
 	fx.Provide(fx.Annotate(infrastructure.NewInstalledPluginRepository,
 		fx.As(new(domain.InstalledPluginRepository)), fx.As(new(query.InstalledPluginQueryRepository)),

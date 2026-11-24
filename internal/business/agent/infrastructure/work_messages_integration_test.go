@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
@@ -85,14 +86,14 @@ func (m *workMessaging) DropBuffer(context.Context, string) error { return nil }
 func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
-	feedback := newRuns(t, f.db, f.sessions)
+	feedback := newRuns(t, f.jdb, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
 	messaging := &workMessaging{}
-	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
+	clientFor := func(db *jimuxorm.DB) agentpublicv1connect.AgentWorkServiceClient {
 		principals := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 		admitted := command.NewInputAcceptance(sessions, messaging)
@@ -106,7 +107,7 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 		t.Cleanup(server.Close)
 		return agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	}
-	client := clientFor(f.db)
+	client := clientFor(f.jdb)
 	input := &agentpublicv1.SendMessageRequest{WorkId: id, InputId: uuid.NewString(), Text: "Keep the original input"}
 	_, err = client.SendMessage(ctx, input)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
@@ -130,7 +131,9 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 	db, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	defer db.Close()
-	recovered := clientFor(db)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	recovered := clientFor(jdb)
 	messaging.mu.Lock()
 	messaging.err = nil
 	messaging.mu.Unlock()

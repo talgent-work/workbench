@@ -9,14 +9,15 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/telemetryingest"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 	"github.com/talgent-work/workbench/internal/pkg/opensandbox"
 	"go.uber.org/fx"
 	corev1 "k8s.io/api/core/v1"
@@ -167,7 +168,7 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, clu
 }
 
 var ExecutionModule = fx.Module("agent.execution-integration",
-	pkgmysql.Bind("execution"),
+	database.Bind("execution"),
 	fx.Provide(
 		// Model Templates and Model Configurations are platform data read
 		// from the deployment's configuration.
@@ -185,12 +186,12 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		},
 		newExecutionSandboxes,
 		newExecutionLifecycle,
-		func(db *xorm.Engine, client *sdk.LifecycleClient, models command.PlatformCatalogPort, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
-			return execution.NewSandboxCredentials(db, client, models, http.DefaultClient, cfg.CredentialTransport)
+		func(engine *xorm.Engine, db *jimuxorm.DB, client *sdk.LifecycleClient, models command.PlatformCatalogPort, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
+			return execution.NewSandboxCredentials(engine, db, client, models, http.DefaultClient, cfg.CredentialTransport)
 		},
 		pkgkubernetes.NewClientset,
 		newManagedEnvironment,
-		func(db *xorm.Engine, s *execution.Sandboxes, credentials *execution.SandboxCredentials, cfg ExecutionConfig, updates *workStateUpdates, managed *execution.ManagedEnvironment) *execution.Provisioning {
+		func(db *jimuxorm.DB, s *execution.Sandboxes, credentials *execution.SandboxCredentials, cfg ExecutionConfig, updates *workStateUpdates, managed *execution.ManagedEnvironment) *execution.Provisioning {
 			p := execution.NewProvisioning(db, s, credentials, cfg.Native, time.Now, managed)
 			p.ProgressCommitted = updates.publish
 			return p
@@ -237,7 +238,7 @@ func relayClient() *http.Client {
 
 // newManagedEnvironment is the Managed realization, nil without Managed
 // Computers.
-func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository) (*execution.ManagedEnvironment, error) {
+func newManagedEnvironment(db *jimuxorm.DB, machines *execution.ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository) (*execution.ManagedEnvironment, error) {
 	if machines == nil {
 		return nil, nil
 	}

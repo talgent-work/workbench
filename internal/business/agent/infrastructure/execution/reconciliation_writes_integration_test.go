@@ -14,6 +14,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	shared "github.com/talgent-work/workbench/internal/pkg/opensandbox"
@@ -28,9 +29,11 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, _ := sandboxClient(t)
-	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	credentials := fixtureSandboxCredentials(db, jdb, provider)
+	p := NewProvisioning(jdb, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	live, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
@@ -72,7 +75,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
 
-	outstanding, err := infrastructure.NewExecutionQueryRepository(db).ListOutstandingExecutions(ctx, "", 1000)
+	outstanding, err := infrastructure.NewExecutionQueryRepository(jdb).ListOutstandingExecutions(ctx, "", 1000)
 	require.NoError(t, err)
 	require.Equal(t, []string{live.ID}, outstanding, "only the live execution has unfinished obligations")
 
@@ -97,7 +100,9 @@ func TestUnknownSandboxLabelProvesNoOwnership(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	_, found, err := records{db: db}.forSandbox(ctx, storageKey("not-an-allocation")[:48])
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	_, found, err := records{db: jdb}.forSandbox(ctx, storageKey("not-an-allocation")[:48])
 	require.NoError(t, err)
 	require.False(t, found)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -26,6 +27,8 @@ func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	record := executionRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
 	_, err = db.Insert(&record)
 	require.NoError(t, err)
@@ -67,7 +70,7 @@ func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.
 	defer server.Close()
 	client, err := execd.NewClient(server.Client(), server.URL, "fixture-token")
 	require.NoError(t, err)
-	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
+	n := &NativeConnections{provisioning: &Provisioning{records: records{db: jdb}, now: time.Now}}
 	launch := domain.LaunchSpecification{Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "runtime"}}}}}
 	_, err = n.prepareEnvironment(observation, &record, client, launch)
 	require.ErrorIs(t, err, context.Canceled)
@@ -79,7 +82,7 @@ func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.
 	require.NoError(t, err)
 	require.True(t, found)
 	// A new reconciler instance uses the committed handle after restart.
-	n = &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
+	n = &NativeConnections{provisioning: &Provisioning{records: records{db: jdb}, now: time.Now}}
 	report, err := n.prepareEnvironment(t.Context(), &retained, client, launch)
 	require.NoError(t, err, "installation failure is a reported degradation, not a preparation retry")
 	require.Equal(t, domain.PreparationReport{Installations: []domain.PluginInstallation{{Slug: "runtime", Reason: "installation_failed"}}, Checkouts: []domain.RepositoryCheckout{}}, report)
@@ -101,7 +104,9 @@ func TestPluginPreparationDeletionRecoversAfterLostRetirement(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	p := &Provisioning{records: records{db: db}, now: time.Now}
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	p := &Provisioning{records: records{db: jdb}, now: time.Now}
 	n := &NativeConnections{provisioning: p}
 	record := executionRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationProcessID: "preparing", PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
 	_, err = db.Insert(&record)
@@ -151,7 +156,7 @@ func TestPluginPreparationDeletionRecoversAfterLostRetirement(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, "preparing", retained.PreparationProcessID, "uncommitted retirement leaves the recovery obligation")
-	recovered := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
+	recovered := &NativeConnections{provisioning: &Provisioning{records: records{db: jdb}, now: time.Now}}
 	require.NoError(t, recovered.discardPluginPreparation(t.Context(), &retained, client))
 	after, found, err := p.get(t.Context(), record.ID)
 	require.NoError(t, err)

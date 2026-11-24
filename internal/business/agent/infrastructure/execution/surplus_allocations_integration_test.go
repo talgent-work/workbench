@@ -20,6 +20,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	shared "github.com/talgent-work/workbench/internal/pkg/opensandbox"
@@ -34,6 +35,8 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	vault := &vaultFixture{}
 	egress := httptest.NewServer(vault)
 	defer egress.Close()
@@ -92,16 +95,16 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	provider, err := NewSandboxes(client, fixturePods(), config())
 	require.NoError(t, err)
 	newWorker := func() *executionSteps {
-		p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+		p := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 		connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
 		require.NoError(t, err)
 		return newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
 	}
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	p := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	record, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
-	executions := NewAgentExecutionRepository(db, time.Now)
+	executions := NewAgentExecutionRepository(jdb, time.Now)
 	run, err := executions.Get(ctx, record.ID)
 	require.NoError(t, err)
 	require.True(t, commandtest.Submit(run))

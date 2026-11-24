@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
 	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
@@ -52,8 +53,10 @@ func setupApplications(t *testing.T) (*application.Application, marketplacepubli
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	repository := infrastructure.NewInstalledPluginRepository(db)
-	app := application.NewApplication(repository, repository, catalogFixture{}, persistence.NewProviderAuthorizationQueries(db), declaredConnections(db), connectorDependencies(db))
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	repository := infrastructure.NewInstalledPluginRepository(jdb)
+	app := application.NewApplication(repository, repository, catalogFixture{}, persistence.NewProviderAuthorizationQueries(jdb), declaredConnections(jdb), connectorDependencies(jdb))
 	owners := application.NewOwners(accountAnswers{
 		ownedApplication:   {ID: ownedApplication, OwnerID: applicationOwner},
 		removedApplication: {ID: removedApplication, OwnerID: applicationOwner, Removed: true},

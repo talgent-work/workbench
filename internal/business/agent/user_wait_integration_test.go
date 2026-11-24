@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
@@ -64,7 +65,7 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 		var registry *application.Application
 		options := []fx.Option{agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, fx.Populate(&registry), storageStub(),
 			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
-			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
+			mysqltest.Provide(t, "execution", db),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
 			fx.Provide(func() command.DispatcherPort { return port }),
 			runs.option(),
@@ -114,9 +115,11 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	// and connection before the production loop is allowed to advance it.
 	observer, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
+	observerDB, err := jimuxorm.New(observer)
+	require.NoError(t, err)
 	origin := time.Now().Add(-31 * time.Minute).UTC().Truncate(time.Millisecond)
-	works := infrastructure.NewAgentWorkRepository(observer, time.Now)
-	executions := execution.NewAgentExecutionRepository(observer, time.Now)
+	works := infrastructure.NewAgentWorkRepository(observerDB, time.Now)
+	executions := execution.NewAgentExecutionRepository(observerDB, time.Now)
 	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return origin }, works, executions, command.NewExecutionCoordination(time.Now, works, commandtest.Definitions{}, executions, &computertest.Admission{}, port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	// A Turn ending at origin leaves the Work idle since then.
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ObservationSequence: 1, Kind: command.TurnStarted, WorkID: ref, ProcessID: "process"}))

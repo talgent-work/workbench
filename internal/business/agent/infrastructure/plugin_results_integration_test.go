@@ -42,14 +42,14 @@ func (a pluginResultAccess) AuthorizeWork(_ context.Context, actor, workID strin
 }
 
 func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
-	db, definitions, works, definition := startingCreationDatabase(t)
-	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
+	db, jdb, definitions, works, definition := startingCreationDatabase(t)
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(jdb, creationModels()))
 	id, err := create.Handle(t.Context(), creationInput(definition.ID, "plugin-results"))
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), id)
 	require.NoError(t, err)
 	// The Work's current run launched the process "process" and became ready.
-	run := newRuns(t, db, works)
+	run := newRuns(t, jdb, works)
 	run.launch(t.Context(), id)
 	work, err = works.Get(t.Context(), id)
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	require.NoError(t, works.Save(t.Context(), work))
 	before, err := works.Get(t.Context(), id)
 	require.NoError(t, err)
-	app := &application.Application{Works: works, WorkPrincipals: pluginResultAccess{workID: id}, ExecutionQueries: execution.NewExecutionQueryRepository(db),
+	app := &application.Application{Works: works, WorkPrincipals: pluginResultAccess{workID: id}, ExecutionQueries: execution.NewExecutionQueryRepository(jdb),
 		Commands: application.Commands{ApplyExecutionFeedback: run.feedback}}
 	mux := http.NewServeMux()
 	path, handler := "/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {

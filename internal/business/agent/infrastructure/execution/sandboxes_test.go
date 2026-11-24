@@ -367,12 +367,12 @@ func TestSandboxDeletionRechecksImmutableOwnershipBeforeDelete(t *testing.T) {
 	fixture.pages = [][]sdk.SandboxInfo{{{ID: sandboxID, Metadata: spec.Metadata}}}
 	other := SandboxOwner{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
 	fixture.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: correlation(other)}
-	_, err = provider.Delete(context.Background(), owner(input), spec, sandboxID, fixtureSandboxCredentials(nil, provider))
+	_, err = provider.Delete(context.Background(), owner(input), spec, sandboxID, fixtureSandboxCredentials(nil, nil, provider))
 	require.ErrorIs(t, err, errEnvironmentConflict)
 	require.Zero(t, fixture.deletes, "a stale list cannot authorize deleting another execution's sandbox")
 	fixture.info.Metadata = correlation(owner(input))
 	fixture.info.Metadata[sandboxSpecLabel] = "changed-specification"
-	_, err = provider.Delete(context.Background(), owner(input), spec, sandboxID, fixtureSandboxCredentials(nil, provider))
+	_, err = provider.Delete(context.Background(), owner(input), spec, sandboxID, fixtureSandboxCredentials(nil, nil, provider))
 	require.ErrorIs(t, err, errEnvironmentConflict)
 	require.Zero(t, fixture.deletes, "correlation without the immutable specification is insufficient")
 }
@@ -419,13 +419,13 @@ func TestSandboxDeletionUsesProviderAuthorityWithoutPodObservation(t *testing.T)
 	require.NoError(t, kubernetes.Tracker().Add(pod))
 	other := owner(input)
 	other.WorkID = "unrelated-session"
-	_, err = provider.deleteLocked(ctx, other, sandboxID, fixtureSandboxCredentials(nil, provider))
+	_, err = provider.deleteLocked(ctx, other, sandboxID, fixtureSandboxCredentials(nil, nil, provider))
 	require.ErrorIs(t, err, errEnvironmentConflict)
 	require.Zero(t, fixture.deletes)
-	absent, err := provider.deleteLocked(ctx, owner(input), sandboxID, fixtureSandboxCredentials(nil, provider))
+	absent, err := provider.deleteLocked(ctx, owner(input), sandboxID, fixtureSandboxCredentials(nil, nil, provider))
 	require.NoError(t, err)
 	require.False(t, absent, "DELETE acknowledgement is not absence")
-	absent, err = provider.deleteLocked(ctx, owner(input), sandboxID, fixtureSandboxCredentials(nil, provider))
+	absent, err = provider.deleteLocked(ctx, owner(input), sandboxID, fixtureSandboxCredentials(nil, nil, provider))
 	require.NoError(t, err)
 	require.True(t, absent, "the provider confirms environment deletion")
 	require.Empty(t, kubernetes.Actions(), "Agent must not observe or mutate underlying Pods")

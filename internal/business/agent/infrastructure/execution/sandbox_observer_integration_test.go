@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,9 +68,11 @@ func TestSandboxObserverWakesTheOwningAllocation(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, _ := sandboxClient(t)
-	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	credentials := fixtureSandboxCredentials(db, jdb, provider)
+	p := NewProvisioning(jdb, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
@@ -88,7 +91,7 @@ func TestSandboxObserverWakesTheOwningAllocation(t *testing.T) {
 	}
 	wakes := func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), woken...) }
 	logs := &syncBuffer{}
-	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.New(slog.NewTextHandler(logs, nil)))
+	observer, err := NewSandboxObserver(client, "talgent", jdb, wake, slog.New(slog.NewTextHandler(logs, nil)))
 	require.NoError(t, err)
 	go func() { _ = observer.Run(ctx) }()
 
@@ -121,9 +124,11 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, _ := sandboxClient(t)
-	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	credentials := fixtureSandboxCredentials(db, jdb, provider)
+	p := NewProvisioning(jdb, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
@@ -141,7 +146,7 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 		}
 		return nil
 	}
-	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.Default())
+	observer, err := NewSandboxObserver(client, "talgent", jdb, wake, slog.Default())
 	require.NoError(t, err)
 	go func() { _ = observer.Run(ctx) }()
 	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return attempts == 2 }, 10*time.Second, 20*time.Millisecond)
@@ -156,8 +161,10 @@ func TestSandboxObservationGivesUpAWakeAtItsCeiling(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, _ := sandboxClient(t)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	p := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
@@ -173,7 +180,7 @@ func TestSandboxObservationGivesUpAWakeAtItsCeiling(t *testing.T) {
 		return errors.New("redis unavailable")
 	}
 	logs := &syncBuffer{}
-	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.New(slog.NewJSONHandler(logs, nil)))
+	observer, err := NewSandboxObserver(client, "talgent", jdb, wake, slog.New(slog.NewJSONHandler(logs, nil)))
 	require.NoError(t, err)
 	observer.retryBase, observer.retryMax, observer.retries = time.Millisecond, 5*time.Millisecond, 3
 	go func() { _ = observer.Run(ctx) }()
@@ -195,8 +202,10 @@ func TestSandboxObserverSelectsByTheOwnershipLabel(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, _ := sandboxClient(t)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	p := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	execution, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
@@ -230,7 +239,7 @@ func TestSandboxObserverSelectsByTheOwnershipLabel(t *testing.T) {
 		woken = append(woken, id)
 		return nil
 	}
-	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.Default())
+	observer, err := NewSandboxObserver(client, "talgent", jdb, wake, slog.Default())
 	require.NoError(t, err)
 	go func() { _ = observer.Run(ctx) }()
 
@@ -260,8 +269,10 @@ func TestSandboxObserverWakesTheOwningExecutionWhenItsPodExits(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, _ := sandboxClient(t)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	p := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	execution, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
@@ -278,7 +289,7 @@ func TestSandboxObserverWakesTheOwningExecutionWhenItsPodExits(t *testing.T) {
 		return nil
 	}
 	wakes := func() int { mu.Lock(); defer mu.Unlock(); return len(woken) }
-	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.Default())
+	observer, err := NewSandboxObserver(client, "talgent", jdb, wake, slog.Default())
 	require.NoError(t, err)
 	go func() { _ = observer.Run(ctx) }()
 	require.Eventually(t, func() bool { return wakes() == 1 }, 5*time.Second, 10*time.Millisecond, "an existing Pod is observed")

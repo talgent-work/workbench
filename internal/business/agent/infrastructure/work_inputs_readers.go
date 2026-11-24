@@ -17,7 +17,11 @@ func (r *WorkQueryRepository) ListUnclosedWorksReadingInputs(ctx context.Context
 		return nil, nil
 	}
 	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT id FROM agent_session
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.SQL(`SELECT id FROM agent_session
  WHERE inputs_directory = ? AND deleted_at = 0 AND state <> ? AND id > ?
  ORDER BY id LIMIT ?`, DirectoryKey(directory), slices.Index(sessionStates[:], domain.WorkClosed), afterID, limit).Find(&ids)
 	if err != nil {

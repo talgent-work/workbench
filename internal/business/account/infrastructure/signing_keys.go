@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/account/application"
 	"github.com/talgent-work/workbench/internal/business/account/domain"
@@ -69,7 +69,7 @@ func (c SigningKeyConfig) validate() error {
 // SigningKeys signs Identity Tokens with keys stored in signing_key so every
 // replica signs and verifies with the same set.
 type SigningKeys struct {
-	engine *xorm.Engine
+	db     *jimuxorm.DB
 	cfg    SigningKeyConfig
 	sealer keySealer
 	now    func() time.Time
@@ -90,7 +90,7 @@ type storedKey struct {
 
 var _ application.IdentityTokenPort = (*SigningKeys)(nil)
 
-func NewSigningKeys(engine *xorm.Engine, cfg SigningKeyConfig) (*SigningKeys, error) {
+func NewSigningKeys(db *jimuxorm.DB, cfg SigningKeyConfig) (*SigningKeys, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func NewSigningKeys(engine *xorm.Engine, cfg SigningKeyConfig) (*SigningKeys, er
 	if now == nil {
 		now = time.Now
 	}
-	return &SigningKeys{engine: engine, cfg: cfg, sealer: sealer, now: now}, nil
+	return &SigningKeys{db: db, cfg: cfg, sealer: sealer, now: now}, nil
 }
 
 func (s *SigningKeys) Sign(ctx context.Context, claims domain.IdentityClaims) (string, error) {
@@ -281,35 +281,32 @@ func (s *SigningKeys) provision(ctx context.Context, generation uint32, activate
 	if err != nil {
 		return err
 	}
-	tx := s.engine.NewSession().Context(ctx)
-	defer tx.Close()
-	if err := tx.Begin(); err != nil {
-		return oops.With("operation", "signing_key.begin").Wrap(err)
-	}
-	if _, err := tx.Insert(row); err != nil {
-		_ = tx.Rollback()
-		// Another replica provisioned this generation, or won the lock race
-		// for it; either way one successor exists or the next round adds it.
-		var conflict *mysql.MySQLError
-		if errors.As(err, &conflict) && (conflict.Number == mysqlDuplicateEntry || conflict.Number == mysqlDeadlock) {
-			return nil
+	return s.db.Manager().WithinOrJoin(ctx, func(ctx context.Context) error {
+		tx, err := s.db.Session(ctx)
+		if err != nil {
+			return err
 		}
-		return oops.With("operation", "signing_key.insert").With("generation", generation).Wrap(err)
-	}
-	if predecessor != nil {
-		retiresAt := activatesAt.Add(s.cfg.LongestTokenLifetime)
-		if _, err := tx.Exec(
-			"UPDATE signing_key SET retires_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND retires_at = 0 AND deleted_at = 0",
-			retiresAt.UnixMilli(), row.CreatedAt, predecessor.id,
-		); err != nil {
-			_ = tx.Rollback()
-			return oops.With("operation", "signing_key.retire").With("kid", predecessor.id).Wrap(err)
+		if _, err := tx.Insert(row); err != nil {
+			// Another replica provisioned this generation, or won the lock
+			// race for it; either way one successor exists or the next round
+			// adds it. Nothing was written, so the empty transaction commits.
+			var conflict *mysql.MySQLError
+			if errors.As(err, &conflict) && (conflict.Number == mysqlDuplicateEntry || conflict.Number == mysqlDeadlock) {
+				return nil
+			}
+			return oops.With("operation", "signing_key.insert").With("generation", generation).Wrap(err)
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return oops.With("operation", "signing_key.commit").Wrap(err)
-	}
-	return nil
+		if predecessor != nil {
+			retiresAt := activatesAt.Add(s.cfg.LongestTokenLifetime)
+			if _, err := tx.Exec(
+				"UPDATE signing_key SET retires_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND retires_at = 0 AND deleted_at = 0",
+				retiresAt.UnixMilli(), row.CreatedAt, predecessor.id,
+			); err != nil {
+				return oops.With("operation", "signing_key.retire").With("kid", predecessor.id).Wrap(err)
+			}
+		}
+		return nil
+	})
 }
 
 func (s *SigningKeys) newKeyRow(generation uint32, activatesAt time.Time) (*signingKeyDO, error) {
@@ -373,7 +370,11 @@ func (s *SigningKeys) forgetRetired(ctx context.Context, keys []storedKey, now t
 		if key.retiresAt.IsZero() || !key.retiresAt.Before(cutoff) {
 			continue
 		}
-		if _, err := s.engine.Context(ctx).Exec(
+		session, err := s.db.Session(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err := session.Exec(
 			"UPDATE signing_key SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND deleted_at = 0",
 			now.UnixMilli(), now.UnixMilli(), key.id,
 		); err != nil {
@@ -409,7 +410,11 @@ func (s *SigningKeys) invalidate() {
 
 func (s *SigningKeys) load(ctx context.Context) ([]storedKey, error) {
 	var rows []signingKeyDO
-	if err := s.engine.Context(ctx).
+	session, err := s.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.
 		Cols("id", "generation", "algorithm", "public_jwk", "sealed_private_key", "activates_at", "retires_at").
 		Where("deleted_at = 0").
 		OrderBy("generation").

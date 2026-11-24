@@ -94,8 +94,8 @@ func (m *lifecycleModule) start() *lifecycleModule {
 	}
 	app := fx.New(computer.Module, agent.Module, catalog, sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("10", "10Gi", "64")),
-		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
-		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
+		mysqltest.Provide(t, "execution", db),
+		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return m.capacity }),
 		fx.Provide(func() command.DispatcherPort { return m.port }),
 		m.runs.option(),

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"xorm.io/xorm"
 )
 
@@ -90,8 +91,8 @@ func (f *vaultFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(f.state)
 }
 
-func fixtureSandboxCredentials(db *xorm.Engine, s *Sandboxes) *SandboxCredentials {
-	return &SandboxCredentials{db: db, lifecycle: s.client, models: s.config.Models, records: records{db: db}, http: http.DefaultClient, transport: "encrypted-network"}
+func fixtureSandboxCredentials(engine *xorm.Engine, db *jimuxorm.DB, s *Sandboxes) *SandboxCredentials {
+	return &SandboxCredentials{engine: engine, lifecycle: s.client, models: s.config.Models, records: records{db: db}, http: http.DefaultClient, transport: "encrypted-network"}
 }
 
 // admitting is the holding check of an execution that still admits every

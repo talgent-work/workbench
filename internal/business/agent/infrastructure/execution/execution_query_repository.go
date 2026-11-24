@@ -1,9 +1,9 @@
 package execution
 
 import (
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
-	"xorm.io/xorm"
 )
 
 // ExecutionQueryRepository is the execution query store: the listings and
@@ -17,6 +17,6 @@ type ExecutionQueryRepository struct {
 
 var _ query.ExecutionQueryRepository = (*ExecutionQueryRepository)(nil)
 
-func NewExecutionQueryRepository(db *xorm.Engine) *ExecutionQueryRepository {
+func NewExecutionQueryRepository(db *jimuxorm.DB) *ExecutionQueryRepository {
 	return &ExecutionQueryRepository{ExecutionQueryRepository: infrastructure.NewExecutionQueryRepository(db), records: records{db: db}}
 }

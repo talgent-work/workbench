@@ -8,19 +8,19 @@ import (
 	"strings"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"xorm.io/xorm"
 )
 
 type WorkQueryRepository struct {
-	db *xorm.Engine
+	db *jimuxorm.DB
 }
 
 var _ query.WorkQueryRepository = (*WorkQueryRepository)(nil)
 
-func NewWorkQueryRepository(db *xorm.Engine) *WorkQueryRepository {
+func NewWorkQueryRepository(db *jimuxorm.DB) *WorkQueryRepository {
 	return &WorkQueryRepository{db: db}
 }
 
@@ -61,14 +61,21 @@ type workViewRow struct {
 // execution in one transaction, so the view never combines facts of different
 // starts.
 func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query.WorkView, error) {
+	var result query.WorkView
+	err := r.db.Manager().WithinOrJoin(ctx, func(ctx context.Context) error {
+		var err error
+		result, err = r.workView(ctx, id)
+		return err
+	})
+	return result, err
+}
+
+func (r *WorkQueryRepository) workView(ctx context.Context, id string) (query.WorkView, error) {
 	var row workViewRow
-	tx := r.db.NewSession()
-	defer tx.Close()
-	tx = tx.Context(ctx)
-	if err := tx.Begin(); err != nil {
-		return query.WorkView{}, oops.Wrap(err)
+	tx, err := r.db.Session(ctx)
+	if err != nil {
+		return query.WorkView{}, err
 	}
-	defer tx.Rollback()
 	found, err := tx.SQL(`SELECT s.id,s.model_configuration_id,s.model_machine_login,s.permission_mode,s.computer_id,s.capabilities,`+workFactSelect+`,
  `+agentOwnerColumn+` AS agent_owner,s.started_by,s.state,s.harness_process,s.work_progress,
  s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at,s.version,s.end_request,
@@ -112,7 +119,7 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
 	if result.StartupRequest, err = startupRequestFromRow(row); err != nil {
 		return result, err
 	}
-	return result, oops.Wrap(tx.Commit())
+	return result, nil
 }
 
 func workViewFromRow(row workViewRow) (query.WorkView, error) {
@@ -257,7 +264,11 @@ func (r *WorkQueryRepository) GetWorkOrigin(ctx context.Context, sessionID strin
 		StartedBy string          `xorm:"started_by"`
 		CreatedAt int64           `xorm:"created_at"`
 	}
-	found, err := r.db.Context(ctx).SQL(`SELECT s.id AS session_id, s.agent_id, a.purpose, `+workFactSelect+`, s.started_by, s.created_at
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return query.WorkOrigin{}, err
+	}
+	found, err := session.SQL(`SELECT s.id AS session_id, s.agent_id, a.purpose, `+workFactSelect+`, s.started_by, s.created_at
 FROM agent_session s JOIN agent_definition a ON a.id = s.agent_id AND a.deleted_at = 0
 WHERE s.id = ? AND s.deleted_at = 0`, sessionID).Get(&row)
 	if err != nil {
@@ -292,7 +303,11 @@ func (r *WorkQueryRepository) ListWorkOrigins(ctx context.Context, sessionIDs []
 	statement := `SELECT s.id AS session_id, s.agent_id, a.purpose, ` + workFactSelect + `, s.started_by, s.created_at
 FROM agent_session s JOIN agent_definition a ON a.id = s.agent_id AND a.deleted_at = 0
 WHERE s.deleted_at = 0 AND s.id IN (` + placeholders + `)`
-	if err := r.db.Context(ctx).SQL(statement, args...).Find(&rows); err != nil {
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.SQL(statement, args...).Find(&rows); err != nil {
 		return nil, oops.With("operation", "agent.list_session_origins").Wrap(err)
 	}
 	for _, row := range rows {
@@ -309,7 +324,11 @@ func (r *WorkQueryRepository) ListRecentRepositoryIDs(ctx context.Context, owner
 	var rows []struct {
 		RepositorySelection string `xorm:"repository_selection"`
 	}
-	err := r.db.Context(ctx).Table("agent_session").Cols("repository_selection").
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Table("agent_session").Cols("repository_selection").
 		Where("(represented_person = ? OR owning_application = ?) AND deleted_at = 0", owner, owner).Desc("created_at").Desc("id").Limit(recentWorkScan).Find(&rows)
 	if err != nil {
 		return nil, oops.With("operation", "agent.recent_repositories").Wrap(err)

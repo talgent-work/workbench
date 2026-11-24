@@ -43,7 +43,11 @@ func retainWorkState(tx *xorm.Session, session *domain.AgentWork, row *agentWork
 // transitions; waiting and startup flag changes within one state are omitted.
 func (r *WorkQueryRepository) ListWorkLifecycleEvents(ctx context.Context, workID string) ([]query.WorkLifecycleEvent, error) {
 	var rows []workStateHistoryDO
-	if err := r.db.Context(ctx).Cols("state", "observed_at").Where("session_id = ? AND deleted_at = 0", workID).Asc("source_version").Find(&rows); err != nil {
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Cols("state", "observed_at").Where("session_id = ? AND deleted_at = 0", workID).Asc("source_version").Find(&rows); err != nil {
 		return nil, oops.With("operation", "agent.list_work_lifecycle").Wrap(err)
 	}
 	events := make([]query.WorkLifecycleEvent, 0, len(rows))

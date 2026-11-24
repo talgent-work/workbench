@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
@@ -14,9 +15,9 @@ import (
 	"xorm.io/xorm"
 )
 
-func testConnectionMaintenancePages(t *testing.T, db *xorm.Engine) {
+func testConnectionMaintenancePages(t *testing.T, db *xorm.Engine, jdb *jimuxorm.DB) {
 	ctx := t.Context()
-	authRepo, authQueries := NewProviderAuthorizations(db), NewProviderAuthorizationQueries(db)
+	authRepo, authQueries := NewProviderAuthorizations(jdb), NewProviderAuthorizationQueries(jdb)
 	var authorizationIDs []string
 	for n := range 105 {
 		auth := newProviderAuthorizationForTest(t, fmt.Sprintf("event-owner-%03d", n))

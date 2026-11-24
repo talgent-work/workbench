@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -201,7 +202,9 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	for _, work := range []*domain.AgentWork{first, second} {
 		allocations = append(allocations, f.run(t, ctx, work.ID, "process-"+work.ID).ID)
 	}
-	lookups := infrastructure.NewExecutionQueryRepository(f.db)
+	db, err := jimuxorm.New(f.db)
+	require.NoError(t, err)
+	lookups := infrastructure.NewExecutionQueryRepository(db)
 	markChanged := func(authorization string) []string {
 		t.Helper()
 		ids, err := lookups.ListExecutionsUsingAuthorization(ctx, authorization)

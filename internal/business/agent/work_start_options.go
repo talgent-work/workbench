@@ -3,11 +3,11 @@ package agent
 import (
 	"slices"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
-	"xorm.io/xorm"
 )
 
 // newModelConfigurations offers the provided Model Configurations in platform
@@ -28,6 +28,6 @@ func newModelConfigurations(models command.PlatformCatalogPort) (query.ModelConf
 
 // newWorkQueryRepository presents every Work view with its retained Model
 // Configuration as currently provided.
-func newWorkQueryRepository(db *xorm.Engine, models query.ModelConfigurations) query.WorkQueryRepository {
+func newWorkQueryRepository(db *jimuxorm.DB, models query.ModelConfigurations) query.WorkQueryRepository {
 	return query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(db), models)
 }

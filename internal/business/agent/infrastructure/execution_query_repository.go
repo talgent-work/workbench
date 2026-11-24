@@ -4,18 +4,18 @@ import (
 	"context"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
-	"xorm.io/xorm"
 )
 
 // ExecutionQueryRepository answers the execution query store's listings and
 // recorded outcomes. execution.ExecutionQueryRepository completes it into
 // query.ExecutionQueryRepository with the credentials issued to a live run,
 // which only the execution environments can decode.
-type ExecutionQueryRepository struct{ db *xorm.Engine }
+type ExecutionQueryRepository struct{ db *jimuxorm.DB }
 
-func NewExecutionQueryRepository(db *xorm.Engine) *ExecutionQueryRepository {
+func NewExecutionQueryRepository(db *jimuxorm.DB) *ExecutionQueryRepository {
 	return &ExecutionQueryRepository{db: db}
 }
 
@@ -27,7 +27,11 @@ func (r *ExecutionQueryRepository) ListWorkIDs(ctx context.Context, afterID stri
 	// waiting for its release (a withdrawn or fenced start) passes again.
 	// Completed historical conversations do not lengthen the recovery scan.
 	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT session_id FROM (
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.SQL(`SELECT session_id FROM (
  SELECT id AS session_id FROM agent_session
  WHERE state IN (1, 2, 3, 5) AND deleted_at = 0 AND JSON_EXTRACT(harness_process, '$.compute_reclaimed') = false
  UNION
@@ -51,7 +55,11 @@ func (r *ExecutionQueryRepository) ListWorkIDs(ctx context.Context, afterID stri
 // it refused as unreachable.
 func (r *ExecutionQueryRepository) ListReachResumeWorkIDs(ctx context.Context, computerID, afterID string, limit int) ([]string, error) {
 	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT id FROM agent_session
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.SQL(`SELECT id FROM agent_session
  WHERE computer_id = ? AND state = 4 AND deleted_at = 0 AND id > ? AND reach_resume_due = 1
  ORDER BY id LIMIT ?`, computerID, afterID, limit).Find(&ids)
 	if err != nil {
@@ -66,7 +74,11 @@ func (r *ExecutionQueryRepository) ListReachResumeWorkIDs(ctx context.Context, c
 // listed too; AgentWork itself ignores it.
 func (r *ExecutionQueryRepository) ListRunningWorkIDs(ctx context.Context, computerID, afterID string, limit int) ([]string, error) {
 	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT id FROM agent_session
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.SQL(`SELECT id FROM agent_session
  WHERE computer_id = ? AND state IN (1, 2, 3, 6) AND deleted_at = 0 AND id > ?
  AND JSON_EXTRACT(harness_process, '$.compute_reclaimed') = false
  ORDER BY id LIMIT ?`, computerID, afterID, limit).Find(&ids)
@@ -81,7 +93,11 @@ func (r *ExecutionQueryRepository) ListRunningWorkIDs(ctx context.Context, compu
 // Stopping, Failed or Closing.
 func (r *ExecutionQueryRepository) ListHeldWorkIDs(ctx context.Context, computerID, afterID string, limit int) ([]string, error) {
 	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT id FROM agent_session
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.SQL(`SELECT id FROM agent_session
  WHERE computer_id = ? AND state IN (1, 2, 3, 5, 6) AND deleted_at = 0 AND id > ?
  AND JSON_EXTRACT(harness_process, '$.compute_reclaimed') = false
  ORDER BY id LIMIT ?`, computerID, afterID, limit).Find(&ids)
@@ -106,7 +122,11 @@ func (r *ExecutionQueryRepository) ListCurrentPluginResults(ctx context.Context,
 		LoadedVersion        string `xorm:"loaded_version"`
 		UpdatedAt            int64  `xorm:"updated_at"`
 	}
-	err := r.db.Context(ctx).SQL(`SELECT p.slug, p.installation_reported, p.installed, p.installation_reason,
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.SQL(`SELECT p.slug, p.installation_reported, p.installed, p.installation_reason,
  p.loading_reported, p.loaded, p.loading_reason, p.loaded_version, p.updated_at
  FROM execution_plugin_result p
  WHERE p.deleted_at = 0 AND p.execution_id = (

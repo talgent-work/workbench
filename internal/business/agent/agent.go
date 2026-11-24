@@ -32,7 +32,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/workspacereading"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 )
 
 // StorageConfig locates Storage's contract.
@@ -61,7 +61,7 @@ type RPCConfig struct {
 
 var Module = fx.Module("domain.agent",
 	pluginCatalogModule,
-	pkgmysql.Bind("execution"),
+	database.Bind("execution"),
 	// First of the module's hooks, so it stops last: everything that publishes
 	// Agent's Domain Events stops before the dispatcher drains.
 	fx.Invoke(registerDomainEventLifecycle),

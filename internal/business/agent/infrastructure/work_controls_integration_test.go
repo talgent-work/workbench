@@ -14,6 +14,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
@@ -48,17 +49,17 @@ func (c *workCapacity) AdmitRoom(context.Context) error {
 func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
 	id := f.committedCreation(t)
 	capacity := &workCapacity{available: true}
 	ref := id
-	feedback := newRuns(t, f.db, f.sessions)
+	feedback := newRuns(t, f.jdb, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: ref, ProcessID: "process", ExitCode: 1, ExitReason: "native_initialization_failed"}))
 	feedback.release(ctx, ref)
-	reader := infrastructure.NewWorkQueryRepository(f.db)
+	reader := infrastructure.NewWorkQueryRepository(f.jdb)
 	failed, err := reader.GetWorkView(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, "failed", failed.StartupProgress.Status)
@@ -98,7 +99,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	var err error
 	id := f.committedCreation(t)
 	capacity := &workCapacity{available: true}
-	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
+	clientFor := func(db *jimuxorm.DB) agentpublicv1connect.AgentWorkServiceClient {
 		principal := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 		definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
@@ -116,7 +117,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 		t.Cleanup(server.Close)
 		return agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	}
-	client := clientFor(f.db)
+	client := clientFor(f.jdb)
 	read := func(state string) *agentpublicv1.WorkInfo {
 		result, err := client.GetWork(workMessageRequest(ctx, owner), &agentpublicv1.GetWorkRequest{WorkId: id})
 		require.NoError(t, err)
@@ -134,7 +135,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	_, err = client.ArchiveWork(workMessageRequest(ctx, owner), &agentpublicv1.ArchiveWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	ref := id
-	feedback := newRuns(t, f.db, f.sessions)
+	feedback := newRuns(t, f.jdb, f.sessions)
 	var feedbackSequence int64 = 1000
 	report := func(kind command.ExecutionFeedbackKind, interaction string) {
 		feedbackSequence++
@@ -241,7 +242,9 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	other, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	defer other.Close()
-	client = clientFor(other)
+	otherDB, err := jimuxorm.New(other)
+	require.NoError(t, err)
+	client = clientFor(otherDB)
 	progressAfterReconnect, err := client.GetWork(workMessageRequest(ctx, owner), &agentpublicv1.GetWorkRequest{WorkId: id})
 	require.NoError(t, err)
 	require.Equal(t, progressView.WorkProgress.Items[0].Content, progressAfterReconnect.Work.WorkProgress.Items[0].Content)

@@ -19,6 +19,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -104,6 +105,8 @@ type Agent struct {
 	Client *http.Client
 	// DB is the Agent's connection to the schema.
 	DB *xorm.Engine
+	// db is the go-jimu adapter over DB the Agent's repositories use.
+	db *jimuxorm.DB
 }
 
 // New serves the Agent over the MySQL schema at dsn until the test ends. Two
@@ -113,6 +116,8 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	adapter, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	models := cfg.models()
 	catalog := &catalog{config: cfg}
 	var repositories connections = fixtureRepositories{}
@@ -121,10 +126,10 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 		require.NoError(t, err)
 		repositories = client
 	}
-	works := startedWorks{AgentWorkRepository: infrastructure.NewAgentWorkRepository(db, time.Now), onStart: cfg.OnStart}
-	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	lookup := infrastructure.NewAgentDefinitionQueryRepository(db)
-	queries := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(db), models)
+	works := startedWorks{AgentWorkRepository: infrastructure.NewAgentWorkRepository(adapter, time.Now), onStart: cfg.OnStart}
+	definitions := infrastructure.NewAgentDefinitionRepository(adapter, time.Now)
+	lookup := infrastructure.NewAgentDefinitionQueryRepository(adapter)
+	queries := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(adapter), models)
 	authorizer := access.NewWorkAuthorizer(queries.WorkOwners)
 	start := startCatalog{catalog: catalog, connections: repositories}
 	prepare := command.NewPrepareWorkExecutionHandler(works, authorizer, models)
@@ -157,7 +162,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	connecthttp.Mount(mux, private)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	return &Agent{URL: server.URL, Client: server.Client(), DB: db}
+	return &Agent{URL: server.URL, Client: server.Client(), DB: db, db: adapter}
 }
 
 // Work is what the Agent retains of a Work beyond its public view.
@@ -173,11 +178,11 @@ type Work struct {
 
 // Work reads what the Agent retains of a Work.
 func (a *Agent) Work(ctx context.Context, workID string) (Work, error) {
-	work, err := infrastructure.NewAgentWorkRepository(a.DB, time.Now).Get(ctx, workID)
+	work, err := infrastructure.NewAgentWorkRepository(a.db, time.Now).Get(ctx, workID)
 	if err != nil {
 		return Work{}, err
 	}
-	definition, err := infrastructure.NewAgentDefinitionRepository(a.DB, time.Now).Get(ctx, work.AgentID)
+	definition, err := infrastructure.NewAgentDefinitionRepository(a.db, time.Now).Get(ctx, work.AgentID)
 	if err != nil {
 		return Work{}, err
 	}
@@ -198,14 +203,14 @@ var ErrNoDefinition = errors.New("agenttest: the person has no Agent Definition"
 
 // EmployeeDefinition reads a person's own Agent Definition.
 func (a *Agent) EmployeeDefinition(ctx context.Context, user string) (Definition, error) {
-	id, err := infrastructure.NewAgentDefinitionQueryRepository(a.DB).FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: "employee", ScopeReference: user, Purpose: "work"})
+	id, err := infrastructure.NewAgentDefinitionQueryRepository(a.db).FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: "employee", ScopeReference: user, Purpose: "work"})
 	if errors.Is(err, domain.ErrAgentDefinitionNotFound) {
 		return Definition{}, ErrNoDefinition
 	}
 	if err != nil {
 		return Definition{}, err
 	}
-	definition, err := infrastructure.NewAgentDefinitionRepository(a.DB, time.Now).Get(ctx, id)
+	definition, err := infrastructure.NewAgentDefinitionRepository(a.db, time.Now).Get(ctx, id)
 	if err != nil {
 		return Definition{}, err
 	}

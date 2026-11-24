@@ -10,6 +10,7 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -83,12 +84,14 @@ func newCloudStartWith(t *testing.T, capabilities domain.CapabilitySnapshot) *cl
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	f := &cloudStart{db: db, at: time.Now(), readings: &streamReadings{}}
 	provider, _, lifecycle := sandboxClient(t)
 	lifecycle.clock = f.now
 	f.lifecycle = lifecycle
-	works := infrastructure.NewAgentWorkRepository(db, f.now)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, f.now, nil)
+	works := infrastructure.NewAgentWorkRepository(jdb, f.now)
+	p := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, f.now, nil)
 	// A bound sandbox receives its credentials, so onboarding continues.
 	attachNativeCredentials(t, db, p, lifecycle)
 	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
@@ -97,7 +100,7 @@ func newCloudStartWith(t *testing.T, capabilities domain.CapabilitySnapshot) *cl
 	f.coordination = command.NewExecutionCoordination(f.now, works, commandtest.Definitions{}, f.steps.executions, f.steps.desks, f.steps.harness)
 	f.recovery = command.NewRecoverWorkHandler(f.now, works, f.steps.harness, command.NewInputAcceptance(works, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil)
 
-	definitions := infrastructure.NewAgentDefinitionRepository(db, f.now)
+	definitions := infrastructure.NewAgentDefinitionRepository(jdb, f.now)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Fixture Agent", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}})
 	require.NoError(t, err)
 	require.NoError(t, definitions.Save(ctx, definition))
@@ -206,7 +209,9 @@ func (f *cloudStart) requireRestartable(t *testing.T) {
 	work := f.work(t)
 	require.True(t, work.HarnessProcess.ComputeReclaimed, "the release is confirmed to the Work")
 	require.Equal(t, domain.WorkFailed, work.State)
-	outstanding, err := infrastructure.NewExecutionQueryRepository(f.db).ListOutstandingExecutions(ctx, "", 100)
+	db, err := jimuxorm.New(f.db)
+	require.NoError(t, err)
+	outstanding, err := infrastructure.NewExecutionQueryRepository(db).ListOutstandingExecutions(ctx, "", 100)
 	require.NoError(t, err)
 	require.Empty(t, outstanding, "nothing is left to retry")
 	session := work.HarnessSessionReference

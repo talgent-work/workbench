@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
@@ -58,6 +59,8 @@ func TestAnApplicationOwnerManagesTheApplicationsAuthorizations(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	const (
 		owner   = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c51"
 		other   = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c52"
@@ -65,13 +68,13 @@ func TestAnApplicationOwnerManagesTheApplicationsAuthorizations(t *testing.T) {
 		billing = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4f"
 		retired = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c50"
 	)
-	repo := NewProviderAuthorizations(db)
+	repo := NewProviderAuthorizations(jdb)
 	own := newProviderAuthorizationForTest(t, owner)
 	require.NoError(t, repo.Save(ctx, own))
 	port := &cancellationAuthority{entered: make(chan struct{}, 2), confirm: make(chan bool, 2)}
 	store := application.NewCredentialChangeDispatch(repo, &credentialChanges{}, slog.Default())
-	connections := declaredConnections(store, NewProviderAuthorizationQueries(db), testGitHub{access: unobservableAccess{}, authority: &reauthorizationAuthority{}}, nil, port)
-	app := application.NewApplication(nil, nil, nil, NewProviderAuthorizationQueries(db), connections, application.ConnectorDependencies{})
+	connections := declaredConnections(store, NewProviderAuthorizationQueries(jdb), testGitHub{access: unobservableAccess{}, authority: &reauthorizationAuthority{}}, nil, port)
+	app := application.NewApplication(nil, nil, nil, NewProviderAuthorizationQueries(jdb), connections, application.ConnectorDependencies{})
 	owners := application.NewOwners(knownApplications{
 		desk:    {ID: desk, OwnerID: owner},
 		billing: {ID: billing, OwnerID: other},

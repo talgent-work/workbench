@@ -20,6 +20,7 @@ import (
 	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/go-jimu/components/ddd/message"
 	"github.com/go-jimu/components/taskqueue"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -74,6 +75,8 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	engine, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
+	db, err := jimuxorm.New(engine)
+	require.NoError(t, err)
 	f := &fixture{t: t, persistent: t.TempDir(), working: t.TempDir(), sandboxUID: os.Getuid()}
 	if f.sandboxUID == 0 {
 		f.sandboxUID = nativeSandboxUID
@@ -81,7 +84,7 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	mux := http.NewServeMux()
 	f.server = httptest.NewServer(mux)
 	t.Cleanup(f.server.Close)
-	f.directories = &interruptibleDirectories{DirectoryRepository: infrastructure.NewDirectoryRepository(engine)}
+	f.directories = &interruptibleDirectories{DirectoryRepository: infrastructure.NewDirectoryRepository(db)}
 	f.converter, f.queue, f.published = newFakeConverter(t), newFakeQueue(), &recordedMessages{}
 	config := Config{
 		PersistentRoot: f.persistent, WorkingRoot: f.working, SandboxUID: f.sandboxUID,
@@ -92,7 +95,7 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	}
 	configure(&config)
 	require.NoError(t, config.Validate())
-	ports := mechanisms(config, infrastructure.NewDirectoryQueries(engine), application.TaskLanes{Renderings: f.queue, Maintenance: f.queue}, f.published, slog.Default())
+	ports := mechanisms(config, infrastructure.NewDirectoryQueries(db), application.TaskLanes{Renderings: f.queue, Maintenance: f.queue}, f.published, slog.Default())
 	f.nas = &interruptibleBackend{DirectoryBackendPort: ports.Backends[domain.BackendNAS]}
 	ports.Backends[domain.BackendNAS] = f.nas
 	f.app = assembleWith(config, f.directories, ports, slog.Default())

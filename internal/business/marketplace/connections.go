@@ -24,8 +24,8 @@ import (
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	"github.com/talgent-work/workbench/internal/pkg/eventlog"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 type ConnectionConfig struct {
@@ -51,7 +51,7 @@ type connectionHandlerParams struct {
 var ConnectionsModule = fx.Module(
 	"domain.marketplace.connections",
 	fx.Provide(func(cfg Config) ConnectionConfig { return cfg.Connections }),
-	pkgmysql.Bind(Database),
+	database.Bind(Database),
 	fx.Provide(newProviderCatalog, fx.Private),
 	fx.Provide(func(catalog *providerCatalog) application.ProviderDeclarations { return catalog }),
 	fx.Provide(func(cfg ConnectionConfig, catalog *providerCatalog) (scmgithub.Config, error) {

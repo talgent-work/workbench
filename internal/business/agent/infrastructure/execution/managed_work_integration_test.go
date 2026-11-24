@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect/v2"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -267,17 +268,19 @@ func newManagedWork(t *testing.T) *managedWork {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, lifecycle := sandboxClient(t)
 	f := &managedWork{db: db, relay: &machineRelay{computerID: managedComputerID}, place: &managedPlace{}, storage: &managedStorage{}, owners: &readingProcess{},
-		works: &workSource{repo: infrastructure.NewAgentWorkRepository(db, time.Now)}}
+		works: &workSource{repo: infrastructure.NewAgentWorkRepository(jdb, time.Now)}}
 	relayServer := httptest.NewServer(f.relay)
 	t.Cleanup(relayServer.Close)
 	f.relayURL = relayServer.URL
 	machines, err := NewManagedComputers(relayServer.Client(), relayServer.URL, ManagedAddresses{Gateway: managedGatewayAddress, API: managedAPIAddress, Telemetry: managedTelemetryAddress}, "computer-control", f.place)
 	require.NoError(t, err)
-	f.provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	f.provisioning = NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, f.provisioning, lifecycle)
-	f.provisioning.managed, err = NewManagedEnvironment(db, machines, fixtureModels(), f.works)
+	f.provisioning.managed, err = NewManagedEnvironment(jdb, machines, fixtureModels(), f.works)
 	require.NoError(t, err)
 
 	f.receiver = &nativeConnectionReceiver{provisioning: f.provisioning}

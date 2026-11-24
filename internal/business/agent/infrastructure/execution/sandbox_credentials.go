@@ -14,6 +14,7 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"xorm.io/xorm"
@@ -27,7 +28,9 @@ const CredentialManagementPort = 18080
 // The repository and service credentials it delivers are those Application
 // supplied from Marketplace with each delivery; it calls no other authority.
 type SandboxCredentials struct {
-	db        *xorm.Engine
+	// engine lends withLock the physical connection its advisory lock
+	// belongs to.
+	engine    *xorm.Engine
 	lifecycle *sdk.LifecycleClient
 	models    command.PlatformCatalogPort
 	// records checks every delivery against its execution's facts.
@@ -37,8 +40,8 @@ type SandboxCredentials struct {
 	now       func() time.Time
 }
 
-func NewSandboxCredentials(db *xorm.Engine, lifecycle *sdk.LifecycleClient, models command.PlatformCatalogPort, client *http.Client, transport string) (*SandboxCredentials, error) {
-	if db == nil || lifecycle == nil || models == nil || client == nil {
+func NewSandboxCredentials(engine *xorm.Engine, db *jimuxorm.DB, lifecycle *sdk.LifecycleClient, models command.PlatformCatalogPort, client *http.Client, transport string) (*SandboxCredentials, error) {
+	if engine == nil || db == nil || lifecycle == nil || models == nil || client == nil {
 		return nil, errors.New("agent: credential persistence, platform catalog and management client required")
 	}
 	// encrypted-network is enabled only by deployment that verifies its actual
@@ -48,7 +51,7 @@ func NewSandboxCredentials(db *xorm.Engine, lifecycle *sdk.LifecycleClient, mode
 	}
 	h := *client
 	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	c := &SandboxCredentials{db: db, lifecycle: lifecycle, models: models, records: records{db: db}, http: &h, transport: transport}
+	c := &SandboxCredentials{engine: engine, lifecycle: lifecycle, models: models, records: records{db: db}, http: &h, transport: transport}
 	return c, nil
 }
 
@@ -56,7 +59,7 @@ func NewSandboxCredentials(db *xorm.Engine, lifecycle *sdk.LifecycleClient, mode
 // MySQL advisory locks belong to a physical connection, not a pooled session.
 // Cleanup uses its own deadline so cancellation cannot return a locked connection.
 func (c *SandboxCredentials) withLock(ctx context.Context, id string, work func() error) error {
-	conn, err := c.db.DB().Conn(ctx)
+	conn, err := c.engine.DB().Conn(ctx)
 	if err != nil {
 		return errors.New("agent: credential reconciliation connection unavailable")
 	}

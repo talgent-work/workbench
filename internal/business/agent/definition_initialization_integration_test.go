@@ -56,7 +56,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 		mux := http.NewServeMux()
 		app := fx.New(agent.Module, sessionStateTransport(t), moduleCatalog(), fx.NopLogger, storageStub(),
 			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, builtIns), computertest.Option(&computertest.Admission{}),
-			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
+			mysqltest.Provide(t, "execution", db),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
 			fx.Provide(func() command.DispatcherPort { return port }),
 		)

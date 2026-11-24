@@ -5,26 +5,30 @@ import (
 	"strings"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 type AgentWorkRepository struct {
-	db  *xorm.Engine
+	db  *jimuxorm.DB
 	now func() time.Time
 }
 
 var _ domain.AgentWorkRepository = (*AgentWorkRepository)(nil)
 
-func NewAgentWorkRepository(db *xorm.Engine, now func() time.Time) *AgentWorkRepository {
+func NewAgentWorkRepository(db *jimuxorm.DB, now func() time.Time) *AgentWorkRepository {
 	return &AgentWorkRepository{db: db, now: now}
 }
 
 func (r *AgentWorkRepository) Get(ctx context.Context, id string) (*domain.AgentWork, error) {
 	var row agentWorkDO
-	found, err := r.db.Context(ctx).Where("id = ? AND deleted_at = 0", id).Get(&row)
+	dbSession, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := dbSession.Where("id = ? AND deleted_at = 0", id).Get(&row)
 	if err != nil {
 		return nil, oops.With("operation", "agent_session.get").With("session_id", id).Wrap(err)
 	}
@@ -35,10 +39,18 @@ func (r *AgentWorkRepository) Get(ctx context.Context, id string) (*domain.Agent
 	if err != nil {
 		return nil, err
 	}
-	if session.WorkShares, err = workShares(r.db.Context(ctx), id); err != nil {
+	dbSession, err = r.db.Session(ctx)
+	if err != nil {
 		return nil, err
 	}
-	session.WorkLabels, err = workLabels(r.db.Context(ctx), id)
+	if session.WorkShares, err = workShares(dbSession, id); err != nil {
+		return nil, err
+	}
+	dbSession, err = r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	session.WorkLabels, err = workLabels(dbSession, id)
 	return session, err
 }
 
@@ -70,49 +82,45 @@ func (r *AgentWorkRepository) save(ctx context.Context, session *domain.AgentWor
 	}
 	row.UpdatedAt = r.now().UTC().UnixMilli()
 	row.Version++
-	tx := r.db.NewSession()
-	defer tx.Close()
-	tx = tx.Context(ctx)
-	if err := tx.Begin(); err != nil {
-		return oops.Wrap(err)
-	}
-	defer tx.Rollback()
-	if session.Version == 0 {
-		var definition agentDefinitionDO
-		found, lockErr := tx.Cols("version").Where("id = ? AND deleted_at = 0", session.AgentID).ForUpdate().Get(&definition)
-		if lockErr != nil {
-			return oops.With("operation", "agent_session.lock_definition").Wrap(lockErr)
+	return r.db.Manager().WithinOrJoin(ctx, func(ctx context.Context) error {
+		tx, err := r.db.Session(ctx)
+		if err != nil {
+			return err
 		}
-		if !found {
-			return domain.ErrAgentDefinitionNotFound
+		if session.Version == 0 {
+			var definition agentDefinitionDO
+			found, lockErr := tx.Cols("version").Where("id = ? AND deleted_at = 0", session.AgentID).ForUpdate().Get(&definition)
+			if lockErr != nil {
+				return oops.With("operation", "agent_session.lock_definition").Wrap(lockErr)
+			}
+			if !found {
+				return domain.ErrAgentDefinitionNotFound
+			}
+			if definition.Version != session.DefinitionVersion {
+				return domain.ErrConcurrentModification
+			}
+			row.CreatedAt = row.UpdatedAt
+			_, err = tx.Insert(row)
+			if duplicateKey(err) {
+				return domain.ErrConcurrentModification
+			}
+			if err == nil {
+				err = insertWorkLabels(tx, session.ID, session.WorkLabels, row.CreatedAt)
+			}
+		} else {
+			var affected int64
+			affected, err = tx.Where("id = ? AND version = ? AND deleted_at = 0", row.ID, session.Version).
+				Cols("capabilities", "initial_task_input", "repository_checkouts", "thinking_level", "permission_mode", "work_progress", "state", "context_ref", "harness_process", "holds_process", "stop_request", "close_request", "stop_reason", "disconnected_since", "reach_resume_due", "reach_resume_failures", "end_request", "failure_reason", "visibility_public", "display_title", "version", "updated_at").Update(row)
+			if err == nil && affected != 1 {
+				return domain.ErrConcurrentModification
+			}
 		}
-		if definition.Version != session.DefinitionVersion {
-			return domain.ErrConcurrentModification
+		if err != nil {
+			return oops.With("operation", "agent_session.save").With("session_id", session.ID).Wrap(err)
 		}
-		row.CreatedAt = row.UpdatedAt
-		_, err = tx.Insert(row)
-		if duplicateKey(err) {
-			return domain.ErrConcurrentModification
+		if err := retainWorkShares(tx, session.ID, session.WorkShares, row.UpdatedAt); err != nil {
+			return err
 		}
-		if err == nil {
-			err = insertWorkLabels(tx, session.ID, session.WorkLabels, row.CreatedAt)
-		}
-	} else {
-		var affected int64
-		affected, err = tx.Where("id = ? AND version = ? AND deleted_at = 0", row.ID, session.Version).
-			Cols("capabilities", "initial_task_input", "repository_checkouts", "thinking_level", "permission_mode", "work_progress", "state", "context_ref", "harness_process", "holds_process", "stop_request", "close_request", "stop_reason", "disconnected_since", "reach_resume_due", "reach_resume_failures", "end_request", "failure_reason", "visibility_public", "display_title", "version", "updated_at").Update(row)
-		if err == nil && affected != 1 {
-			return domain.ErrConcurrentModification
-		}
-	}
-	if err != nil {
-		return oops.With("operation", "agent_session.save").With("session_id", session.ID).Wrap(err)
-	}
-	if err := retainWorkShares(tx, session.ID, session.WorkShares, row.UpdatedAt); err != nil {
-		return err
-	}
-	if err := retainWorkState(tx, session, row); err != nil {
-		return err
-	}
-	return oops.Wrap(tx.Commit())
+		return retainWorkState(tx, session, row)
+	})
 }

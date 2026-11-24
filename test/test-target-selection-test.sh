@@ -53,6 +53,7 @@ assert_contains "${integration_packages}" "./internal/business/marketplace/infra
 assert_contains "${integration_packages}" "./internal/business/dispatcher" "native plugin feedback and capability integration coverage"
 assert_contains "${integration_packages}" "./internal/business/dispatcher/infrastructure/unifiedmessagelog" "native message history persistence integration coverage"
 assert_contains "${integration_packages}" "./internal/pkg/taskqueue" "production taskqueue integration coverage"
+assert_contains "${integration_packages}" "./internal/pkg/database" "production database composition integration coverage"
 assert_contains "${integration_packages}" "./internal/business/agent/infrastructure/turnresults" "Work turn result query integration coverage"
 assert_not_contains "${integration_packages}" "./internal/pkg/messagebus" "unit-only package"
 assert_not_contains "${integration_packages}" "./cmd/controlplane" "entrypoints have no tests"

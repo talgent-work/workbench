@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
+
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
-	"xorm.io/xorm"
 )
 
 // SynchronizationRuns stores only the current platform operation. Reservation
 // serializes triggers across replicas; the existing content lock serializes publication.
-type SynchronizationRuns struct{ engine *xorm.Engine }
+type SynchronizationRuns struct{ db *jimuxorm.DB }
 
-func NewSynchronizationRuns(engine *xorm.Engine) *SynchronizationRuns {
-	return &SynchronizationRuns{engine}
+func NewSynchronizationRuns(db *jimuxorm.DB) *SynchronizationRuns {
+	return &SynchronizationRuns{db}
 }
 
 type synchronizationRunDO struct {
@@ -28,43 +29,51 @@ type synchronizationRunDO struct {
 }
 
 func (s *SynchronizationRuns) Reserve(ctx context.Context, candidate application.SynchronizationRun) (*application.SynchronizationRun, error) {
-	session := s.engine.NewSession()
-	defer session.Close()
-	session = session.Context(ctx)
-	if err := session.Begin(); err != nil {
-		return nil, err
-	}
-	defer session.Rollback()
-	_, err := session.Exec(`INSERT INTO marketplace_sync_run (id,slot,status,force_refresh,deadline,finished_at,failures,version,created_at,updated_at,deleted_at) VALUES (?,'catalog',1,?,?,0,'[]',1,?,?,0) ON DUPLICATE KEY UPDATE slot=slot`, candidate.ID, candidate.Force, candidate.Deadline, candidate.RequestedAt, candidate.RequestedAt)
-	if err != nil {
-		return nil, err
-	}
 	var row synchronizationRunDO
-	if _, err := session.SQL(`SELECT * FROM marketplace_sync_run WHERE slot='catalog' AND deleted_at=0 FOR UPDATE`).Get(&row); err != nil {
-		return nil, err
-	}
-	if row.ID != candidate.ID && (row.Status != 1 && row.Status != 2 || row.Deadline <= candidate.RequestedAt) {
-		_, err = session.Exec(`UPDATE marketplace_sync_run SET id=?,status=1,force_refresh=?,deadline=?,finished_at=0,failures='[]',created_at=?,updated_at=?,version=version+1 WHERE slot='catalog' AND id=? AND deleted_at=0`, candidate.ID, candidate.Force, candidate.Deadline, candidate.RequestedAt, candidate.RequestedAt, row.ID)
+	err := s.db.Manager().WithinOrJoin(ctx, func(ctx context.Context) error {
+		session, err := s.db.Session(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		row = synchronizationRunDO{ID: candidate.ID, Status: 1, Force: candidate.Force, RequestedAt: candidate.RequestedAt, Deadline: candidate.Deadline, Failures: "[]"}
-	}
-	if err := session.Commit(); err != nil {
+		_, err = session.Exec(`INSERT INTO marketplace_sync_run (id,slot,status,force_refresh,deadline,finished_at,failures,version,created_at,updated_at,deleted_at) VALUES (?,'catalog',1,?,?,0,'[]',1,?,?,0) ON DUPLICATE KEY UPDATE slot=slot`, candidate.ID, candidate.Force, candidate.Deadline, candidate.RequestedAt, candidate.RequestedAt)
+		if err != nil {
+			return err
+		}
+		if _, err := session.SQL(`SELECT * FROM marketplace_sync_run WHERE slot='catalog' AND deleted_at=0 FOR UPDATE`).Get(&row); err != nil {
+			return err
+		}
+		if row.ID != candidate.ID && (row.Status != 1 && row.Status != 2 || row.Deadline <= candidate.RequestedAt) {
+			_, err = session.Exec(`UPDATE marketplace_sync_run SET id=?,status=1,force_refresh=?,deadline=?,finished_at=0,failures='[]',created_at=?,updated_at=?,version=version+1 WHERE slot='catalog' AND id=? AND deleted_at=0`, candidate.ID, candidate.Force, candidate.Deadline, candidate.RequestedAt, candidate.RequestedAt, row.ID)
+			if err != nil {
+				return err
+			}
+			row = synchronizationRunDO{ID: candidate.ID, Status: 1, Force: candidate.Force, RequestedAt: candidate.RequestedAt, Deadline: candidate.Deadline, Failures: "[]"}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	return decodeSynchronizationRun(row)
 }
 func (s *SynchronizationRuns) Latest(ctx context.Context) (*application.SynchronizationRun, error) {
 	var row synchronizationRunDO
-	found, err := s.engine.Context(ctx).SQL(`SELECT * FROM marketplace_sync_run WHERE slot='catalog' AND deleted_at=0`).Get(&row)
+	session, err := s.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.SQL(`SELECT * FROM marketplace_sync_run WHERE slot='catalog' AND deleted_at=0`).Get(&row)
 	if err != nil || !found {
 		return nil, err
 	}
 	return decodeSynchronizationRun(row)
 }
 func (s *SynchronizationRuns) Claim(ctx context.Context, id string, now int64) (*application.SynchronizationRun, error) {
-	result, err := s.engine.Context(ctx).Exec(`UPDATE marketplace_sync_run SET status=2,updated_at=?,version=version+1 WHERE id=? AND status=1 AND deadline>? AND deleted_at=0`, now, id, now)
+	session, err := s.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result, err := session.Exec(`UPDATE marketplace_sync_run SET status=2,updated_at=?,version=version+1 WHERE id=? AND status=1 AND deadline>? AND deleted_at=0`, now, id, now)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +95,11 @@ func (s *SynchronizationRuns) Finish(ctx context.Context, id, status string, fai
 	if err != nil {
 		return err
 	}
-	result, err := s.engine.Context(ctx).Exec(`UPDATE marketplace_sync_run SET status=?,failures=?,finished_at=?,updated_at=?,version=version+1 WHERE id=? AND status=2 AND deleted_at=0`, synchronizationStatusCode(status), string(encoded), now, now, id)
+	session, err := s.db.Session(ctx)
+	if err != nil {
+		return err
+	}
+	result, err := session.Exec(`UPDATE marketplace_sync_run SET status=?,failures=?,finished_at=?,updated_at=?,version=version+1 WHERE id=? AND status=2 AND deleted_at=0`, synchronizationStatusCode(status), string(encoded), now, now, id)
 	if err != nil {
 		return err
 	}

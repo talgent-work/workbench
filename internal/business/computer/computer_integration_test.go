@@ -60,7 +60,7 @@ func start(t *testing.T) clients {
 	}}
 	app := fx.New(computer.Module, fx.NopLogger,
 		fx.Supply(mux, slog.Default(), config),
-		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
+		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return kube }),
 		fx.Provide(func() *goredis.Client { return goredis.NewClient(&goredis.Options{Addr: redis.Addr()}) }),
 	)

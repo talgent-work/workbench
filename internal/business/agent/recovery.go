@@ -7,6 +7,7 @@ import (
 	"time"
 
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -19,7 +20,6 @@ import (
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
 	"k8s.io/client-go/dynamic"
-	"xorm.io/xorm"
 )
 
 // RecoveryQueue and PreparationQueue name the taskqueue modules Agent's
@@ -144,7 +144,7 @@ var environmentRecoveryOptions = fx.Options(
 )
 
 // runSandboxObserver watches Talgent's sandboxes for the life of the process.
-func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg ExecutionConfig, db *xorm.Engine, recovery *application.Recovery, logger *slog.Logger) error {
+func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg ExecutionConfig, db *jimuxorm.DB, recovery *application.Recovery, logger *slog.Logger) error {
 	observer, err := execution.NewSandboxObserver(client, cfg.SandboxNamespace, db, recovery.WakeExecution, logger)
 	if err != nil {
 		return err

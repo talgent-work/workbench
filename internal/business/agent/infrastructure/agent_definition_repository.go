@@ -5,27 +5,31 @@ import (
 	"errors"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 type AgentDefinitionRepository struct {
-	db  *xorm.Engine
+	db  *jimuxorm.DB
 	now func() time.Time
 }
 
 var _ domain.AgentDefinitionRepository = (*AgentDefinitionRepository)(nil)
 
-func NewAgentDefinitionRepository(db *xorm.Engine, now func() time.Time) *AgentDefinitionRepository {
+func NewAgentDefinitionRepository(db *jimuxorm.DB, now func() time.Time) *AgentDefinitionRepository {
 	return &AgentDefinitionRepository{db: db, now: now}
 }
 
 func (r *AgentDefinitionRepository) Get(ctx context.Context, id string) (*domain.AgentDefinition, error) {
 	var row agentDefinitionDO
-	found, err := r.db.Context(ctx).Where("id = ? AND deleted_at = 0", id).Get(&row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Where("id = ? AND deleted_at = 0", id).Get(&row)
 	if err != nil {
 		return nil, oops.With("operation", "agent_definition.get").With("agent_id", id).Wrap(err)
 	}
@@ -45,15 +49,19 @@ func (r *AgentDefinitionRepository) Save(ctx context.Context, agent *domain.Agen
 	}
 	row.UpdatedAt = r.now().UTC().UnixMilli()
 	row.Version++
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return err
+	}
 	if agent.Version == 0 {
 		row.CreatedAt = row.UpdatedAt
-		_, err = r.db.Context(ctx).Insert(row)
+		_, err = session.Insert(row)
 		if duplicateKey(err) {
 			return domain.ErrConcurrentModification
 		}
 	} else {
 		var affected int64
-		affected, err = r.db.Context(ctx).Where("id = ? AND version = ? AND deleted_at = 0", row.ID, agent.Version).
+		affected, err = session.Where("id = ? AND version = ? AND deleted_at = 0", row.ID, agent.Version).
 			Cols("owners", "agent_name", "icon_glyph", "icon_color", "capabilities", "soul", "application_removed", "version", "updated_at").Update(row)
 		if err == nil && affected != 1 {
 			return domain.ErrConcurrentModification

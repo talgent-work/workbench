@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"go.uber.org/fx"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -49,7 +49,7 @@ func newWorkspaceFileSigner(machines *execution.ManagedComputers, cfg ComputerCo
 
 // newManagedWorkFiles reads Managed Works' directories through the relay,
 // nil without Managed Computers.
-func newManagedWorkFiles(db *xorm.Engine, machines *execution.ManagedComputers) (*execution.ManagedWorkFiles, error) {
+func newManagedWorkFiles(db *jimuxorm.DB, machines *execution.ManagedComputers) (*execution.ManagedWorkFiles, error) {
 	if machines == nil {
 		return nil, nil
 	}

@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
 	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
@@ -65,7 +66,9 @@ func TestConnectorCatalogPersonalInstallationAndWorkSelection(t *testing.T) {
 		require.NoError(t, err)
 	}
 	publishCatalog(t, app)
-	talgent, err := infrastructure.NewConnectorRepository(db).GetPlatform(ctx, "talgent")
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	talgent, err := infrastructure.NewConnectorRepository(jdb).GetPlatform(ctx, "talgent")
 	require.NoError(t, err)
 	require.Equal(t, 1, talgent.Version, "concurrent and repeated establishment converge on one revision")
 

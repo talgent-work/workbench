@@ -16,11 +16,11 @@ import (
 	"github.com/talgent-work/workbench/internal/business/trace"
 	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	"github.com/talgent-work/workbench/internal/pkg/messagebus"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 	pkgredis "github.com/talgent-work/workbench/internal/pkg/redis"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
@@ -48,14 +48,14 @@ type Option struct {
 	fx.Out
 	Logger         sloghelper.Options   `json:"logger" toml:"logger" yaml:"logger"`
 	HTTP           pkghttpserver.Config `json:"http" toml:"http" yaml:"http"`
-	ExecutionMySQL pkgmysql.Config      `name:"execution" json:"execution-mysql" toml:"execution-mysql" yaml:"execution-mysql"`
+	ExecutionMySQL database.Option      `name:"execution" json:"execution-mysql" toml:"execution-mysql" yaml:"execution-mysql"`
 	Kafka          messagebus.Option    `json:"kafka" toml:"kafka" yaml:"kafka"`
 	NATS           pkgnats.Config       `json:"nats" toml:"nats" yaml:"nats"`
 	Redis          pkgredis.Config      `json:"redis" toml:"redis" yaml:"redis"`
 
 	// WorkbenchMySQL holds Storage's and Marketplace's records.
-	WorkbenchMySQL       pkgmysql.Config     `name:"workbench" json:"workbench-mysql" toml:"workbench-mysql" yaml:"workbench-mysql"`
-	AccountMySQL         pkgmysql.Config     `name:"account" json:"account-mysql" toml:"account-mysql" yaml:"account-mysql"`
+	WorkbenchMySQL       database.Option     `name:"workbench" json:"workbench-mysql" toml:"workbench-mysql" yaml:"workbench-mysql"`
+	AccountMySQL         database.Option     `name:"account" json:"account-mysql" toml:"account-mysql" yaml:"account-mysql"`
 	MarketplaceTaskQueue pkgtaskqueue.Config `name:"marketplace" json:"marketplace-taskqueue" toml:"marketplace-taskqueue" yaml:"marketplace-taskqueue"`
 	// Agent recovery runs on its own workers: preparation may hold a worker for
 	// minutes, so it has its own lane and concurrency.
@@ -123,9 +123,9 @@ func appOptions(opt Option) []fx.Option {
 		fx.Supply(opt),
 		internalpkg.LoggerModule,
 		internalpkg.MetricsModule("controlplane"),
-		pkgmysql.Module(storage.Database),
-		pkgmysql.Module("execution"),
-		pkgmysql.Module(account.Database),
+		database.Module(storage.Database),
+		database.Module("execution"),
+		database.Module(account.Database),
 		internalpkg.RedisModule,
 		internalpkg.H2CClientModule,
 		messagebus.PublisherModule,

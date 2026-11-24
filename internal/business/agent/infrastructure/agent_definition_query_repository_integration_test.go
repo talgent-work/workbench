@@ -10,6 +10,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -23,8 +24,10 @@ func TestDefinitionPurposeLookupPreservesScopeAndConcurrentUniqueness(t *testing
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	lookup := query.NewGetAgentDefinitionForPurposeHandler(infrastructure.NewAgentDefinitionQueryRepository(db))
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	lookup := query.NewGetAgentDefinitionForPurposeHandler(infrastructure.NewAgentDefinitionQueryRepository(jdb))
 	for _, selection := range []query.GetAgentDefinitionForPurpose{
 		{ScopeKind: "employee", ScopeReference: "alice", Purpose: "work"},
 		{ScopeKind: "employee", ScopeReference: "bob", Purpose: "work"},
@@ -71,7 +74,9 @@ func TestDefinitionPurposeLookupPreservesScopeAndConcurrentUniqueness(t *testing
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	retained, err := query.NewGetAgentDefinitionForPurposeHandler(infrastructure.NewAgentDefinitionQueryRepository(db)).Handle(ctx, selection)
+	jdb, err = jimuxorm.New(db)
+	require.NoError(t, err)
+	retained, err := query.NewGetAgentDefinitionForPurposeHandler(infrastructure.NewAgentDefinitionQueryRepository(jdb)).Handle(ctx, selection)
 	require.NoError(t, err)
 	require.Equal(t, winner, retained)
 }
@@ -84,7 +89,9 @@ func TestAgentAppearancesReadEmployeeWorkAgentsAndWorkAgents(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
 	definitions := map[string]*domain.AgentDefinition{}
 	for _, fixture := range []struct{ name, kind, reference, purpose string }{
 		{"Alice's Agent", "employee", "alice", "work"},
@@ -105,7 +112,7 @@ func TestAgentAppearancesReadEmployeeWorkAgentsAndWorkAgents(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, bob))
 
-	lookup := infrastructure.NewAgentDefinitionQueryRepository(db)
+	lookup := infrastructure.NewAgentDefinitionQueryRepository(jdb)
 	views, err := lookup.ListEmployeeAgents(ctx, "work", []string{"alice", "bob", "carol", "dave", "nobody"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]query.AgentAppearanceView{

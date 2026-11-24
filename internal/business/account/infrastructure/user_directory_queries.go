@@ -6,21 +6,21 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/account/application/query"
 )
 
 // UserDirectoryQueries reads the platform-wide User Directory from Accounts.
 type UserDirectoryQueries struct {
-	engine *xorm.Engine
+	db *jimuxorm.DB
 }
 
 var _ query.UserDirectoryQueryRepository = (*UserDirectoryQueries)(nil)
 
-func NewUserDirectoryQueries(engine *xorm.Engine) *UserDirectoryQueries {
-	return &UserDirectoryQueries{engine: engine}
+func NewUserDirectoryQueries(db *jimuxorm.DB) *UserDirectoryQueries {
+	return &UserDirectoryQueries{db: db}
 }
 
 // SearchByUsername finds usernames containing the term. The ngram FULLTEXT
@@ -36,7 +36,11 @@ func (r *UserDirectoryQueries) SearchByUsername(ctx context.Context, term string
 		return nil, nil
 	}
 	var rows []accountDO
-	err := r.engine.Context(ctx).
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.
 		Cols("id", "username", "email", "display_name", "avatar_url").
 		Where("deleted_at = 0 AND MATCH(username_search) AGAINST(? IN BOOLEAN MODE) AND username LIKE ? ESCAPE '!'",
 			terms, "%"+escapeLike(term)+"%").
@@ -79,7 +83,11 @@ func (r *UserDirectoryQueries) GetByIDs(ctx context.Context, ids []string) ([]qu
 	for start := 0; start < len(ids); start += 50 {
 		chunk := ids[start:min(start+50, len(ids))]
 		var rows []accountDO
-		err := r.engine.Context(ctx).
+		session, err := r.db.Session(ctx)
+		if err != nil {
+			return nil, err
+		}
+		err = session.
 			Cols("id", "username", "email", "display_name", "avatar_url").
 			Where("deleted_at = 0").
 			In("id", chunk).

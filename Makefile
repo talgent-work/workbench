@@ -24,7 +24,8 @@ INTEGRATION_PACKAGES_storage := \
 	./internal/business/marketplace/infrastructure \
 	./internal/business/marketplace/infrastructure/persistence \
 	./internal/business/storage \
-	./internal/business/trace/infrastructure/clickhouse
+	./internal/business/trace/infrastructure/clickhouse \
+	./internal/pkg/database
 
 INTEGRATION_PACKAGES_all := $(INTEGRATION_PACKAGES_agent) $(INTEGRATION_PACKAGES_storage)
 INTEGRATION_PACKAGES := $(INTEGRATION_PACKAGES_$(INTEGRATION_GROUP))

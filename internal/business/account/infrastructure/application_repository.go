@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
 	"xorm.io/xorm"
 
@@ -18,18 +19,22 @@ var (
 // ApplicationRepository persists Applications with their Client Secrets,
 // which change only with their Application.
 type ApplicationRepository struct {
-	engine *xorm.Engine
+	db *jimuxorm.DB
 }
 
 var _ domain.ApplicationRepository = (*ApplicationRepository)(nil)
 
-func NewApplicationRepository(engine *xorm.Engine) *ApplicationRepository {
-	return &ApplicationRepository{engine: engine}
+func NewApplicationRepository(db *jimuxorm.DB) *ApplicationRepository {
+	return &ApplicationRepository{db: db}
 }
 
 func (r *ApplicationRepository) Get(ctx context.Context, id domain.ApplicationID) (*domain.Application, error) {
 	row := new(applicationDO)
-	found, err := r.engine.Context(ctx).Cols(applicationColumns...).Where("id = ? AND deleted_at = 0", string(id)).Get(row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Cols(applicationColumns...).Where("id = ? AND deleted_at = 0", string(id)).Get(row)
 	if err != nil {
 		return nil, oops.With("operation", "application.get").Wrap(err)
 	}
@@ -37,7 +42,11 @@ func (r *ApplicationRepository) Get(ctx context.Context, id domain.ApplicationID
 		return nil, domain.ErrApplicationNotFound
 	}
 	var secrets []clientSecretDO
-	if err := r.engine.Context(ctx).Cols(clientSecretColumns...).
+	session, err = r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Cols(clientSecretColumns...).
 		Where("application_id = ? AND deleted_at = 0", row.ID).OrderBy("issued_at, id").Find(&secrets); err != nil {
 		return nil, oops.With("operation", "application.get_secrets").With("application_id", row.ID).Wrap(err)
 	}
@@ -55,19 +64,13 @@ func (r *ApplicationRepository) Get(ctx context.Context, id domain.ApplicationID
 // with all of them, a loaded one under its version, adding the secrets it
 // issued since it was loaded.
 func (r *ApplicationRepository) Save(ctx context.Context, application *domain.Application) error {
-	session := r.engine.NewSession().Context(ctx)
-	defer session.Close()
-	if err := session.Begin(); err != nil {
-		return oops.With("operation", "application.begin").Wrap(err)
-	}
-	if err := saveApplication(session, application); err != nil {
-		_ = session.Rollback()
-		return err
-	}
-	if err := session.Commit(); err != nil {
-		return oops.With("operation", "application.commit").With("application_id", string(application.ID)).Wrap(err)
-	}
-	return nil
+	return r.db.Manager().WithinOrJoin(ctx, func(ctx context.Context) error {
+		session, err := r.db.Session(ctx)
+		if err != nil {
+			return err
+		}
+		return saveApplication(session, application)
+	})
 }
 
 func saveApplication(tx *xorm.Session, application *domain.Application) error {

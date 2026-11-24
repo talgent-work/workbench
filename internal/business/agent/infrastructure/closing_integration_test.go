@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
@@ -22,10 +23,10 @@ import (
 func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
 	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
-	feedback := newRuns(t, f.db, f.sessions)
+	feedback := newRuns(t, f.jdb, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
@@ -47,7 +48,7 @@ func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosing, pending.State)
 	require.True(t, pending.HoldsProcess(), "the process may still run until its exit or loss is confirmed")
-	ids, err := infrastructure.NewExecutionQueryRepository(f.db).ListWorkIDs(ctx, "", 100)
+	ids, err := infrastructure.NewExecutionQueryRepository(f.jdb).ListWorkIDs(ctx, "", 100)
 	require.NoError(t, err)
 	require.Contains(t, ids, id, "Closing must remain recoverable")
 
@@ -55,8 +56,10 @@ func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	feedback = newRuns(t, db, sessions)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
+	feedback = newRuns(t, jdb, sessions)
 	feedback.lose(ctx, ref)
 	// The lost environment's execution retires; with nothing left carrying
 	// its ownership, its release is confirmed.

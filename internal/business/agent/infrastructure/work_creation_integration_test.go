@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -24,6 +25,7 @@ import (
 
 type workCreationFixture struct {
 	db       *xorm.Engine
+	jdb      *jimuxorm.DB
 	dsn      string
 	agents   *infrastructure.AgentDefinitionRepository
 	sessions *infrastructure.AgentWorkRepository
@@ -41,14 +43,16 @@ func newWorkDefinitionFixture(t *testing.T, subjectID string) workCreationFixtur
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{subjectID}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: subjectID}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(context.Background(), definition))
 	initial := command.PrepareWorkExecution{SubjectID: subjectID, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-342", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "保留原始工作目标"}, Selections: []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "release"}}}
 	request := command.CreateWork{StartingUserID: subjectID, RequestID: initial.RequestID, AgentID: definition.ID, SubjectID: subjectID, WorkCaller: domain.WorkCaller{Kind: "project", ID: uuid.NewString()}, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}, InitialExecution: &initial}
-	return workCreationFixture{db: db, dsn: dsn, agents: agents, sessions: sessions, request: request}
+	return workCreationFixture{db: db, jdb: jdb, dsn: dsn, agents: agents, sessions: sessions, request: request}
 }
 
 func deploymentModels() agentquery.ModelConfigurations {
@@ -57,7 +61,7 @@ func deploymentModels() agentquery.ModelConfigurations {
 
 // creationPreparation is the real first-start preparation a creation carrying
 // an initial execution continues with.
-func creationPreparation(db *xorm.Engine, models agentquery.ModelConfigurations) *command.PrepareWorkExecutionHandler {
+func creationPreparation(db *jimuxorm.DB, models agentquery.ModelConfigurations) *command.PrepareWorkExecutionHandler {
 	return command.NewPrepareWorkExecutionHandler(infrastructure.NewAgentWorkRepository(db, time.Now), access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), models)
 }
 
@@ -67,7 +71,7 @@ func (f workCreationFixture) creation(registrar domain.AgentWorkRepository, comp
 	if registrar == nil {
 		registrar = f.sessions
 	}
-	return command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, registrar, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), deploymentModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computer, creationPreparation(f.db, deploymentModels()))
+	return command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, registrar, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), deploymentModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computer, creationPreparation(f.jdb, deploymentModels()))
 }
 
 // A repeated creation returns the Work its request identity derives,

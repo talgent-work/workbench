@@ -23,7 +23,11 @@ func (r *WorkQueryRepository) ListWorkViews(ctx context.Context, filter query.Wo
 	if filter.WorkCaller == nil && len(filter.WorkIDs) == 0 && filter.AgentOwner == "" {
 		return nil, domain.ErrInvalidWork
 	}
-	q := r.db.Context(ctx).Table("agent_session").Alias("s").
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q := session.Table("agent_session").Alias("s").
 		Select("s.id," + workFactSelect + "," + agentOwnerColumn + " AS agent_owner,s.started_by,s.state,s.harness_process,s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at").
 		Where("s.deleted_at=0")
 	if caller := filter.WorkCaller; caller != nil {

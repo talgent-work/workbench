@@ -15,6 +15,7 @@ import (
 	"time"
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
+	"github.com/go-jimu/components/transaction"
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/fx"
@@ -34,7 +35,7 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 )
 
 // Database is the Workbench core's MySQL engine, holding Computers and Desks.
@@ -117,11 +118,10 @@ func room(list corev1.ResourceList, desks int64) domain.Room {
 }
 
 var Module = fx.Module("domain.computer",
-	pkgmysql.Bind(Database),
+	database.Bind(Database),
 	fx.Provide(
 		fx.Private,
 		func() func() time.Time { return time.Now },
-		pkgmysql.NewExecutors,
 		infrastructure.NewComputerRepository,
 		infrastructure.NewDeskRepository,
 		infrastructure.NewQueries,
@@ -134,7 +134,7 @@ var Module = fx.Module("domain.computer",
 
 type dependencies struct {
 	fx.In
-	Executors     *pkgmysql.Executors
+	Transactions  transaction.Transactor
 	Computers     *infrastructure.ComputerRepository
 	Desks         *infrastructure.DeskRepository
 	Queries       *infrastructure.Queries
@@ -167,7 +167,7 @@ func newApplication(deps dependencies) (*application.Application, error) {
 		return nil, err
 	}
 	return application.NewApplication(application.Dependencies{
-		Computers: deps.Computers, Desks: deps.Desks, Transactions: deps.Executors, Quota: quota, Queries: deps.Queries,
+		Computers: deps.Computers, Desks: deps.Desks, Transactions: deps.Transactions, Quota: quota, Queries: deps.Queries,
 		Registrations: deps.Registrations, Connections: deps.Connections, Cloud: cloud, MinimumVersion: config.MinimumVersion, Now: deps.Now, Logger: deps.Logger,
 		Seatings: seatings(deps.Lifecycle, deps.Bus, deps.Logger), Presences: presences(deps.Lifecycle, deps.Bus, deps.Logger),
 		Removals: removals(deps.Lifecycle, deps.Bus, deps.Logger),

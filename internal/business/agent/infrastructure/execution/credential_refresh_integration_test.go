@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect/v2"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -40,8 +41,10 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, lifecycle := sandboxClient(t)
-	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	provisioning := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	input := request()
 	record, err := register(ctx, provisioning, input, testMounts)
@@ -91,9 +94,9 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	// Submission with the first delivery, then preparation with the Harness
 	// start and its connection.
 	for range 2 {
-		require.NoError(t, steps.pass(ctx, db))
+		require.NoError(t, steps.pass(ctx, jdb))
 	}
-	healthy, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
+	healthy, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, healthy.CredentialsDelivered && healthy.PreparationEnded && healthy.ProcessID != "", "Work reached a healthy native connection")
 
@@ -101,7 +104,7 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	vaultWrites := lifecycle.vault.state.Revision
 	connects := len(receiver.requests)
 	for range 5 {
-		require.NoError(t, steps.pass(ctx, db))
+		require.NoError(t, steps.pass(ctx, jdb))
 	}
 	require.Equal(t, resolved, counter.resolves.Load(), "a connected Work's reconnects never ask for repository credentials; each ask queries GitHub live")
 	require.Equal(t, vaultWrites, lifecycle.vault.state.Revision, "a reconnect delivers nothing to the Vault")

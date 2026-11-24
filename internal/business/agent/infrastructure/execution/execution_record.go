@@ -3,8 +3,8 @@ package execution
 import (
 	"context"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -124,11 +124,15 @@ func (r executionRecord) specified() bool {
 }
 
 // records reads execution records.
-type records struct{ db *xorm.Engine }
+type records struct{ db *jimuxorm.DB }
 
 func (r records) get(ctx context.Context, id string) (executionRecord, bool, error) {
 	var record executionRecord
-	found, err := r.db.Context(ctx).Where("id = ?", id).Get(&record)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return executionRecord{}, false, err
+	}
+	found, err := session.Where("id = ?", id).Get(&record)
 	if err != nil {
 		return record, false, oops.With("operation", "get_execution").Wrap(err)
 	}
@@ -138,7 +142,11 @@ func (r records) get(ctx context.Context, id string) (executionRecord, bool, err
 // live returns the Work's one unretired execution.
 func (r records) live(ctx context.Context, workID string) (executionRecord, bool, error) {
 	var record executionRecord
-	found, err := r.db.Context(ctx).Where("session_id = ? AND deleted_at = 0", workID).Get(&record)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return executionRecord{}, false, err
+	}
+	found, err := session.Where("session_id = ? AND deleted_at = 0", workID).Get(&record)
 	if err != nil {
 		return record, false, oops.With("operation", "get_live_execution").Wrap(err)
 	}
@@ -148,7 +156,11 @@ func (r records) live(ctx context.Context, workID string) (executionRecord, bool
 // latest returns the Work's most recently begun execution.
 func (r records) latest(ctx context.Context, workID string) (executionRecord, bool, error) {
 	var record executionRecord
-	found, err := r.db.Context(ctx).Where("session_id = ?", workID).Desc("created_at", "id").Get(&record)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return executionRecord{}, false, err
+	}
+	found, err := session.Where("session_id = ?", workID).Desc("created_at", "id").Get(&record)
 	if err != nil {
 		return record, false, oops.With("operation", "get_latest_execution").Wrap(err)
 	}
@@ -162,7 +174,11 @@ func (r records) forSandbox(ctx context.Context, label string) (string, bool, er
 		return "", false, nil
 	}
 	var ids []string
-	if err := r.db.Context(ctx).Table("agent_execution").Cols("id").Where("ownership_label = ?", label).Limit(2).Find(&ids); err != nil {
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	if err := session.Table("agent_execution").Cols("id").Where("ownership_label = ?", label).Limit(2).Find(&ids); err != nil {
 		return "", false, oops.With("operation", "find_sandbox_execution").Wrap(err)
 	}
 	if len(ids) != 1 {

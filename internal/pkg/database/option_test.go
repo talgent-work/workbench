@@ -1,4 +1,4 @@
-package mysql_test
+package database_test
 
 import (
 	"encoding/json"
@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 )
 
-func TestConfigYAMLUnmarshal(t *testing.T) {
+func TestOptionYAMLUnmarshal(t *testing.T) {
 	raw := []byte(`
 dsn: "root:pw@tcp(127.0.0.1:3306)/mydb?charset=utf8mb4"
 max-open-conns: 20
@@ -21,7 +21,7 @@ conn-max-idle-time: "5m"
 ping-timeout: "3s"
 `)
 
-	var cfg mysql.Config
+	var cfg database.Option
 	require.NoError(t, yaml.Unmarshal(raw, &cfg))
 	require.Equal(t, "root:pw@tcp(127.0.0.1:3306)/mydb?charset=utf8mb4", cfg.DSN)
 	require.Equal(t, 20, cfg.MaxOpenConns)
@@ -31,10 +31,10 @@ ping-timeout: "3s"
 	require.Equal(t, 3*time.Second, cfg.PingTimeout.Duration())
 }
 
-func TestConfigJSONUnmarshal(t *testing.T) {
+func TestOptionJSONUnmarshal(t *testing.T) {
 	raw := []byte(`{"dsn":"root:pw@tcp(127.0.0.1:3306)/mydb?charset=utf8mb4","ping-timeout":"3s"}`)
 
-	var cfg mysql.Config
+	var cfg database.Option
 	require.NoError(t, json.Unmarshal(raw, &cfg))
 	require.Equal(t, "root:pw@tcp(127.0.0.1:3306)/mydb?charset=utf8mb4", cfg.DSN)
 	require.Equal(t, 3*time.Second, cfg.PingTimeout.Duration())

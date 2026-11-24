@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"slices"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -40,7 +40,7 @@ type ManagedReconciliation struct {
 	sessions domain.AgentWorkRepository
 }
 
-func NewManagedReconciliation(db *xorm.Engine, machines *ManagedComputers, sessions domain.AgentWorkRepository) (*ManagedReconciliation, error) {
+func NewManagedReconciliation(db *jimuxorm.DB, machines *ManagedComputers, sessions domain.AgentWorkRepository) (*ManagedReconciliation, error) {
 	if db == nil || machines == nil || sessions == nil {
 		return nil, errors.New("agent: executions, Managed Computers and Works are required for reconciliation")
 	}

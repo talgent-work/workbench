@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -26,7 +27,7 @@ func (c *creationCapacity) AdmitRoom(context.Context) error { return c.err }
 
 // creationCoordinator uses production creation, registration and preparation
 // storage; only the execution side and catalogs are fixtures.
-func creationCoordinator(db *xorm.Engine, capacity computertest.RoomCheck, registrar domain.AgentWorkRepository, options agentquery.ModelConfigurations, catalog commandtest.PluginCatalog) *command.CreateWorkHandler {
+func creationCoordinator(db *jimuxorm.DB, capacity computertest.RoomCheck, registrar domain.AgentWorkRepository, options agentquery.ModelConfigurations, catalog commandtest.PluginCatalog) *command.CreateWorkHandler {
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
@@ -46,7 +47,7 @@ func TestALostCreationAcknowledgementIsAnsweredByItsRepeat(t *testing.T) {
 	ctx := context.Background()
 	lost := errors.New("acknowledgement lost")
 	registrar := registrationLostAcknowledgement{AgentWorkRepository: f.sessions, err: lost}
-	handler := creationCoordinator(f.db, startupAuthority{}, registrar, deploymentModels(), &creationCatalog{})
+	handler := creationCoordinator(f.jdb, startupAuthority{}, registrar, deploymentModels(), &creationCatalog{})
 	_, err := handler.Handle(ctx, f.request)
 	require.ErrorIs(t, err, lost)
 	held, err := f.sessions.FindByWorkKey(ctx, f.request.AgentID, f.request.WorkKey)
@@ -60,16 +61,18 @@ func TestALostCreationAcknowledgementIsAnsweredByItsRepeat(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	handler = creationCoordinator(db, startupAuthority{}, nil, deploymentModels(), &creationCatalog{})
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	handler = creationCoordinator(jdb, startupAuthority{}, nil, deploymentModels(), &creationCatalog{})
 	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
 	require.Equal(t, held.ID, id)
-	require.Equal(t, id, requireStartRequested(t, infrastructure.NewAgentWorkRepository(db, time.Now), id).WorkID)
+	require.Equal(t, id, requireStartRequested(t, infrastructure.NewAgentWorkRepository(jdb, time.Now), id).WorkID)
 
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
-	preparations := infrastructure.NewWorkQueryRepository(db)
+	preparations := infrastructure.NewWorkQueryRepository(jdb)
 	preparation, found, err := preparations.GetWorkPreparation(ctx, id)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -100,7 +103,7 @@ func TestADefinitiveCreationRefusalKeepsNothingOfItsRequest(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	capacity := &creationCapacity{err: domain.ErrCapacityUnavailable}
-	handler := creationCoordinator(f.db, capacity, nil, deploymentModels(), &creationCatalog{})
+	handler := creationCoordinator(f.jdb, capacity, nil, deploymentModels(), &creationCatalog{})
 	_, err := handler.Handle(ctx, f.request)
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
 	actual, err := f.sessions.FindByWorkKey(ctx, f.request.AgentID, f.request.WorkKey)
@@ -110,7 +113,7 @@ func TestADefinitiveCreationRefusalKeepsNothingOfItsRequest(t *testing.T) {
 	capacity.err = nil
 	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
-	current, found, err := infrastructure.NewWorkQueryRepository(f.db).GetWorkPreparation(ctx, id)
+	current, found, err := infrastructure.NewWorkQueryRepository(f.jdb).GetWorkPreparation(ctx, id)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.True(t, current.Submitted, "the first start commits with the new Work")

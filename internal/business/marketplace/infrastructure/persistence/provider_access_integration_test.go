@@ -23,6 +23,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
@@ -115,6 +116,8 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	github := &fakeGitHub{}
 	githubServer := httptest.NewServer(github)
 	t.Cleanup(githubServer.Close)
@@ -128,7 +131,7 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	}
 	cipher, err := credentialcipher.New(cfg.TokenCipherKey)
 	require.NoError(t, err)
-	repo := NewProviderAuthorizations(db)
+	repo := NewProviderAuthorizations(jdb)
 	token, err := cipher.Encrypt("gho_user_token")
 	require.NoError(t, err)
 	owner := "e6c7e756-007d-5236-a492-7f4b9be0b2e8"
@@ -145,7 +148,7 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	credentials := application.NewProviderCredentials(repo, providers, onePort{port}, cipher, application.CredentialTiming{RequestSkew: 5 * time.Minute})
 	observer, err := scmgithub.NewCatalog(cfg)
 	require.NoError(t, err)
-	queries := NewProviderAuthorizationQueries(db)
+	queries := NewProviderAuthorizationQueries(jdb)
 	scheduler := &syncObservations{}
 	connections := application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: repo, Queries: queries, Providers: providers,
 		GitHub: testGitHub{access: observer}, Tasks: scheduler, Credentials: credentials})

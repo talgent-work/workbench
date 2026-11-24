@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -76,17 +77,19 @@ func newBuiltInFixture(t *testing.T, builtIns domain.BuiltInPlugins, catalog com
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	options := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
 	start := commandtest.StartCatalog(catalog, creationConnections{})
-	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	lookup := infrastructure.NewAgentDefinitionQueryRepository(db)
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
-	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, sessions, authorizer, options, start, computertest.Checked(startupAuthority{}), creationPreparation(db, options))
+	definitions := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	lookup := infrastructure.NewAgentDefinitionQueryRepository(jdb)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
+	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
+	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, sessions, authorizer, options, start, computertest.Checked(startupAuthority{}), creationPreparation(jdb, options))
 	app := &application.Application{Queries: application.Queries{GetWork: agentquery.NewGetWorkHandler(definitions, sessions, authorizer, application.AssembleAgentWorkEntity, nil)},
-		Definitions: definitions, DefinitionQueries: lookup, Works: sessions, WorkQueries: infrastructure.NewWorkQueryRepository(db), Catalog: start, Models: options, BuiltInPlugins: builtIns,
+		Definitions: definitions, DefinitionQueries: lookup, Works: sessions, WorkQueries: infrastructure.NewWorkQueryRepository(jdb), Catalog: start, Models: options, BuiltInPlugins: builtIns,
 		Commands: application.Commands{EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup), CreateWork: create}}
-	return builtInFixture{db: db, works: standalonework.New(app, infrastructure.NewWorkQueryRepository(db), &librarySpaces{}, knownPeople{}), app: app}
+	return builtInFixture{db: db, works: standalonework.New(app, infrastructure.NewWorkQueryRepository(jdb), &librarySpaces{}, knownPeople{}), app: app}
 }
 
 // startStandalone starts a Standalone Work for the person and returns the

@@ -10,6 +10,7 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -27,8 +28,10 @@ func TestWorkKeyLocatesTheSameWorkForGood(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work",
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: "owner"},
 		Capabilities: domain.CapabilityConfiguration{Prompt: "Original", RequiredPlugins: []string{"employees"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "employees:member"},
@@ -53,8 +56,10 @@ func TestWorkKeyLocatesTheSameWorkForGood(t *testing.T) {
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	agents = infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
+	jdb, err = jimuxorm.New(db)
+	require.NoError(t, err)
+	agents = infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions = infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	agent, err = agents.Get(ctx, agent.ID)
 	require.NoError(t, err)
 	reuse := domain.WorkCreationRequest{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkKey: key, WorkCaller: caller, FileHome: home}
