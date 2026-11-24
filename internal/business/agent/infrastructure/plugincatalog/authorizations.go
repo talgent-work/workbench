@@ -14,7 +14,7 @@ import (
 func (c *Client) ListPersonalAuthorizations(ctx context.Context, owner string) ([]domain.PersonalAuthorization, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	ctx, _, err := delegated(ctx, owner)
+	ctx, err := delegated(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func (c *Client) ListPersonalAuthorizations(ctx context.Context, owner string) (
 func (c *Client) ListAccessibleRepositories(ctx context.Context, owner string) ([]domain.AccessibleRepository, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	ctx, _, err := delegated(ctx, owner)
+	ctx, err := delegated(ctx, owner)
 	if err != nil {
 		return nil, err
 	}

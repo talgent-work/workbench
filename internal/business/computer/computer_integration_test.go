@@ -5,8 +5,6 @@ package computer_test
 import (
 	"context"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -29,6 +27,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/computer/public/v1/computerpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/computer"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -50,16 +49,14 @@ func start(t *testing.T) clients {
 	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
 	kube := fake.NewClientset(&corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard}})
 	redis := miniredis.RunT(t)
-	mux := http.NewServeMux()
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
+	server := connecttest.NewFronted(t)
 	config := computer.Config{ControlToken: "control", VerificationURI: "https://workbench.test/computers/connect", Cloud: computer.CloudConfig{
 		ID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Name: "Test Cloud", Namespace: "sandboxes", QuotaName: "executions",
 		Capacity: map[string]string{"requests.cpu": "8", "requests.memory": "8Gi", "pods": "8"},
 		Demand:   map[string]string{"requests.cpu": "1", "requests.memory": "1Gi"},
 	}}
 	app := fx.New(computer.Module, fx.NopLogger,
-		fx.Supply(mux, slog.Default(), config),
+		server.Option(), fx.Supply(slog.Default(), config),
 		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return kube }),
 		fx.Provide(func() *goredis.Client { return goredis.NewClient(&goredis.Options{Addr: redis.Addr()}) }),

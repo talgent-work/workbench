@@ -17,8 +17,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/otelsetup"
-	"go.opentelemetry.io/otel/propagation"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 )
 
 type Config struct {
@@ -63,21 +62,34 @@ func NewClient(httpClient *http.Client, config Config) (*Client, error) {
 	}, nil
 }
 
-// delegated is the context of a call made for owner, a person or an
-// Application, under the internal service delegation contract, and the call's
-// metadata. Marketplace's selection reads take the delegated id as the owner
-// of the installations they read.
-func delegated(ctx context.Context, owner string) (context.Context, *connect.CallInfo, error) {
+// delegated is the context of one call made for owner, a person or an
+// Application, under the internal service delegation contract. Marketplace's
+// selection reads take the delegated id as the owner of the installations
+// they read.
+func delegated(ctx context.Context, owner string) (context.Context, error) {
+	return delegatedCall(ctx, owner, func(*connect.Header) {})
+}
+
+// credentialed is delegated for a call that also presents the credential
+// token Marketplace's private services require.
+func (c *Client) credentialed(ctx context.Context, owner string) (context.Context, error) {
+	return delegatedCall(ctx, owner, func(header *connect.Header) {
+		header.Set("Authorization", "Bearer "+c.credentialToken)
+	})
+}
+
+func delegatedCall(ctx context.Context, owner string, set func(*connect.Header)) (context.Context, error) {
 	if strings.TrimSpace(owner) == "" {
-		return nil, nil, access.ErrAccessDenied
+		return nil, access.ErrAccessDenied
 	}
-	ctx, info := connect.NewClientContext(ctx)
-	// This is the existing internal service delegation contract. The public
-	// gateway strips these headers; they are never copied from client input.
-	info.RequestHeader().Set(authn.HeaderServiceID, "agent")
-	info.RequestHeader().Set(authn.HeaderDelegatedUserID, owner)
-	propagation.TraceContext{}.Inject(ctx, otelsetup.ConnectCarrier{Header: info.RequestHeader()})
-	return ctx, info, nil
+	return connectrpc.TracedCallContext(ctx, func(header *connect.Header) {
+		// This is the existing internal service delegation contract. The
+		// public gateway strips these headers; they are never copied from
+		// client input.
+		header.Set(authn.HeaderServiceID, "agent")
+		header.Set(authn.HeaderDelegatedUserID, owner)
+		set(header)
+	}), nil
 }
 
 func (c *Client) ListPersonalPlugins(ctx context.Context, user string) ([]domain.PersonalPlugin, error) {
@@ -86,11 +98,10 @@ func (c *Client) ListPersonalPlugins(ctx context.Context, user string) ([]domain
 	var result []domain.PersonalPlugin
 	cursor := ""
 	for {
-		ctx, info, err := delegated(ctx, user)
+		ctx, err := c.credentialed(ctx, user)
 		if err != nil {
 			return nil, err
 		}
-		info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
 		response, err := c.selection.ReadPersonalPlugins(ctx, &marketplaceprivatev1.ReadPersonalPluginsRequest{Cursor: cursor, PageSize: 100})
 		if err != nil {
 			return nil, err
@@ -118,11 +129,10 @@ func (c *Client) ListPersonalPlugins(ctx context.Context, user string) ([]domain
 func (c *Client) ResolvePlugin(ctx context.Context, user, slug string) (domain.PluginRelease, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	ctx, info, err := delegated(ctx, user)
+	ctx, err := c.credentialed(ctx, user)
 	if err != nil {
 		return domain.PluginRelease{}, err
 	}
-	info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
 	response, err := c.selection.ResolvePlugin(ctx, &marketplaceprivatev1.ResolvePluginRequest{Slug: slug})
 	if err != nil {
 		return domain.PluginRelease{}, err

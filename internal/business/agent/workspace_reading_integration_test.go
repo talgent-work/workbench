@@ -34,6 +34,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/workspacereading"
 	"github.com/talgent-work/workbench/internal/business/computer"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -128,7 +129,7 @@ func (s *sessionWorkspaces) JudgeFilePreview(_ context.Context, _ string, size i
 }
 
 type workspaceReading struct {
-	server   *httptest.Server
+	server   *connecttest.Fronted
 	client   agentprivatev1connect.AgentServiceClient
 	reading  agentprivatev1connect.WorkspaceReadingServiceClient
 	machine  *workspaceMachine
@@ -156,16 +157,14 @@ func startWorkspaceReading(t *testing.T, ctx context.Context) *workspaceReading 
 	relay := httptest.NewServer(relayMux)
 	t.Cleanup(relay.Close)
 	storage := &sessionWorkspaces{}
-	mux := http.NewServeMux()
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
+	server := connecttest.NewFronted(t)
 	computers := agent.ComputerConfig{Address: server.URL, Token: "computer", RelayAddress: relay.URL,
 		MCPAddress: "https://workbench.test/mcp", TelemetryAddress: "https://workbench.test/otel",
 		WorkspaceFileAddress: server.URL + "/v1/agent/workspace-files"}
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }),
 		fx.Decorate(func(workspacereading.StorageViews) workspacereading.StorageViews { return storage }),
-		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, computers, testCloud("4", "4Gi", "64")),
+		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, computers, testCloud("4", "4Gi", "64")),
 		mysqltest.Provide(t, "execution", db),
 		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return kube }),

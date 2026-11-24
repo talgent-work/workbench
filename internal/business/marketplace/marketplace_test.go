@@ -11,13 +11,16 @@ import (
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/marketplace"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"go.uber.org/fx"
 	"xorm.io/xorm"
 )
 
 func TestModuleWiring(t *testing.T) {
 	err := fx.ValidateApp(marketplace.Module, fx.NopLogger,
-		fx.Supply(marketplace.Config{}, slog.Default(), http.NewServeMux(), &http.Client{}),
+		fx.Supply(marketplace.Config{}, slog.Default(), &http.Client{}),
+		fx.Provide(func() connectrpc.Server { return connecttest.NewServer() }),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return nil }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(fx.Annotate(func() *jimuxorm.DB { return nil }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(fx.Annotate(func() transaction.Transactor { return nil }, fx.ResultTags(`name:"workbench"`))),

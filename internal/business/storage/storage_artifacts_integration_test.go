@@ -5,9 +5,7 @@ package storage
 import (
 	"encoding/base64"
 	"encoding/json"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -15,6 +13,8 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // entry serves Storage's Artifact commands as a Work's Agent calls them
@@ -22,12 +22,9 @@ import (
 // Identity Token, and the Space Token its credential holder adds.
 func (f *fixture) entry() func(workID, spaceToken, procedure, body string) (int, map[string]any) {
 	t := f.t
-	business := http.NewServeMux()
-	mountArtifactService(business, f.app, slog.Default())
-	api := httptest.NewServer(business)
-	t.Cleanup(api.Close)
+	address := connecttest.Serve(t, func(server connectrpc.Server) { registerArtifactService(server, f.app) })
 	return func(workID, spaceToken, procedure, body string) (int, map[string]any) {
-		request, err := http.NewRequest(http.MethodPost, api.URL+procedure, strings.NewReader(body))
+		request, err := http.NewRequest(http.MethodPost, address+procedure, strings.NewReader(body))
 		require.NoError(t, err)
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set(authn.HeaderAuthenticatedBy, "envoy")
@@ -37,7 +34,7 @@ func (f *fixture) entry() func(workID, spaceToken, procedure, body string) (int,
 		request.Header.Set(authn.HeaderAgentID, "agent")
 		request.Header.Set(authn.HeaderPurpose, "work")
 		request.Header.Set(authn.HeaderSpaceToken, spaceToken)
-		response, err := api.Client().Do(request)
+		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
 		defer response.Body.Close()
 		var decoded map[string]any

@@ -2,9 +2,7 @@ package connectrpc_test
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"connectrpc.com/connect/v2"
@@ -19,6 +17,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // originRepository answers the origins of known Works; nothing else is read.
@@ -45,11 +44,10 @@ func TestAnAgentAsksWhoItIs(t *testing.T) {
 		work:       {WorkID: work, AgentID: "definition", Purpose: "work", WorkCaller: domain.WorkCaller{Kind: "project", ID: "p1"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case 1"}, FileHome: domain.FileHome{Kind: "case", ID: "case 1"}},
 		standalone: {WorkID: standalone, AgentID: "definition", Purpose: "work", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "jack"}},
 	}})
-	mux := http.NewServeMux()
-	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "integration", FeedbackToken: "feedback"}, slog.Default(), nil)
-	server := httptest.NewServer(mux)
-	defer server.Close()
-	client := agentpublicv1connect.NewIdentityServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
+	server := connecttest.NewServer()
+	agentmodule.RegisterRPCHandlers(server, app, agentmodule.RPCConfig{ControlToken: "integration", FeedbackToken: "feedback"}, nil)
+	address := connecttest.Start(t, server)
+	client := agentpublicv1connect.NewIdentityServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address)))
 	as := func(principal string, claims map[string]string) context.Context {
 		ctx, info := connect.NewClientContext(context.Background())
 		info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")

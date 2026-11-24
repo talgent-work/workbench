@@ -30,10 +30,15 @@ const (
 	SharePrefix = "/v1/storage/shares/"
 )
 
+// Mux is where the content endpoints are mounted.
+type Mux interface {
+	Handle(pattern string, handler http.Handler)
+}
+
 // Register mounts the content endpoints on mux; one upload carries at most
 // maxUploadBytes.
-func Register(mux *http.ServeMux, app ContentApplication, maxUploadBytes int64) {
-	mux.HandleFunc("PUT "+UploadPath, func(w http.ResponseWriter, r *http.Request) {
+func Register(mux Mux, app ContentApplication, maxUploadBytes int64) {
+	mux.Handle("PUT "+UploadPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ContentLength > maxUploadBytes {
 			writeError(w, &http.MaxBytesError{Limit: maxUploadBytes})
 			return
@@ -46,23 +51,23 @@ func Register(mux *http.ServeMux, app ContentApplication, maxUploadBytes int64) 
 		setSecurityHeaders(w)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(uploadResponse{Name: file.Position.Name, SizeBytes: file.SizeBytes})
-	})
-	mux.HandleFunc("GET "+ContentPath, func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.Handle("GET "+ContentPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		opened, download, err := app.ReadAccess(r.Context(), r.URL.Query().Get("grant"))
 		if err != nil {
 			writeError(w, err)
 			return
 		}
 		serve(w, r, opened, download)
-	})
-	mux.HandleFunc("GET "+SharePrefix+"{token}", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.Handle("GET "+SharePrefix+"{token}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		opened, err := app.ReadShared(r.Context(), r.PathValue("token"))
 		if err != nil {
 			writeError(w, err)
 			return
 		}
 		serve(w, r, opened, false)
-	})
+	}))
 }
 
 type uploadResponse struct {

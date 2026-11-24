@@ -31,7 +31,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/storage/infrastructure"
 	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -102,11 +103,13 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	storagehttp.Register(mux, f.app, fixtureMaxUploadBytes)
 	content, err := config.contentCallers()
 	require.NoError(t, err)
-	rpc := connectserver.New(slog.Default())
-	storageprivatev1connect.RegisterDirectoryServiceHandler(rpc, storageconnect.NewDirectoryHandler(f.app, []string{config.AgentToken, "i"}, content))
-	storageprivatev1connect.RegisterSandboxMountServiceHandler(rpc, storageconnect.NewSandboxMountHandler(f.app, config.AgentToken))
-	connectserver.Mount(mux, rpc)
-	client := connect.NewClient(connecthttp.NewTransport(f.server.Client(), f.server.URL))
+	address := connecttest.Serve(t, func(server connectrpc.Server) {
+		server.Register(func(rpc *connect.Server) {
+			storageprivatev1connect.RegisterDirectoryServiceHandler(rpc, storageconnect.NewDirectoryHandler(f.app, []string{config.AgentToken, "i"}, content))
+			storageprivatev1connect.RegisterSandboxMountServiceHandler(rpc, storageconnect.NewSandboxMountHandler(f.app, config.AgentToken))
+		})
+	})
+	client := connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address))
 	f.rpc = storageprivatev1connect.NewDirectoryServiceClient(client)
 	f.mounts = storageprivatev1connect.NewSandboxMountServiceClient(client)
 	return f

@@ -9,6 +9,7 @@ func validateOption(opt Option) error {
 		name     string
 		validate func() error
 	}{
+		{name: "http", validate: opt.HTTP.Validate},
 		{name: "storage", validate: opt.Storage.Validate},
 		{name: "marketplace-taskqueue", validate: opt.MarketplaceTaskQueue.Validate},
 		{name: "agent-taskqueue", validate: opt.AgentTaskQueue.Validate},

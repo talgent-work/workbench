@@ -6,13 +6,13 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
@@ -60,10 +60,10 @@ func TestModuleRestartAdmitsNoResumeWithoutCaller(t *testing.T) {
 		t.Helper()
 		db, err := xorm.NewEngine("mysql", dsn)
 		require.NoError(t, err)
-		mux := http.NewServeMux()
+		server := connecttest.NewFronted(t)
 		kube = fake.NewClientset(quota.DeepCopy())
 		options := []fx.Option{agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(),
-			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
+			server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
 			mysqltest.Provide(t, "execution", db),
 			fx.Provide(func() kubernetes.Interface { return kube }),
 			fx.Provide(func() command.DispatcherPort { return port }),
@@ -77,7 +77,6 @@ func TestModuleRestartAdmitsNoResumeWithoutCaller(t *testing.T) {
 		app := fx.New(options...)
 		require.NoError(t, app.Err())
 		require.NoError(t, app.Start(ctx))
-		server := httptest.NewServer(mux)
 		var once sync.Once
 		stop := func() {
 			once.Do(func() {
@@ -195,7 +194,7 @@ func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
 	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.Supply(domain.LeaseTerms{}, commandtest.CreationWaits), fx.NopLogger,
 		storageStub(),
-		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
+		fx.Provide(func() connectrpc.Server { return connecttest.NewServer() }), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
 		mysqltest.Provide(t, "execution", db),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota) }),
 		fx.Provide(func() command.DispatcherPort { return port }),

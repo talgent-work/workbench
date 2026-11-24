@@ -1,4 +1,4 @@
-package connectserver
+package connectrpc
 
 import (
 	"context"

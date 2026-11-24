@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	domainevent "github.com/go-jimu/components/ddd/event"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/eventbus"
 
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
@@ -65,7 +66,7 @@ var Module = fx.Module("domain.agent",
 	// First of the module's hooks, so it stops last: everything that publishes
 	// Agent's Domain Events stops before the dispatcher drains.
 	fx.Invoke(registerDomainEventLifecycle),
-	fx.Invoke(fx.Annotate(RegisterRPCHandlers, fx.ParamTags(``, ``, ``, ``, `optional:"true"`))),
+	fx.Invoke(fx.Annotate(RegisterRPCHandlers, fx.ParamTags(``, ``, ``, `optional:"true"`))),
 	fx.Invoke(RegisterStandaloneWorkHandlers),
 	fx.Provide(fx.Annotate(agentaccount.NewClient, fx.As(new(command.AccountPort)))),
 	fx.Provide(standalonework.New, fx.Private),
@@ -155,34 +156,34 @@ func newWorkAuthorizer(works query.WorkQueryRepository) access.WorkAuthorizer {
 	return access.NewWorkAuthorizer(works.WorkOwners)
 }
 
-// RegisterRPCHandlers mounts the work and private APIs on the controlplane
+// RegisterRPCHandlers serves the work and private APIs on the controlplane
 // listener. recovery is nil where RecoveryModule is not composed.
-func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, config RPCConfig, logger *slog.Logger, recovery *application.Recovery) {
+func RegisterRPCHandlers(server connectrpc.Server, app *application.Application, config RPCConfig, recovery *application.Recovery) {
 	// A public service admits the Principals its procedures declare.
-	public := connectserver.New(logger, authn.NewPrincipalInterceptor())
-	agentpublicv1connect.RegisterAgentWorkServiceHandler(public, transport.NewWorkHandler(app))
-	agentpublicv1connect.RegisterIdentityServiceHandler(public, transport.NewIdentityHandler(app))
-	agentpublicv1connect.RegisterWorkWorkspaceServiceHandler(public, transport.NewWorkWorkspaceHandler(app))
-	connectserver.Mount(mux, public)
-	private := connectserver.New(logger)
-	agentprivatev1connect.RegisterAgentServiceHandler(private, transport.NewAgentHandler(app, config.ControlToken))
-	agentprivatev1connect.RegisterWorkAccessServiceHandler(private, transport.NewWorkAccessHandler(app, config.ControlToken))
-	agentprivatev1connect.RegisterWorkAttributionServiceHandler(private, transport.NewWorkAttributionHandler(app, config.ControlToken))
-	agentprivatev1connect.RegisterWorkspaceReadingServiceHandler(private, transport.NewWorkspaceReadingHandler(app, config.ControlToken))
-	agentprivatev1connect.RegisterWorkFactsServiceHandler(private, transport.NewWorkFactsHandler(app, config.ControlToken))
-	agentprivatev1connect.RegisterActingWorkServiceHandler(private, transport.NewActingWorkHandler(app, config.ControlToken))
-	agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(private, transport.NewFeedbackHandler(app, recovery, config.FeedbackToken))
-	connectserver.Mount(mux, private)
+	server.Register(func(public *connect.Server) {
+		agentpublicv1connect.RegisterAgentWorkServiceHandler(public, transport.NewWorkHandler(app))
+		agentpublicv1connect.RegisterIdentityServiceHandler(public, transport.NewIdentityHandler(app))
+		agentpublicv1connect.RegisterWorkWorkspaceServiceHandler(public, transport.NewWorkWorkspaceHandler(app))
+	}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
+	server.Register(func(private *connect.Server) {
+		agentprivatev1connect.RegisterAgentServiceHandler(private, transport.NewAgentHandler(app, config.ControlToken))
+		agentprivatev1connect.RegisterWorkAccessServiceHandler(private, transport.NewWorkAccessHandler(app, config.ControlToken))
+		agentprivatev1connect.RegisterWorkAttributionServiceHandler(private, transport.NewWorkAttributionHandler(app, config.ControlToken))
+		agentprivatev1connect.RegisterWorkspaceReadingServiceHandler(private, transport.NewWorkspaceReadingHandler(app, config.ControlToken))
+		agentprivatev1connect.RegisterWorkFactsServiceHandler(private, transport.NewWorkFactsHandler(app, config.ControlToken))
+		agentprivatev1connect.RegisterActingWorkServiceHandler(private, transport.NewActingWorkHandler(app, config.ControlToken))
+		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(private, transport.NewFeedbackHandler(app, recovery, config.FeedbackToken))
+	})
 }
 
-// RegisterStandaloneWorkHandlers mounts an owner's Standalone Works and their
+// RegisterStandaloneWorkHandlers serves an owner's Standalone Works and their
 // files for the person the entry verified, and the Library reads for an Agent
 // acting for the person its Work represents.
-func RegisterStandaloneWorkHandlers(mux *http.ServeMux, works *standalonework.StandaloneWorks, logger *slog.Logger) {
-	server := connectserver.New(logger, authn.NewPrincipalInterceptor())
-	agentpublicv2connect.RegisterWorkServiceHandler(server, transport.NewStandaloneWorkHandler(works))
-	agentpublicv1connect.RegisterWorkFileServiceHandler(server, transport.NewWorkFileHandler(works))
-	connectserver.Mount(mux, server)
+func RegisterStandaloneWorkHandlers(server connectrpc.Server, works *standalonework.StandaloneWorks) {
+	server.Register(func(s *connect.Server) {
+		agentpublicv2connect.RegisterWorkServiceHandler(s, transport.NewStandaloneWorkHandler(works))
+		agentpublicv1connect.RegisterWorkFileServiceHandler(s, transport.NewWorkFileHandler(works))
+	}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
 }
 
 // eventSubscriptions are the handlers of Agent's domain events.

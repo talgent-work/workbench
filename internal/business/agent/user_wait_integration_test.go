@@ -5,14 +5,13 @@ package agent_test
 import (
 	"context"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
@@ -61,10 +60,10 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 		t.Helper()
 		db, err := xorm.NewEngine("mysql", dsn)
 		require.NoError(t, err)
-		mux := http.NewServeMux()
+		server := connecttest.NewFronted(t)
 		var registry *application.Application
 		options := []fx.Option{agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, fx.Populate(&registry), storageStub(),
-			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
+			server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
 			mysqltest.Provide(t, "execution", db),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
 			fx.Provide(func() command.DispatcherPort { return port }),
@@ -76,7 +75,6 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 		runtime := fx.New(options...)
 		require.NoError(t, runtime.Err())
 		require.NoError(t, runtime.Start(ctx))
-		server := httptest.NewServer(mux)
 		var once sync.Once
 		stop := func() {
 			once.Do(func() {

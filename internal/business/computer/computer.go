@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/go-jimu/components/transaction"
 	"github.com/google/uuid"
@@ -34,7 +34,7 @@ import (
 	transport "github.com/talgent-work/workbench/internal/business/computer/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/database"
 )
 
@@ -252,7 +252,7 @@ func ensureCloud(lc fx.Lifecycle, app *application.Application, logger *slog.Log
 	}})
 }
 
-func registerHandlers(mux *http.ServeMux, app *application.Application, config Config, logger *slog.Logger) error {
+func registerHandlers(server connectrpc.Server, app *application.Application, config Config) error {
 	if strings.TrimSpace(config.ControlToken) == "" {
 		return errors.New("computer: control token is required")
 	}
@@ -260,13 +260,13 @@ func registerHandlers(mux *http.ServeMux, app *application.Application, config C
 	if err != nil || verification.Scheme != "https" && verification.Scheme != "http" || verification.Host == "" {
 		return errors.New("computer: an absolute verification URI is required")
 	}
-	server := connectserver.New(logger)
-	computerprivatev1connect.RegisterAdmissionServiceHandler(server, transport.NewAdmissionHandler(app, config.ControlToken))
-	computerprivatev1connect.RegisterConnectionServiceHandler(server, transport.NewConnectionHandler(app, config.ControlToken))
-	connectserver.Mount(mux, server)
-	public := connectserver.New(logger, authn.NewPrincipalInterceptor())
-	computerpublicv1connect.RegisterRegistrationServiceHandler(public, transport.NewRegistrationHandler(app, verification.String()))
-	computerpublicv1connect.RegisterComputerServiceHandler(public, transport.NewComputerHandler(app))
-	connectserver.Mount(mux, public)
+	server.Register(func(private *connect.Server) {
+		computerprivatev1connect.RegisterAdmissionServiceHandler(private, transport.NewAdmissionHandler(app, config.ControlToken))
+		computerprivatev1connect.RegisterConnectionServiceHandler(private, transport.NewConnectionHandler(app, config.ControlToken))
+	})
+	server.Register(func(public *connect.Server) {
+		computerpublicv1connect.RegisterRegistrationServiceHandler(public, transport.NewRegistrationHandler(app, verification.String()))
+		computerpublicv1connect.RegisterComputerServiceHandler(public, transport.NewComputerHandler(app))
+	}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
 	return nil
 }

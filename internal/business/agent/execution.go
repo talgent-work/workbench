@@ -16,6 +16,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/telemetryingest"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	"github.com/talgent-work/workbench/internal/pkg/opensandbox"
@@ -248,7 +249,7 @@ func newManagedEnvironment(db *jimuxorm.DB, machines *execution.ManagedComputers
 // registerManagedTelemetry takes the telemetry of Works on Managed Computers,
 // attributes it to each run and forwards it to the OTel Collector; nothing
 // without Managed Computers.
-func registerManagedTelemetry(mux *http.ServeMux, attributions query.ExecutionQueryRepository, managed *execution.ManagedEnvironment, cfg ComputerConfig, logger *slog.Logger) error {
+func registerManagedTelemetry(server connectrpc.Server, attributions query.ExecutionQueryRepository, managed *execution.ManagedEnvironment, cfg ComputerConfig, logger *slog.Logger) error {
 	if managed == nil {
 		return nil
 	}
@@ -256,7 +257,7 @@ func registerManagedTelemetry(mux *http.ServeMux, attributions query.ExecutionQu
 	if err != nil {
 		return err
 	}
-	telemetryingest.Register(mux, attributions, collector, logger)
+	telemetryingest.Register(server, attributions, collector, logger)
 	return nil
 }
 

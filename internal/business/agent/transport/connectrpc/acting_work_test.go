@@ -2,9 +2,7 @@ package connectrpc_test
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -20,6 +18,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // A context admitting an Agent's write asks Agent whether the Work may act
@@ -34,11 +33,10 @@ func TestActingWorkAdmitsAnAgentActionOnlyWhileItsWorkActs(t *testing.T) {
 	require.NoError(t, works.Save(ctx, work))
 	awaiting := false
 	app := &application.Application{Queries: application.Queries{AdmitAgentAction: query.NewAdmitAgentActionHandler(works, func(context.Context, string) (bool, error) { return awaiting, nil })}}
-	mux := http.NewServeMux()
-	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "integration", FeedbackToken: "feedback"}, slog.Default(), nil)
-	server := httptest.NewServer(mux)
-	defer server.Close()
-	client := agentprivatev1connect.NewActingWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
+	server := connecttest.NewServer()
+	agentmodule.RegisterRPCHandlers(server, app, agentmodule.RPCConfig{ControlToken: "integration", FeedbackToken: "feedback"}, nil)
+	address := connecttest.Start(t, server)
+	client := agentprivatev1connect.NewActingWorkServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address)))
 	admit := func(token, workID string) error {
 		_, err := client.AdmitAgentAction(authenticated(ctx, token), &agentprivatev1.AdmitAgentActionRequest{WorkId: workID})
 		return err

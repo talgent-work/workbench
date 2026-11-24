@@ -16,14 +16,15 @@ import (
 	"github.com/talgent-work/workbench/internal/business/trace"
 	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/database"
-	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	"github.com/talgent-work/workbench/internal/pkg/messagebus"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 	pkgredis "github.com/talgent-work/workbench/internal/pkg/redis"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
+	"github.com/talgent-work/workbench/internal/pkg/telemetry"
 	"go.uber.org/fx"
 )
 
@@ -46,12 +47,12 @@ type Option struct {
 	AgentComputerPresence   agent.ComputerPresenceConfig   `json:"agent-computer-presence" yaml:"agent-computer-presence" toml:"agent-computer-presence"`
 	AgentApplicationRemoval agent.ApplicationRemovalConfig `json:"agent-application-removal" yaml:"agent-application-removal" toml:"agent-application-removal"`
 	fx.Out
-	Logger         sloghelper.Options   `json:"logger" toml:"logger" yaml:"logger"`
-	HTTP           pkghttpserver.Config `json:"http" toml:"http" yaml:"http"`
-	ExecutionMySQL database.Option      `name:"execution" json:"execution-mysql" toml:"execution-mysql" yaml:"execution-mysql"`
-	Kafka          messagebus.Option    `json:"kafka" toml:"kafka" yaml:"kafka"`
-	NATS           pkgnats.Config       `json:"nats" toml:"nats" yaml:"nats"`
-	Redis          pkgredis.Config      `json:"redis" toml:"redis" yaml:"redis"`
+	Logger         sloghelper.Options `json:"logger" toml:"logger" yaml:"logger"`
+	HTTP           connectrpc.Option  `json:"http" toml:"http" yaml:"http"`
+	ExecutionMySQL database.Option    `name:"execution" json:"execution-mysql" toml:"execution-mysql" yaml:"execution-mysql"`
+	Kafka          messagebus.Option  `json:"kafka" toml:"kafka" yaml:"kafka"`
+	NATS           pkgnats.Config     `json:"nats" toml:"nats" yaml:"nats"`
+	Redis          pkgredis.Config    `json:"redis" toml:"redis" yaml:"redis"`
 
 	// WorkbenchMySQL holds Storage's and Marketplace's records.
 	WorkbenchMySQL       database.Option     `name:"workbench" json:"workbench-mysql" toml:"workbench-mysql" yaml:"workbench-mysql"`
@@ -122,12 +123,12 @@ func appOptions(opt Option) []fx.Option {
 		fx.StopTimeout(30 * time.Second),
 		fx.Supply(opt),
 		internalpkg.LoggerModule,
-		internalpkg.MetricsModule("controlplane"),
+		telemetry.Module("controlplane"),
 		database.Module(storage.Database),
 		database.Module("execution"),
 		database.Module(account.Database),
 		internalpkg.RedisModule,
-		internalpkg.H2CClientModule,
+		connectrpc.Module,
 		messagebus.PublisherModule,
 		internalpkg.NATSLazyModule,
 		internalpkg.LazyClickHouseModule,
@@ -149,13 +150,12 @@ func appOptions(opt Option) []fx.Option {
 		trace.Module,
 		internalpkg.Lifecycle,
 		// Task lanes follow the business modules, so they stop first (fx
-		// stops in reverse: HTTP, tasks, then messages).
+		// stops in reverse: tasks, then the listener and messages).
 		pkgtaskqueue.NamedModule(marketplace.Queue),
 		pkgtaskqueue.NamedModule(storage.PreviewQueue),
 		pkgtaskqueue.NamedModule(storage.MaintenanceQueue),
 		pkgtaskqueue.NamedModule(account.MaintenanceQueue),
 		pkgtaskqueue.NamedModule(agent.RecoveryQueue),
 		pkgtaskqueue.NamedModule(agent.PreparationQueue),
-		internalpkg.HTTPModule,
 	}
 }

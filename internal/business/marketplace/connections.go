@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	domainevent "github.com/go-jimu/components/ddd/event"
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"go.uber.org/fx"
@@ -23,7 +24,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/database"
 	"github.com/talgent-work/workbench/internal/pkg/eventbus"
 )
@@ -43,8 +44,7 @@ type connectionHandlerParams struct {
 	Config ConnectionConfig
 
 	App     *application.PersonalConnections
-	Mux     *http.ServeMux
-	Logger  *slog.Logger
+	Server  connectrpc.Server
 	Webhook *marketplacehttp.WebhookHandler
 }
 
@@ -143,9 +143,9 @@ var ConnectionsModule = fx.Module(
 	}),
 	TaskqueueModule,
 	fx.Invoke(func(params connectionHandlerParams) {
-		params.Mux.Handle(marketplacehttp.GitHubWebhookPath, params.Webhook)
-		server := connectserver.New(params.Logger)
-		marketplaceprivatev1connect.RegisterCredentialServiceHandler(server, marketplaceconnect.NewCredentialHandler(params.App, params.Config.CredentialToken))
-		connectserver.Mount(params.Mux, server)
+		params.Server.Handle(marketplacehttp.GitHubWebhookPath, params.Webhook)
+		params.Server.Register(func(s *connect.Server) {
+			marketplaceprivatev1connect.RegisterCredentialServiceHandler(s, marketplaceconnect.NewCredentialHandler(params.App, params.Config.CredentialToken))
+		})
 	}),
 )

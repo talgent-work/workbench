@@ -1,16 +1,14 @@
 package agent
 
 import (
-	"log/slog"
-	"net/http"
-
+	"connectrpc.com/connect/v2"
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/turnresults"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 )
 
 // TurnResultModule serves the Work queries answered from the durable message
@@ -25,8 +23,8 @@ var TurnResultModule = fx.Module("agent.turn_results",
 	fx.Invoke(registerTurnResultHandler),
 )
 
-func registerTurnResultHandler(mux *http.ServeMux, results *query.WorkTurnResults, config RPCConfig, logger *slog.Logger) {
-	server := connectserver.New(logger)
-	agentprivatev1connect.RegisterWorkTurnResultServiceHandler(server, transport.NewTurnResultHandler(results, config.ControlToken))
-	connectserver.Mount(mux, server)
+func registerTurnResultHandler(server connectrpc.Server, results *query.WorkTurnResults, config RPCConfig) {
+	server.Register(func(s *connect.Server) {
+		agentprivatev1connect.RegisterWorkTurnResultServiceHandler(s, transport.NewTurnResultHandler(results, config.ControlToken))
+	})
 }

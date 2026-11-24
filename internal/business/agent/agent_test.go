@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/go-jimu/components/ddd/message"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
@@ -38,9 +38,9 @@ import (
 // and execution are deliberately unused: unauthenticated grants must be rejected
 // before either dependency can be called.
 func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
-	mux := http.NewServeMux()
+	server := connecttest.NewFronted(t)
 	app := fx.New(agent.Module, sessionStateTransport(t), fx.NopLogger, storageStub(),
-		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
+		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return nil }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *jimuxorm.DB { return nil }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() transaction.Transactor { return nil }, fx.ResultTags(`name:"execution"`))),
@@ -50,8 +50,6 @@ func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(context.Background()))
 	defer app.Stop(context.Background())
-	server := httptest.NewServer(mux)
-	defer server.Close()
 	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	_, err := client.CreateWork(context.Background(), &agentprivatev1.CreateWorkRequest{SubjectId: "untrusted", AgentId: "agent"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))

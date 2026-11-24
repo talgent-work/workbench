@@ -2,7 +2,6 @@ package agent
 
 import (
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/workspacereading"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/workspacefile"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 )
 
 // workspaceReading reads a Work's workspace where its AgentWork locates it:
@@ -67,7 +67,7 @@ func newWorkspaces(storage workspacereading.StorageViews, files *execution.Manag
 
 // registerManagedWorkspaceFiles serves the links to Managed Works' files,
 // which only a deployment that reaches Managed Computers issues.
-func registerManagedWorkspaceFiles(mux *http.ServeMux, links *application.WorkspaceFileSigner, workspaces application.WorkspaceReadingPort, works domain.AgentWorkRepository, logger *slog.Logger) error {
+func registerManagedWorkspaceFiles(server connectrpc.Server, links *application.WorkspaceFileSigner, workspaces application.WorkspaceReadingPort, works domain.AgentWorkRepository, logger *slog.Logger) error {
 	if links == nil {
 		return nil
 	}
@@ -75,6 +75,6 @@ func registerManagedWorkspaceFiles(mux *http.ServeMux, links *application.Worksp
 	if err != nil {
 		return err
 	}
-	workspacefile.Register(mux, opened, logger)
+	workspacefile.Register(server, opened, logger)
 	return nil
 }

@@ -12,7 +12,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/computergateway"
 	internalpkg "github.com/talgent-work/workbench/internal/pkg"
-	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	pkgredis "github.com/talgent-work/workbench/internal/pkg/redis"
 )
@@ -22,7 +22,7 @@ type Option struct {
 	fx.Out
 
 	Logger  sloghelper.Options     `json:"logger" toml:"logger" yaml:"logger"`
-	HTTP    pkghttpserver.Config   `json:"http" toml:"http" yaml:"http"`
+	HTTP    connectrpc.Option      `json:"http" toml:"http" yaml:"http"`
 	Redis   pkgredis.Config        `json:"redis" toml:"redis" yaml:"redis"`
 	Gateway computergateway.Config `json:"gateway" toml:"gateway" yaml:"gateway"`
 }
@@ -37,9 +37,9 @@ func main() {
 		lifecyclelog.Option,
 		fx.Supply(opt),
 		internalpkg.LoggerModule,
-		internalpkg.HTTPModule,
-		internalpkg.H2CClientModule,
+		connectrpc.Module,
 		internalpkg.RedisModule,
 		computergateway.Module,
+		internalpkg.Lifecycle,
 	).Run()
 }

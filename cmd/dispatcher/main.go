@@ -12,7 +12,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/dispatcher"
 	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
-	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	"github.com/talgent-work/workbench/internal/pkg/messagebus"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
@@ -26,7 +26,7 @@ type Option struct {
 	NativeExecution dispatcher.NativeExecutionConfig `json:"native-execution" toml:"native-execution" yaml:"native-execution"`
 
 	Logger     sloghelper.Options         `json:"logger" toml:"logger" yaml:"logger"`
-	HTTP       pkghttpserver.Config       `json:"http" toml:"http" yaml:"http"`
+	HTTP       connectrpc.Option          `json:"http" toml:"http" yaml:"http"`
 	Redis      pkgredis.Config            `json:"redis" toml:"redis" yaml:"redis"`
 	ClickHouse pkgclickhouse.Config       `json:"clickhouse" toml:"clickhouse" yaml:"clickhouse"`
 	Kafka      messagebus.Option          `json:"kafka" toml:"kafka" yaml:"kafka"`
@@ -50,13 +50,13 @@ func main() {
 		lifecyclelog.Option,
 		fx.Supply(opt),
 		internalpkg.LoggerModule,
-		internalpkg.HTTPModule,
+		connectrpc.Module,
 		internalpkg.RedisModule,
 		messagebus.PublisherModule,
 		internalpkg.ClickHouseModule,
 		internalpkg.NATSLazyModule,
-		internalpkg.H2CClientModule,
 		dispatcher.Module,
+		internalpkg.Lifecycle,
 	)
 	app.Run()
 }

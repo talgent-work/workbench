@@ -5,11 +5,10 @@ package agent_test
 import (
 	"context"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"connectrpc.com/connect/v2"
@@ -53,16 +52,15 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 		t.Helper()
 		db, err := xorm.NewEngine("mysql", dsn)
 		require.NoError(t, err)
-		mux := http.NewServeMux()
+		server := connecttest.NewFronted(t)
 		app := fx.New(agent.Module, sessionStateTransport(t), moduleCatalog(), fx.NopLogger, storageStub(),
-			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, builtIns), computertest.Option(&computertest.Admission{}),
+			server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, builtIns), computertest.Option(&computertest.Admission{}),
 			mysqltest.Provide(t, "execution", db),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
 			fx.Provide(func() command.DispatcherPort { return port }),
 		)
 		require.NoError(t, app.Err())
 		require.NoError(t, app.Start(ctx))
-		server := httptest.NewServer(mux)
 		var once sync.Once
 		stop := func() {
 			once.Do(func() {

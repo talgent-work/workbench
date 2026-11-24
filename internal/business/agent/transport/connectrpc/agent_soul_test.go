@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // Only an Owner reads or writes a Work Agent's Soul through the public API;
@@ -32,11 +32,10 @@ func TestSoulIsReadAndWrittenOnlyByAnOwner(t *testing.T) {
 		Commands: application.Commands{ChangeAgentSoul: command.NewChangeAgentSoulHandler(agents)},
 		Queries:  application.Queries{GetAgentSoul: query.NewGetAgentSoulHandler(agents)},
 	}
-	mux := http.NewServeMux()
-	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, slog.Default(), nil)
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-	public := agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	server := connecttest.NewServer()
+	agentmodule.RegisterRPCHandlers(server, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, nil)
+	address := connecttest.Start(t, server)
+	public := agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address, connecthttp.WithReadMaxBytes(0))))
 	ctx := context.Background()
 
 	_, err = public.GetAgentSoul(ctx, &agentpublicv1.GetAgentSoulRequest{AgentId: definition.ID})

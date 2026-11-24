@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"connectrpc.com/connect/v2"
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
@@ -19,7 +20,7 @@ import (
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
@@ -63,8 +64,7 @@ type handlerParams struct {
 	Config  Config
 	Handler *marketplaceconnect.Handler
 	Catalog *marketplacehttp.CatalogHandler
-	Mux     *http.ServeMux
-	Logger  *slog.Logger
+	Server  connectrpc.Server
 }
 
 // Database is the Workbench core's MySQL engine, holding catalog and
@@ -104,13 +104,13 @@ var Module = fx.Module("domain.marketplace",
 	}),
 	fx.Provide(application.NewApplication, marketplaceconnect.NewHandler, marketplacehttp.NewCatalogHandler),
 	fx.Invoke(func(params handlerParams) {
-		public := connectserver.New(params.Logger, authn.NewPrincipalInterceptor())
-		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(public, params.Handler)
-		connectserver.Mount(params.Mux, public)
-		private := connectserver.New(params.Logger)
-		marketplaceprivatev1connect.RegisterSelectionServiceHandler(private, marketplaceconnect.NewSelectionHandler(params.App, params.Config.Connections.CredentialToken))
-		marketplaceprivatev1connect.RegisterConnectorOperationServiceHandler(private, marketplaceconnect.NewConnectorOperationHandler(params.App, params.Config.Connections.CredentialToken))
-		connectserver.Mount(params.Mux, private)
-		params.Mux.Handle(marketplacehttp.ContentPath, params.Catalog)
+		params.Server.Register(func(public *connect.Server) {
+			marketplacepublicv1connect.RegisterMarketplaceServiceHandler(public, params.Handler)
+		}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
+		params.Server.Register(func(private *connect.Server) {
+			marketplaceprivatev1connect.RegisterSelectionServiceHandler(private, marketplaceconnect.NewSelectionHandler(params.App, params.Config.Connections.CredentialToken))
+			marketplaceprivatev1connect.RegisterConnectorOperationServiceHandler(private, marketplaceconnect.NewConnectorOperationHandler(params.App, params.Config.Connections.CredentialToken))
+		})
+		params.Server.Handle(marketplacehttp.ContentPath, params.Catalog)
 	}),
 )

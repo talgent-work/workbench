@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"go.uber.org/fx"
@@ -27,7 +28,7 @@ import (
 	accountconnect "github.com/talgent-work/workbench/internal/business/account/transport/connectrpc"
 	accounthttp "github.com/talgent-work/workbench/internal/business/account/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 )
@@ -245,8 +246,7 @@ func newGitHubIdentity(cfg infrastructure.GitHubOAuthConfig) (*infrastructure.Gi
 type registration struct {
 	fx.In
 	App     *application.Application
-	Mux     *http.ServeMux
-	Logger  *slog.Logger
+	Server  connectrpc.Server
 	Handler *accounthttp.Handler
 }
 
@@ -257,18 +257,18 @@ func newHTTPHandler(app *application.Application, cfg accounthttp.Config, logger
 }
 
 func register(r registration) {
-	r.Mux.Handle(accounthttp.PathPrefix, r.Handler)
-	private := connectserver.New(r.Logger)
-	accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
-	accountprivatev1connect.RegisterAgentAccountServiceHandler(private, accountconnect.NewAgentAccounts(r.App))
-	accountprivatev1connect.RegisterApplicationOwnershipServiceHandler(private, accountconnect.NewApplicationOwnership(r.App))
-	connectserver.Mount(r.Mux, private)
+	r.Server.Handle(accounthttp.PathPrefix, r.Handler)
+	r.Server.Register(func(private *connect.Server) {
+		accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
+		accountprivatev1connect.RegisterAgentAccountServiceHandler(private, accountconnect.NewAgentAccounts(r.App))
+		accountprivatev1connect.RegisterApplicationOwnershipServiceHandler(private, accountconnect.NewApplicationOwnership(r.App))
+	})
 	// The browser reads who is signed in, and a person registers and reads
 	// their Applications, under the identity the entry verified.
-	public := connectserver.New(r.Logger, authn.NewPrincipalInterceptor())
-	accountpublicv1connect.RegisterSessionServiceHandler(public, accountconnect.Session{})
-	accountpublicv1connect.RegisterApplicationServiceHandler(public, accountconnect.NewApplications(r.App))
-	connectserver.Mount(r.Mux, public)
+	r.Server.Register(func(public *connect.Server) {
+		accountpublicv1connect.RegisterSessionServiceHandler(public, accountconnect.Session{})
+		accountpublicv1connect.RegisterApplicationServiceHandler(public, accountconnect.NewApplications(r.App))
+	}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
 }
 
 // Module wires Account into the controlplane process. The named MySQL

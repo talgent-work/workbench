@@ -11,7 +11,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/streamgateway"
 	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
-	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 )
@@ -22,7 +22,7 @@ type Option struct {
 	fx.Out
 
 	Logger     sloghelper.Options        `json:"logger" toml:"logger" yaml:"logger"`
-	HTTP       pkghttpserver.Config      `json:"http" toml:"http" yaml:"http"`
+	HTTP       connectrpc.Option         `json:"http" toml:"http" yaml:"http"`
 	ClickHouse pkgclickhouse.Config      `json:"clickhouse" toml:"clickhouse" yaml:"clickhouse"`
 	NATS       pkgnats.Config            `json:"nats" toml:"nats" yaml:"nats"`
 	Agent      streamgateway.AgentConfig `json:"agent" toml:"agent" yaml:"agent"`
@@ -39,11 +39,11 @@ func main() {
 		lifecyclelog.Option,
 		fx.Supply(opt),
 		internalpkg.LoggerModule,
-		internalpkg.HTTPModule,
-		internalpkg.H2CClientModule,
+		connectrpc.Module,
 		internalpkg.LazyClickHouseModule,
 		internalpkg.NATSLazyModule,
 		streamgateway.Module,
+		internalpkg.Lifecycle,
 	)
 	app.Run()
 }

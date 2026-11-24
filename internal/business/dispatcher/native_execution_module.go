@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"connectrpc.com/connect/v2"
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
@@ -16,7 +17,7 @@ import (
 	dispatcherredis "github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/redis"
 	dispatchertransport "github.com/talgent-work/workbench/internal/business/dispatcher/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/transport/routing"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 )
 
 type NativeExecutionConfig struct {
@@ -33,12 +34,12 @@ func (c NativeExecutionConfig) Validate() error {
 var nativeExecutionModule = fx.Module("dispatcher.native-execution",
 	fx.Provide(fx.Annotate(newNativeExecutionsRuntime, fx.As(new(command.ExecutionConnectionPort)), fx.As(new(application.HarnessSettingsPort)), fx.As(new(application.PendingInteractionsPort)), fx.As(new(application.TurnControlPort)), fx.As(new(application.CapabilityReaderPort)), fx.As(new(application.ProcessObservationReader)))),
 	fx.Provide(command.NewConnectExecutionHandler, command.NewEnqueueInputHandler, command.NewDropInputHandler, command.NewStopExecutionHandler, application.NewApplication),
-	fx.Invoke(func(app *application.Application, cfg NativeExecutionConfig, mux *http.ServeMux, logger *slog.Logger, ownership *dispatcherredis.Ownership, client *http.Client) {
+	fx.Invoke(func(app *application.Application, cfg NativeExecutionConfig, server connectrpc.Server, ownership *dispatcherredis.Ownership, client *http.Client) {
 		local := dispatchertransport.NewExecutionHandler(app, cfg.ControlToken)
 		routed := routing.NewNativeExecutionHandler(local, ownership, ownership.Self(), cfg.ControlToken, peer.NewNativeClients(client))
-		server := connectserver.New(logger)
-		dispatcherprivatev1connect.RegisterExecutionServiceHandler(server, routed)
-		connectserver.Mount(mux, server)
+		server.Register(func(s *connect.Server) {
+			dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, routed)
+		})
 	}),
 )
 

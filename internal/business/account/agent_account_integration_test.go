@@ -4,10 +4,7 @@ package account_test
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -20,7 +17,8 @@ import (
 	"github.com/talgent-work/contracts/gen/go/account/private/v1/accountprivatev1connect"
 	accountconnect "github.com/talgent-work/workbench/internal/business/account/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 func newWorkID() string { return uuid.Must(uuid.NewV7()).String() }
@@ -29,13 +27,12 @@ func newWorkID() string { return uuid.Must(uuid.NewV7()).String() }
 // controlplane mounts it.
 func (h *harness) agentAccounts() accountprivatev1connect.AgentAccountServiceClient {
 	h.t.Helper()
-	server := connectserver.New(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	accountprivatev1connect.RegisterAgentAccountServiceHandler(server, accountconnect.NewAgentAccounts(h.app))
-	mux := http.NewServeMux()
-	connectserver.Mount(mux, server)
-	rpc := httptest.NewServer(mux)
-	h.t.Cleanup(rpc.Close)
-	return accountprivatev1connect.NewAgentAccountServiceClient(connect.NewClient(connecthttp.NewTransport(rpc.Client(), rpc.URL)))
+	address := connecttest.Serve(h.t, func(server connectrpc.Server) {
+		server.Register(func(s *connect.Server) {
+			accountprivatev1connect.RegisterAgentAccountServiceHandler(s, accountconnect.NewAgentAccounts(h.app))
+		})
+	})
+	return accountprivatev1connect.NewAgentAccountServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address)))
 }
 
 // issueRequest names a Work started in the name of a project, found again by
