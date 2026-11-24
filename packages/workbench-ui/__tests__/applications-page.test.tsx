@@ -209,7 +209,8 @@ it("registers a first application and shows its secret once, until the owner say
   const dialog = await screen.findByRole("dialog");
   await user.click(within(dialog).getByRole("button", { name: "Register" }));
   expect(within(dialog).getByText("Enter a name.")).toBeInTheDocument();
-  await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "Support Desk");
+  await user.click(within(dialog).getByRole("textbox", { name: "Name" }));
+  await user.paste("Support Desk");
   await user.click(within(dialog).getByRole("button", { name: "Register" }));
 
   expect(await within(dialog).findByRole("heading", { name: "Support Desk is registered" })).toBeInTheDocument();
@@ -418,13 +419,15 @@ it("configures the application's Agent: its appearance, its Soul and its Work de
   expect(name).toHaveValue("Support Desk");
   expect(within(appearance).getByText("Every Work of Support Desk runs as this Agent and shares its memory.")).toBeInTheDocument();
   await user.clear(name);
-  await user.type(name, "Desk Bot");
+  await user.click(name);
+  await user.paste("Desk Bot");
   await user.click(within(appearance).getByRole("radio", { name: "Rocket" }));
   await user.click(within(appearance).getByRole("button", { name: "Save" }));
   await waitFor(() => expect(agentCalls).toContainEqual({ method: "changeWorkAgentAppearance", request: { agentId, name: "Desk Bot", icon: { glyph: "rocket", color: "green" } } }));
 
   const soul = await screen.findByRole("form", { name: "Soul" });
-  await user.type(within(soul).getByRole("textbox", { name: "Soul" }), "Answer customers kindly.");
+  await user.click(within(soul).getByRole("textbox", { name: "Soul" }));
+  await user.paste("Answer customers kindly.");
   await user.click(within(soul).getByRole("button", { name: "Save" }));
   await waitFor(() => expect(agentCalls).toContainEqual({ method: "changeAgentSoul", request: { agentId, soul: "Answer customers kindly." } }));
 
@@ -459,7 +462,8 @@ it("renames the application in its settings", async () => {
   await user.clear(name);
   await user.click(within(form).getByRole("button", { name: "Save" }));
   expect(within(form).getByText("Enter a name.")).toBeInTheDocument();
-  await user.type(name, "  Help Center ");
+  await user.click(name);
+  await user.paste("  Help Center ");
   await user.click(within(form).getByRole("button", { name: "Save" }));
   expect(await screen.findByRole("button", { name: "Application menu: Help Center" })).toBeInTheDocument();
 });
