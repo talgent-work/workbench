@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
-	contribkafka "github.com/go-jimu/contrib/message/kafka"
 
 	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -59,7 +58,7 @@ func (h *FileChangedHandler) Handle(ctx context.Context, msg integrationmessage.
 	// A change that names no file, operation or time can never be told, so
 	// the consumer drops it at once instead of handling it again.
 	if err := change.Validate(); err != nil {
-		return contribkafka.NonRetryable(fmt.Errorf("agent file changed %q: %w", change.ID, err))
+		return fmt.Errorf("%w: agent file changed %q: %w", integrationmessage.ErrPermanent, change.ID, err)
 	}
 	return h.changes.InputsChanged(ctx, change)
 }
