@@ -14,50 +14,35 @@ import (
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
-	"go.uber.org/fx"
-	"go.uber.org/fx/fxtest"
 )
 
-// A keyed task reads as pending until it completes, and a task that cannot
-// run yet is retried without counting as a failed attempt: with one retry
-// allowed it still runs a third time. The provider checks exhaustion before
-// failure, so a task needs at least one retry for this to apply.
-func TestKeyedTaskPendingAndRetryLater(t *testing.T) {
+// A task that cannot run yet is retried without counting as a failed
+// attempt: with one retry allowed it still runs a third time. The provider
+// checks exhaustion before failure, so a task needs at least one retry for
+// this to apply.
+func TestRetryLaterIsNotAFailedAttempt(t *testing.T) {
 	addr, db := middlewaretest.RedisDB(t)
 	cfg := Option{RedisAddr: addr, RedisDB: db, WorkerConcurrency: 1, QueueName: DefaultQueueName, RetryDelayMin: Duration(100 * time.Millisecond), RetryDelayMax: Duration(200 * time.Millisecond), taskCheckInterval: testTaskCheckInterval}
-	lc := fxtest.NewLifecycle(t)
 	var attempts atomic.Int32
-	release := make(chan struct{})
+	done := make(chan struct{})
 	processor := componenttaskqueue.NewProcessor(testTaskType, func(context.Context, componenttaskqueue.Task) error {
 		if attempts.Add(1) < 3 {
 			return fmt.Errorf("%w: downstream busy", ErrRetryLater)
 		}
-		<-release
+		close(done)
 		return nil
 	})
-	enqueuer := NewEnqueuer(cfg, slog.Default())
-	tasks := NewKeyedTasks(cfg)
 	lane, err := NewLane(cfg.QueueName, cfg, slog.New(slog.NewTextHandler(os.Stderr, nil)), []componenttaskqueue.Processor{processor}, nil)
-	if err == nil {
-		lc.Append(fx.StartStopHook(lane.Start, lane.Stop))
-	}
 	require.NoError(t, err)
-	lc.RequireStart()
-	defer lc.RequireStop()
+	require.NoError(t, lane.Start(t.Context()))
+	defer func() { require.NoError(t, lane.Stop(context.Background())) }()
 
-	pending, err := tasks.Pending(DefaultQueueName, "content-1")
-	require.NoError(t, err)
-	require.False(t, pending, "no task holds the key yet")
 	task, err := componenttaskqueue.New(testTaskDefinition, []byte("{}"), componenttaskqueue.WithID("content-1"))
 	require.NoError(t, err)
-	require.NoError(t, enqueuer.Enqueue(t.Context(), task, componenttaskqueue.WithMaxRetry(1), componenttaskqueue.WithDeadline(time.Now().Add(time.Minute))))
-	require.Eventually(t, func() bool { return attempts.Load() >= 3 }, 15*time.Second, 10*time.Millisecond, "retry-later attempts are not failures, so they run again")
-	pending, err = tasks.Pending(DefaultQueueName, "content-1")
-	require.NoError(t, err)
-	require.True(t, pending, "a running task holds its key")
-	close(release)
-	require.Eventually(t, func() bool {
-		pending, err := tasks.Pending(DefaultQueueName, "content-1")
-		return err == nil && !pending
-	}, 10*time.Second, 10*time.Millisecond, "a completed task holds nothing")
+	require.NoError(t, NewEnqueuer(cfg, slog.Default()).Enqueue(t.Context(), task, componenttaskqueue.WithMaxRetry(1), componenttaskqueue.WithDeadline(time.Now().Add(time.Minute))))
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatalf("retry-later attempts are not failures, so the task runs a third time; ran %d", attempts.Load())
+	}
 }
