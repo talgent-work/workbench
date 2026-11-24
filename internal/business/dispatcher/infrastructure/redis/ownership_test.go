@@ -11,7 +11,6 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	dispatcherredis "github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/redis"
-	"github.com/talgent-work/workbench/internal/pkg/streamownership"
 )
 
 func replicas(t *testing.T) (*miniredis.Miniredis, *dispatcherredis.Ownership, *dispatcherredis.Ownership) {
@@ -140,8 +139,18 @@ func TestPublishedReadingFollowsTheClaimedBindingUntilForgotten(t *testing.T) {
 	ctx := context.Background()
 	server := miniredis.RunT(t)
 	rdb := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
-	reader := streamownership.NewReader(rdb)
-	_, found, err := reader.Read(ctx, "work")
+	// Other modules read the published process and endpoint of a Work's
+	// owner record, and nothing else.
+	read := func() (process, endpoint string, found bool, err error) {
+		values, err := rdb.HMGet(ctx, "dispatcher:owner:work", "process_id", "endpoint").Result()
+		if err != nil {
+			return "", "", false, err
+		}
+		process, _ = values[0].(string)
+		endpoint, _ = values[1].(string)
+		return process, endpoint, process != "", nil
+	}
+	_, _, found, err := read()
 	require.NoError(t, err)
 	require.False(t, found)
 
@@ -150,22 +159,23 @@ func TestPublishedReadingFollowsTheClaimedBindingUntilForgotten(t *testing.T) {
 	binding := command.ConnectExecution{WorkID: "work", ProcessID: "process", Endpoint: "http://sandbox:44772", NativeSessionID: "session"}
 	gen, _, err := replica.Claim(ctx, "work", &binding)
 	require.NoError(t, err)
-	read, found, err := reader.Read(ctx, "work")
+	process, endpoint, found, err := read()
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, streamownership.Reading{ProcessID: "process", Endpoint: "http://sandbox:44772"}, read)
+	require.Equal(t, "process", process)
+	require.Equal(t, "http://sandbox:44772", endpoint)
 
 	// A takeover keeps the published reading.
 	peer := dispatcherredis.NewOwnership(rdb, "b", "192.0.2.2:9000", time.Minute, time.Hour)
 	require.NoError(t, replica.Release(ctx, "work", gen))
 	gen, _, err = peer.Claim(ctx, "work", nil)
 	require.NoError(t, err)
-	read, _, err = reader.Read(ctx, "work")
+	process, _, _, err = read()
 	require.NoError(t, err)
-	require.Equal(t, "process", read.ProcessID)
+	require.Equal(t, "process", process)
 
 	require.NoError(t, peer.Abandon(ctx, "work", gen))
-	_, found, err = reader.Read(ctx, "work")
+	_, _, found, err = read()
 	require.NoError(t, err)
 	require.False(t, found, "a forgotten stream has no reader")
 }

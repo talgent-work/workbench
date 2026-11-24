@@ -11,7 +11,6 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
-	"github.com/talgent-work/workbench/internal/pkg/streamownership"
 )
 
 var (
@@ -28,9 +27,17 @@ const (
 	ReleasedChannel = keyPrefix + "released"
 )
 
+// A Work's owner record is published: other modules read its process and
+// endpoint fields, and nothing else, to tell whether a replica reads or will
+// resume the Work's stream.
+const (
+	publishedProcessField  = "process_id"
+	publishedEndpointField = "endpoint"
+)
+
 func instanceKey(id string) string { return keyPrefix + "instance:" + id }
 func worksKey(id string) string    { return keyPrefix + "works:" + id }
-func ownerKey(work string) string  { return streamownership.Key(work) }
+func ownerKey(work string) string  { return keyPrefix + "owner:" + work }
 func snapshotKey(w string) string  { return keyPrefix + "snapshot:" + w }
 
 // Owner is who reads a Work's Harness Output Stream. Instance is empty while
@@ -143,7 +150,7 @@ func (o *Ownership) Claim(ctx context.Context, work string, binding *command.Con
 		encoded = string(raw)
 	}
 	result, err := o.rdb.Eval(ctx, claimScript, []string{ownerKey(work), worksKey(o.self), releasedKey},
-		o.self, o.addr, encoded, work, keyPrefix+"instance:", keyPrefix+"works:", process, endpoint, streamownership.ProcessField, streamownership.EndpointField).Slice()
+		o.self, o.addr, encoded, work, keyPrefix+"instance:", keyPrefix+"works:", process, endpoint, publishedProcessField, publishedEndpointField).Slice()
 	if err != nil {
 		return 0, command.ConnectExecution{}, oops.Wrap(err)
 	}

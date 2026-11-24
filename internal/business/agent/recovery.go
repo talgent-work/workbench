@@ -8,7 +8,6 @@ import (
 
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
-	goredis "github.com/redis/go-redis/v9"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
@@ -16,7 +15,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
-	"github.com/talgent-work/workbench/internal/pkg/streamownership"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
 	"k8s.io/client-go/dynamic"
@@ -138,7 +136,7 @@ var environmentRecoveryOptions = fx.Options(
 	fx.Provide(
 		newExecutionEnvironment,
 		pkgkubernetes.NewDynamicClient,
-		newStreamOwners,
+		fx.Annotate(execution.NewDispatcherStreams, fx.As(new(execution.StreamOwners))),
 	),
 	fx.Invoke(runSandboxObserver),
 )
@@ -177,22 +175,6 @@ func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg Execution
 		},
 	})
 	return nil
-}
-
-// dispatcherStreams reads the stream ownership Dispatcher publishes in the
-// shared Redis, so Agent's sweep sees a running process nobody reads without
-// asking Dispatcher.
-type dispatcherStreams struct {
-	reader *streamownership.Reader
-}
-
-func newStreamOwners(rdb *goredis.Client) execution.StreamOwners {
-	return dispatcherStreams{reader: streamownership.NewReader(rdb)}
-}
-
-func (d dispatcherStreams) Reading(ctx context.Context, workID string) (execution.StreamReading, bool, error) {
-	reading, found, err := d.reader.Read(ctx, workID)
-	return execution.StreamReading{ProcessID: reading.ProcessID, Endpoint: reading.Endpoint}, found, err
 }
 
 // executionEnvironmentSources are what the execution environments are
