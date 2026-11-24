@@ -3,6 +3,7 @@ package connectionrecord
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
@@ -48,4 +49,17 @@ func TestTheNewestConnectionHoldsTheRecord(t *testing.T) {
 	_, ok, err = reader.Lookup(ctx, "c")
 	require.NoError(t, err)
 	require.False(t, ok)
+}
+
+// The record is published: Computer reads whether computer:connection:<id>
+// exists, so the key, its fields and its expiry are a contract other modules
+// read without importing this package.
+func TestTheRecordIsPublishedUnderItsContractKey(t *testing.T) {
+	server := miniredis.RunT(t)
+	writer := NewWriter(goredis.NewClient(&goredis.Options{Addr: server.Addr()}))
+	require.NoError(t, writer.Claim(context.Background(), "c", Connection{ID: "one", Replica: "a", Endpoint: "192.0.2.1:8085"}))
+	require.Equal(t, "one", server.HGet("computer:connection:c", "connection_id"))
+	require.Equal(t, "a", server.HGet("computer:connection:c", "replica"))
+	require.Equal(t, "192.0.2.1:8085", server.HGet("computer:connection:c", "endpoint"))
+	require.Equal(t, 90*time.Second, server.TTL("computer:connection:c"))
 }
