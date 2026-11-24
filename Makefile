@@ -16,6 +16,7 @@ INTEGRATION_PACKAGES_agent := \
 	./internal/business/agent/infrastructure/execution \
 	./internal/business/agent/infrastructure/turnresults \
 	./internal/business/dispatcher \
+	./internal/pkg \
 	./internal/pkg/taskqueue
 
 INTEGRATION_PACKAGES_storage := \

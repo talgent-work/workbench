@@ -21,10 +21,18 @@ type entryPoints struct {
 // Lifecycle orders the entry points' hooks. List it after every bounded
 // context: Fx stops hooks in reverse, so the entry points stop taking work
 // and finish what runs before any context closes its Domain Event dispatcher,
-// whose handlers still publish and enqueue. The listener starts last, so the
-// process is ready only once every other entry point runs, and stops first.
+// whose handlers still publish and enqueue.
+//
+// The listener wraps the other entry points twice. It listens before they
+// start and closes after they drain, because their work may call the
+// process's own procedures over loopback. It reports ready only after they
+// start, and withdraws readiness before they stop, so load balancers route
+// to the process only while every entry point runs.
 var Lifecycle = fx.Module("internal.pkg.lifecycle",
 	fx.Invoke(func(lc fx.Lifecycle, entries entryPoints) {
+		if entries.Server != nil {
+			lc.Append(fx.StartStopHook(entries.Server.Listen, entries.Server.Close))
+		}
 		for _, consumer := range entries.Consumers {
 			lc.Append(fx.StartStopHook(consumer.Start, consumer.Stop))
 		}
@@ -32,7 +40,7 @@ var Lifecycle = fx.Module("internal.pkg.lifecycle",
 			lc.Append(fx.StartStopHook(lane.Start, lane.Stop))
 		}
 		if entries.Server != nil {
-			lc.Append(fx.StartStopHook(entries.Server.Start, entries.Server.Stop))
+			lc.Append(fx.StartStopHook(entries.Server.Ready, entries.Server.Withdraw))
 		}
 	}),
 )

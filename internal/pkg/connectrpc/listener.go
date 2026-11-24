@@ -23,6 +23,8 @@ type listener struct {
 	addr   string
 	server *http.Server
 	bound  net.Listener
+	// endStreams ends every open stream; Shutdown calls it too.
+	endStreams context.CancelFunc
 
 	mu      sync.Mutex
 	address string
@@ -51,7 +53,7 @@ func newListener(addr string, handler http.Handler) *listener {
 		},
 	}
 	server.RegisterOnShutdown(endStreams)
-	return &listener{addr: addr, server: server, address: addr}
+	return &listener{addr: addr, server: server, address: addr, endStreams: endStreams}
 }
 
 // Address is the bound address once started, the configured one before.

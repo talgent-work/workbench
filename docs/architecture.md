@@ -75,10 +75,12 @@ A context's own contracts stay in the context, including records it publishes in
 a context that reads another's record does so through its own adapter.
 
 `pkg.Lifecycle` orders each process's entry points: the listener, the message consumers and the
-task lanes. A process lists it after every context, so on stop the listener closes first, then
-consumers and lanes finish what runs, and only then do contexts close their Domain Event
-dispatchers. Connection pools and task enqueuers stay open until the process exits, so those
-dispatchers' handlers still write, publish and enqueue.
+task lanes. A process lists it after every context. The contexts composed in controlplane call
+each other's procedures over loopback, so the listener accepts calls before consumers and lanes
+start and until they drain; it reports ready only once they run. On stop, readiness is withdrawn
+first, then consumers and lanes finish what runs, then the listener drains and closes, and only
+then do contexts close their Domain Event dispatchers. Connection pools and task enqueuers stay
+open until the process exits, so those dispatchers' handlers still write, publish and enqueue.
 
 Writes go through go-jimu's transaction Manager (`contrib/transaction/xorm`): a repository takes
 one session per statement and joins the caller's transaction with `WithinOrJoin` when it writes

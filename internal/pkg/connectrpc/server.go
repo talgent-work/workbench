@@ -8,6 +8,7 @@ package connectrpc
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -146,10 +147,18 @@ func (s *HTTPServer) Handle(pattern string, handler http.Handler) {
 // before.
 func (s *HTTPServer) Address() string { return s.listener.Address() }
 
-// Start mounts every registered procedure, binds the listener synchronously,
-// so an address error fails startup, then reports readiness SERVING and
-// serves in an owned goroutine.
-func (s *HTTPServer) Start(context.Context) error {
+// The listener serves before readiness and after it: a process's own
+// entry points may call its procedures over loopback, as the contexts
+// composed in one process do, so the listener accepts calls from before the
+// first of them starts until after the last of them drains. pkg.Lifecycle
+// orders Listen and Close around the other entry points and Ready and
+// Withdraw inside them; Start and Stop do both phases for a process with no
+// other entry point.
+
+// Listen mounts every registered procedure, binds the listener synchronously,
+// so an address error fails startup, and serves in an owned goroutine.
+// Readiness stays NOT_SERVING until Ready.
+func (s *HTTPServer) Listen(context.Context) error {
 	if err := s.option.Validate(); err != nil {
 		return err
 	}
@@ -161,16 +170,21 @@ func (s *HTTPServer) Start(context.Context) error {
 	if err := s.listener.bind(); err != nil {
 		return err
 	}
-	s.health.SetStatus("", grpchealth.StatusServing)
 	s.listener.serve(s.logger, s.shutdowner)
 	return nil
 }
 
-// Stop reports readiness NOT_SERVING, keeps the listener serving for the
-// shutdown delay, then drains it: unary requests finish, and streams end so
-// their clients reconnect to another replica. ctx bounds the delay and the
-// drain together.
-func (s *HTTPServer) Stop(ctx context.Context) error {
+// Ready reports readiness SERVING, so load balancers route to the process.
+func (s *HTTPServer) Ready(context.Context) error {
+	s.health.SetStatus("", grpchealth.StatusServing)
+	return nil
+}
+
+// Withdraw reports readiness NOT_SERVING, keeps serving for the shutdown
+// delay while load balancers stop routing, then ends the open streams so
+// their clients reconnect to another replica. Unary calls, loopback ones
+// included, are still served until Close. ctx bounds the delay.
+func (s *HTTPServer) Withdraw(ctx context.Context) error {
 	s.health.SetStatus("", grpchealth.StatusNotServing)
 	if s.option.ShutdownDelay > 0 {
 		timer := time.NewTimer(s.option.ShutdownDelay)
@@ -180,5 +194,25 @@ func (s *HTTPServer) Stop(ctx context.Context) error {
 			timer.Stop()
 		}
 	}
+	s.listener.endStreams()
+	return nil
+}
+
+// Close drains the listener: running requests finish within ctx, and it
+// stops accepting.
+func (s *HTTPServer) Close(ctx context.Context) error {
 	return s.listener.server.Shutdown(ctx)
+}
+
+// Start listens and reports readiness.
+func (s *HTTPServer) Start(ctx context.Context) error {
+	if err := s.Listen(ctx); err != nil {
+		return err
+	}
+	return s.Ready(ctx)
+}
+
+// Stop withdraws readiness and closes the listener; ctx bounds both.
+func (s *HTTPServer) Stop(ctx context.Context) error {
+	return errors.Join(s.Withdraw(ctx), s.Close(ctx))
 }
