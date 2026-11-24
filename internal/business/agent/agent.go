@@ -209,10 +209,7 @@ func subscribeEventHandlers(in eventSubscriptions) {
 }
 
 func newDomainEventDispatcher(logger *slog.Logger) *domainevent.InMemoryDispatcher {
-	// Close still drains dispatched batches; it adds no grace delay, since a
-	// lost withdrawal is settled when the reader's stream reconnects.
 	return domainevent.NewDispatcher(
-		domainevent.WithDelayClose(0),
 		domainevent.WithHandlerTimeout(30*time.Second),
 		domainevent.WithUnhandledEventHandler(func(unhandled domainevent.UnhandledContext) {
 			logger.Debug("orphan event (no subscriber)", slog.String("event_kind", string(unhandled.Event.Kind())))

@@ -151,10 +151,7 @@ var ConnectionsModule = fx.Module(
 )
 
 func newCredentialEventDispatcher(logger *slog.Logger) *domainevent.InMemoryDispatcher {
-	// No close delay: its close hook is the module's first, so every producer
-	// has stopped by the time it closes.
 	return domainevent.NewDispatcher(
-		domainevent.WithDelayClose(0),
 		domainevent.WithHandlerTimeout(30*time.Second),
 		domainevent.WithUnhandledEventHandler(func(unhandled domainevent.UnhandledContext) {
 			logger.Debug("orphan event (no subscriber)", slog.String("event_kind", string(unhandled.Event.Kind())))

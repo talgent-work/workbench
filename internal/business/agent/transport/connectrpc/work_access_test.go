@@ -54,7 +54,7 @@ func newAccessFixture(t *testing.T) *accessFixture {
 func newAccessFixtureWith(t *testing.T, views application.WorkspaceReadingPort) *accessFixture {
 	t.Helper()
 	agents := &rpcAgents{items: map[string]*domain.AgentDefinition{}}
-	dispatcher := domainevent.NewDispatcher(domainevent.WithDelayClose(0))
+	dispatcher := domainevent.NewDispatcher()
 	t.Cleanup(func() { _ = dispatcher.Close(context.Background()) })
 	sessions := &rpcSessions{items: map[string]*domain.AgentWork{}, events: dispatcher}
 	employee := accessDefinition(t, agents, domain.UsageScope{Kind: "employee", Reference: "owner"}, domain.VisibilityRule{})
