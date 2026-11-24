@@ -33,7 +33,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/computer/infrastructure/registration"
 	transport "github.com/talgent-work/workbench/internal/business/computer/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
 	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/database"
 )
@@ -126,7 +125,7 @@ var Module = fx.Module("domain.computer",
 		infrastructure.NewDeskRepository,
 		infrastructure.NewQueries,
 		func(rdb *goredis.Client) *registration.Store { return registration.NewStore(rdb) },
-		func(rdb *goredis.Client) *computerconnection.Reader { return computerconnection.NewReader(rdb) },
+		infrastructure.NewGatewayConnections,
 		newApplication,
 	),
 	fx.Invoke(ensureCloud, sweepPresence, registerHandlers),
@@ -139,7 +138,7 @@ type dependencies struct {
 	Desks         *infrastructure.DeskRepository
 	Queries       *infrastructure.Queries
 	Registrations *registration.Store
-	Connections   *computerconnection.Reader
+	Connections   *infrastructure.GatewayConnections
 	Client        kubernetes.Interface
 	// Bus publishes Desk Assigned and Presence changes; without it Agent
 	// finds seated Desks and its Works' Disconnections only by asking.

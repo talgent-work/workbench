@@ -1,4 +1,4 @@
-package computerconnection
+package connectionrecord
 
 import (
 	"context"
@@ -35,9 +35,9 @@ func TestTheNewestConnectionHoldsTheRecord(t *testing.T) {
 	require.Equal(t, second, got)
 
 	server.FastForward(TTL + 1)
-	connected, err := reader.Connected(ctx, []string{"c", "other"})
+	_, ok, err = reader.Lookup(ctx, "c")
 	require.NoError(t, err)
-	require.Equal(t, map[string]bool{"c": false, "other": false}, connected)
+	require.False(t, ok, "a record outlives its last heartbeat only by its TTL")
 	reclaimed, err := writer.Refresh(ctx, "c", second)
 	require.NoError(t, err)
 	require.Equal(t, Reclaimed, reclaimed)

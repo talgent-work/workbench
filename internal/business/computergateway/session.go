@@ -14,7 +14,7 @@ import (
 
 	computerprivatev1 "github.com/talgent-work/contracts/gen/go/computer/private/v1"
 	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
-	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
+	"github.com/talgent-work/workbench/internal/business/computergateway/connectionrecord"
 )
 
 const (
@@ -75,7 +75,7 @@ type welcome struct {
 // Computer.
 type Gateway struct {
 	computers   computerprivatev1connect.ConnectionServiceClient
-	records     *computerconnection.Writer
+	records     *connectionrecord.Writer
 	connections connections
 	replica     string
 	endpoint    string
@@ -114,7 +114,7 @@ type Replica struct {
 	TargetVersion string
 }
 
-func NewGateway(computers computerprivatev1connect.ConnectionServiceClient, records *computerconnection.Writer, reader connections, replica Replica, logger *slog.Logger) *Gateway {
+func NewGateway(computers computerprivatev1connect.ConnectionServiceClient, records *connectionrecord.Writer, reader connections, replica Replica, logger *slog.Logger) *Gateway {
 	return &Gateway{
 		computers: computers, records: records, connections: reader, replica: replica.Name, endpoint: replica.Endpoint,
 		controlToken: replica.ControlToken, target: replica.TargetVersion, logger: logger, now: time.Now, silence: Silence, revalidate: Revalidate, successorWait: SuccessorWait, fileIdle: FileIdle,
@@ -200,7 +200,7 @@ type machineReport struct {
 func (g *Gateway) hold(ctx context.Context, conn *websocket.Conn, m machine) {
 	computerID, report := m.computerID, m.report
 	logger := g.logger.With("computer_id", computerID)
-	connection := computerconnection.Connection{ID: uuid.NewString(), Replica: g.replica, Endpoint: g.endpoint}
+	connection := connectionrecord.Connection{ID: uuid.NewString(), Replica: g.replica, Endpoint: g.endpoint}
 	if err := g.records.Claim(ctx, computerID, connection); err != nil {
 		logger.WarnContext(ctx, "computer gateway: connection not recorded", "error", err)
 		_ = conn.Close(websocket.StatusTryAgainLater, "try again")
@@ -254,10 +254,10 @@ func (g *Gateway) hold(ctx context.Context, conn *websocket.Conn, m machine) {
 			logger.WarnContext(ctx, "computer gateway: connection not refreshed", "error", err)
 		}
 		switch refresh {
-		case computerconnection.Replaced:
+		case connectionrecord.Replaced:
 			_ = conn.Close(CloseReplaced, "replaced by a newer connection")
 			return
-		case computerconnection.Reclaimed:
+		case connectionrecord.Reclaimed:
 			if _, err := g.reportReachable(ctx, computerID, report); err != nil {
 				logger.WarnContext(ctx, "computer gateway: reach not reported", "error", err)
 			}

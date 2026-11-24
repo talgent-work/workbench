@@ -13,15 +13,14 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
+	"github.com/talgent-work/workbench/internal/business/computer/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/computer/infrastructure/registration"
-	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
 )
 
 type managedFixture struct {
 	app       *application.Application
 	memory    *memory
 	redis     *miniredis.Miniredis
-	conns     *computerconnection.Writer
 	presences *presences
 	now       time.Time
 }
@@ -37,11 +36,27 @@ func newManaged(t *testing.T) *managedFixture {
 	t.Helper()
 	server := miniredis.RunT(t)
 	rdb := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
-	f := &managedFixture{memory: &memory{computers: map[string]domain.Computer{}, desks: map[string]domain.Desk{}}, redis: server, conns: computerconnection.NewWriter(rdb), presences: &presences{}, now: time.Now().UTC()}
+	f := &managedFixture{memory: &memory{computers: map[string]domain.Computer{}, desks: map[string]domain.Desk{}}, redis: server, presences: &presences{}, now: time.Now().UTC()}
 	f.app = application.NewApplication(application.Dependencies{Computers: f.memory, Desks: desks{f.memory}, Transactions: inline{}, Quota: quota(true), Queries: queries{f.memory},
-		Registrations: registration.NewStore(rdb), Connections: computerconnection.NewReader(rdb), Presences: f.presences, Now: func() time.Time { return f.now }})
+		Registrations: registration.NewStore(rdb), Connections: infrastructure.NewGatewayConnections(rdb), Presences: f.presences, Now: func() time.Time { return f.now }})
 	return f
 }
+
+// connectionTTL is how long the Gateway's record outlives its connection's
+// last heartbeat.
+const connectionTTL = 90 * time.Second
+
+// connect records, as the Computer Gateway does, that a connection of the
+// Computer is held now.
+func (f *managedFixture) connect(id string) {
+	key := "computer:connection:" + id
+	f.redis.HSet(key, "connection_id", "conn-1", "replica", "a")
+	f.redis.SetTTL(key, connectionTTL)
+}
+
+// disconnect forgets the Computer's connection record, as the Gateway does
+// when the connection closes.
+func (f *managedFixture) disconnect(id string) { f.redis.Del("computer:connection:" + id) }
 
 type queries struct{ *memory }
 
@@ -139,8 +154,7 @@ func TestPresenceFollowsTheComputersConnection(t *testing.T) {
 	f := newManaged(t)
 	ctx := context.Background()
 	id := f.register(t, "person").ComputerID
-	connection := computerconnection.Connection{ID: "conn-1", Replica: "a"}
-	require.NoError(t, f.conns.Claim(ctx, id, connection))
+	f.connect(id)
 	require.NoError(t, f.app.ReportReachable(ctx, id, application.MachineReport{Versions: domain.ReportedVersions{TalgentComputer: "0.1.0"}}))
 	require.True(t, f.memory.computers[id].Presence.Reachable)
 	require.Equal(t, "0.1.0", f.memory.computers[id].Versions.TalgentComputer)
@@ -151,9 +165,7 @@ func TestPresenceFollowsTheComputersConnection(t *testing.T) {
 	require.NoError(t, f.app.ReportReachable(ctx, id, application.MachineReport{Versions: domain.ReportedVersions{TalgentComputer: "0.1.0"}}))
 	require.Len(t, f.presences.published, 1, "an unchanged Presence publishes nothing")
 
-	released, err := f.conns.Release(ctx, id, connection.ID)
-	require.NoError(t, err)
-	require.True(t, released)
+	f.disconnect(id)
 	lostAt := f.now
 	require.NoError(t, f.app.ReportUnreachable(ctx, id, lostAt))
 	require.Equal(t, domain.Presence{UnreachableSince: lostAt}, f.memory.computers[id].Presence)
@@ -161,12 +173,12 @@ func TestPresenceFollowsTheComputersConnection(t *testing.T) {
 
 	// A replica that stopped abruptly leaves its record to expire; the sweep
 	// records the loss.
-	require.NoError(t, f.conns.Claim(ctx, id, connection))
+	f.connect(id)
 	require.NoError(t, f.app.ReportReachable(ctx, id, application.MachineReport{Versions: domain.ReportedVersions{TalgentComputer: "0.1.0"}}))
 	lost, err := f.app.SweepPresence(ctx)
 	require.NoError(t, err)
 	require.Zero(t, lost)
-	f.redis.FastForward(computerconnection.TTL + time.Second)
+	f.redis.FastForward(connectionTTL + time.Second)
 	lost, err = f.app.SweepPresence(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, lost)
@@ -175,7 +187,7 @@ func TestPresenceFollowsTheComputersConnection(t *testing.T) {
 
 	// A loss reported late, after the machine reconnected, is put right by
 	// the next sweep.
-	require.NoError(t, f.conns.Claim(ctx, id, connection))
+	f.connect(id)
 	regained, err := f.app.SweepPresence(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, regained)

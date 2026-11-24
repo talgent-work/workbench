@@ -176,7 +176,7 @@ with `X-Talgent-Control-Token` (Reconciliation).
 
 Any service replica serves the relay. A replica that does not hold the Computer's connection forwards the
 request, WebSocket included, to the replica named by the connection record
-(`internal/pkg/computerconnection`). No connection answers `503`.
+(`internal/business/computergateway/connectionrecord`). No connection answers `503`.
 
 ### Work environment
 

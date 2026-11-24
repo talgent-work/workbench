@@ -21,7 +21,7 @@ import (
 
 	computerprivatev1 "github.com/talgent-work/contracts/gen/go/computer/private/v1"
 	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
-	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
+	"github.com/talgent-work/workbench/internal/business/computergateway/connectionrecord"
 )
 
 // computer stands in for Computer's connection contract.
@@ -113,8 +113,8 @@ func (c *computer) seen() []string {
 type fixture struct {
 	gateway  *Gateway
 	computer *computer
-	reader   *computerconnection.Reader
-	writer   *computerconnection.Writer
+	reader   *connectionrecord.Reader
+	writer   *connectionrecord.Writer
 	url      string
 }
 
@@ -133,12 +133,12 @@ func newFixtureLogging(t *testing.T, logger *slog.Logger) *fixture {
 	backend := httptest.NewServer(mux)
 	t.Cleanup(backend.Close)
 	rdb := goredis.NewClient(&goredis.Options{Addr: miniredis.RunT(t).Addr()})
-	gateway := NewGateway(computerprivatev1connect.NewConnectionServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, backend.URL, connecthttp.WithReadMaxBytes(0)))), computerconnection.NewWriter(rdb), computerconnection.NewReader(rdb), Replica{Name: "replica-a", Endpoint: "192.0.2.1:8085", ControlToken: "control", TargetVersion: "0.3.0"}, logger)
+	gateway := NewGateway(computerprivatev1connect.NewConnectionServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, backend.URL, connecthttp.WithReadMaxBytes(0)))), connectionrecord.NewWriter(rdb), connectionrecord.NewReader(rdb), Replica{Name: "replica-a", Endpoint: "192.0.2.1:8085", ControlToken: "control", TargetVersion: "0.3.0"}, logger)
 	front := http.NewServeMux()
 	front.HandleFunc("GET /computer/v1/connect", gateway.ServeConnect)
 	server := httptest.NewServer(front)
 	t.Cleanup(server.Close)
-	return &fixture{gateway: gateway, computer: stand, reader: computerconnection.NewReader(rdb), writer: computerconnection.NewWriter(rdb), url: "ws" + strings.TrimPrefix(server.URL, "http") + "/computer/v1/connect"}
+	return &fixture{gateway: gateway, computer: stand, reader: connectionrecord.NewReader(rdb), writer: connectionrecord.NewWriter(rdb), url: "ws" + strings.TrimPrefix(server.URL, "http") + "/computer/v1/connect"}
 }
 
 func (f *fixture) dial(t *testing.T, credential string) (*websocket.Conn, *http.Response, error) {

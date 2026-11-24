@@ -15,7 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
+	"github.com/talgent-work/workbench/internal/business/computergateway/connectionrecord"
 )
 
 const (
@@ -39,7 +39,7 @@ const FileIdle = 30 * time.Second
 
 // connections reads which replica holds a Computer's connection.
 type connections interface {
-	Lookup(ctx context.Context, computerID string) (computerconnection.Connection, bool, error)
+	Lookup(ctx context.Context, computerID string) (connectionrecord.Connection, bool, error)
 }
 
 // ServeRelay serves the execd API of one Work on a Managed Computer: through

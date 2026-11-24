@@ -1,14 +1,16 @@
-// Package computerconnection is the published contract for the Computer
-// Gateway's connection records: which Gateway replica holds a
-// Managed Computer's one outbound connection, and where to forward to it.
-// The Gateway writes the record; Computer and the execution port only read
-// it here. A record lives while its connection heartbeats; a replica that
-// stops abruptly leaves it to expire.
-package computerconnection
+// Package connectionrecord is the Computer Gateway's connection records:
+// which Gateway replica holds a Managed Computer's one outbound connection,
+// and where to forward to it. The Gateway writes and reads them here. A
+// record lives while its connection heartbeats; a replica that stops
+// abruptly leaves it to expire.
+//
+// The record is published in the shared Redis: other modules read whether a
+// Computer's key exists, and nothing else, to tell whether the Computer holds
+// a connection now. The key and TTL are that published contract.
+package connectionrecord
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -55,23 +57,6 @@ func (r *Reader) Lookup(ctx context.Context, computerID string) (Connection, boo
 	replica, _ := values[1].(string)
 	endpoint, _ := values[2].(string)
 	return Connection{ID: id, Replica: replica, Endpoint: endpoint}, true, nil
-}
-
-// Connected tells which of the Computers hold a connection now.
-func (r *Reader) Connected(ctx context.Context, computerIDs []string) (map[string]bool, error) {
-	pipe := r.rdb.Pipeline()
-	checks := make([]*goredis.IntCmd, len(computerIDs))
-	for i, id := range computerIDs {
-		checks[i] = pipe.Exists(ctx, Key(id))
-	}
-	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, goredis.Nil) {
-		return nil, oops.Wrap(err)
-	}
-	connected := make(map[string]bool, len(computerIDs))
-	for i, id := range computerIDs {
-		connected[id] = checks[i].Val() == 1
-	}
-	return connected, nil
 }
 
 // Refresh is what a heartbeat found of its connection's record.

@@ -18,7 +18,7 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
-	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
+	"github.com/talgent-work/workbench/internal/business/computergateway/connectionrecord"
 	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 )
 
@@ -68,7 +68,7 @@ func newGateway(lc fx.Lifecycle, config Config, client *http.Client, rdb *goredi
 			return next(ctx, spec)
 		}
 	}))
-	gateway := NewGateway(computers, computerconnection.NewWriter(rdb), computerconnection.NewReader(rdb), Replica{Name: config.Replica, Endpoint: config.Endpoint, ControlToken: config.ControlToken, TargetVersion: config.ReleaseVersion}, logger)
+	gateway := NewGateway(computers, connectionrecord.NewWriter(rdb), connectionrecord.NewReader(rdb), Replica{Name: config.Replica, Endpoint: config.Endpoint, ControlToken: config.ControlToken, TargetVersion: config.ReleaseVersion}, logger)
 	lc.Append(fx.StopHook(gateway.Stop))
 	return gateway, nil
 }
