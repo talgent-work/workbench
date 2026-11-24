@@ -9,6 +9,7 @@ require (
 
 require (
 	connectrpc.com/connect/v2 v2.0.2
+	connectrpc.com/grpchealth/v2 v2.0.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.45.0
 	github.com/Masterminds/semver/v3 v3.3.0
 	github.com/alicebob/miniredis/v2 v2.37.0
@@ -35,8 +36,6 @@ require (
 	github.com/twmb/franz-go v1.22.2
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.45.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.45.0
 	go.opentelemetry.io/otel/metric v1.47.0
 	go.opentelemetry.io/otel/sdk v1.45.0
 	go.opentelemetry.io/otel/sdk/metric v1.45.0
@@ -56,7 +55,6 @@ require (
 )
 
 require (
-	connectrpc.com/grpchealth/v2 v2.0.0 // indirect
 	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect

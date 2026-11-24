@@ -4,9 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
-
-	"github.com/talgent-work/workbench/internal/pkg/configvalidation"
 
 	"gopkg.in/yaml.v3"
 )
@@ -62,7 +61,7 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 // applied by the constructors, not the caller.
 type Option struct {
 	// RedisAddr is the Redis host:port (e.g. "redis:6379"). Required.
-	RedisAddr string `yaml:"redis-addr" toml:"redis-addr" json:"redis-addr" validate:"notblank"`
+	RedisAddr string `yaml:"redis-addr" toml:"redis-addr" json:"redis-addr"`
 
 	// RedisPassword is optional.
 	RedisPassword string `yaml:"redis-password" toml:"redis-password" json:"redis-password"`
@@ -108,8 +107,8 @@ func (cfg Option) WithTaskCheckInterval(interval time.Duration) Option {
 }
 
 func (cfg Option) Validate() error {
-	if err := configvalidation.Struct(cfg); err != nil {
-		return err
+	if strings.TrimSpace(cfg.RedisAddr) == "" {
+		return fmt.Errorf("taskqueue: redis-addr is required")
 	}
 	low, high := cfg.RetryDelayMin.Duration(), cfg.RetryDelayMax.Duration()
 	if low < 0 || high < 0 || (low == 0) != (high == 0) || low > high {
