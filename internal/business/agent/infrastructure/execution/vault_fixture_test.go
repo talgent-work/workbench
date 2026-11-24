@@ -9,6 +9,8 @@ import (
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"xorm.io/xorm"
+
+	"github.com/talgent-work/workbench/internal/pkg/database"
 )
 
 // Normal management responses needed by the pre-existing allocation, deletion
@@ -92,7 +94,12 @@ func (f *vaultFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func fixtureSandboxCredentials(engine *xorm.Engine, db *jimuxorm.DB, s *Sandboxes) *SandboxCredentials {
-	return &SandboxCredentials{engine: engine, lifecycle: s.client, models: s.config.Models, records: records{db: db}, http: http.DefaultClient, transport: "encrypted-network"}
+	// A test without a database never takes the lock.
+	var locks *database.AdvisoryLocks
+	if engine != nil {
+		locks = database.NewAdvisoryLocks(engine.DB().DB)
+	}
+	return &SandboxCredentials{locks: locks, lifecycle: s.client, models: s.config.Models, records: records{db: db}, http: http.DefaultClient, transport: "encrypted-network"}
 }
 
 // admitting is the holding check of an execution that still admits every

@@ -1,6 +1,6 @@
 //go:build integration
 
-package database
+package database_test
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -34,9 +35,9 @@ func TestModulesKeepDatabasesIndependent(t *testing.T) {
 		}
 		databaseNames[name] = parsed.DBName
 		options = append(options,
-			fx.Supply(fx.Annotate(Option{DSN: parsed.FormatDSN()}, fx.ResultTags(`name:"`+name+`"`))),
-			Module(name),
-			fx.Module("business."+name, Bind(name), fx.Invoke(func(db *jimuxorm.DB, transactor transaction.Transactor) error {
+			fx.Supply(fx.Annotate(database.Option{DSN: parsed.FormatDSN()}, fx.ResultTags(`name:"`+name+`"`))),
+			database.Module(name),
+			fx.Module("business."+name, database.Bind(name), fx.Invoke(func(db *jimuxorm.DB, transactor transaction.Transactor) error {
 				dbs[name] = db
 				return transactor.Within(t.Context(), func(ctx context.Context) error {
 					session, err := db.Session(ctx)

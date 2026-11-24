@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/pkg/database"
+
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -84,7 +86,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	}))
 	t.Cleanup(dispatchServer.Close)
 	provider, _, external := sandboxClient(t)
-	credentials, err := NewSandboxCredentials(db, jdb, provider.client, provider.config.Models, http.DefaultClient, "encrypted-network")
+	credentials, err := NewSandboxCredentials(database.NewAdvisoryLocks(db.DB().DB), jdb, provider.client, provider.config.Models, http.DefaultClient, "encrypted-network")
 	require.NoError(t, err)
 	policy, err := provider.networkPolicy(ctx)
 	require.NoError(t, err)

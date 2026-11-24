@@ -56,8 +56,10 @@ func (o Option) Validate() error {
 	return nil
 }
 
-// Open connects one database and verifies it answers.
-func Open(option Option, logger *slog.Logger) (*jimuxorm.DB, *xorm.Engine, error) {
+// Open connects one database and verifies it answers. Its engine stays
+// inside: statements run through the go-jimu DB, and the advisory locks are
+// the only other use of its pool.
+func Open(option Option, logger *slog.Logger) (*jimuxorm.DB, *AdvisoryLocks, error) {
 	if err := option.Validate(); err != nil {
 		return nil, nil, err
 	}
@@ -82,7 +84,7 @@ func Open(option Option, logger *slog.Logger) (*jimuxorm.DB, *xorm.Engine, error
 		return nil, nil, err
 	}
 	logger.Info("mysql connected")
-	return db, engine, nil
+	return db, NewAdvisoryLocks(pool.DB), nil
 }
 
 // Module opens the database named name; process composition supplies its
@@ -106,7 +108,7 @@ func Bind(name string) fx.Option {
 	tag := nameTag(name)
 	return fx.Provide(
 		fx.Annotate(func(db *jimuxorm.DB) *jimuxorm.DB { return db }, fx.ParamTags(tag)),
-		fx.Annotate(func(engine *xorm.Engine) *xorm.Engine { return engine }, fx.ParamTags(tag)),
+		fx.Annotate(func(locks *AdvisoryLocks) *AdvisoryLocks { return locks }, fx.ParamTags(tag)),
 		fx.Annotate(func(t transaction.Transactor) transaction.Transactor { return t }, fx.ParamTags(tag)),
 		fx.Private,
 	)

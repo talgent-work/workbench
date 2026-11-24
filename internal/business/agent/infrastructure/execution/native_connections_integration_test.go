@@ -21,6 +21,7 @@ import (
 	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 	"golang.org/x/net/websocket"
 	"xorm.io/xorm"
@@ -206,7 +207,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 // management endpoint production preparation requires.
 func attachNativeCredentials(t *testing.T, db *xorm.Engine, p *Provisioning, lifecycle *lifecycleFixture) {
 	t.Helper()
-	credentials, err := NewSandboxCredentials(db, p.db, p.sandboxes.client, p.sandboxes.config.Models, p.credentials.http, "encrypted-network")
+	credentials, err := NewSandboxCredentials(database.NewAdvisoryLocks(db.DB().DB), p.db, p.sandboxes.client, p.sandboxes.config.Models, p.credentials.http, "encrypted-network")
 	require.NoError(t, err)
 	p.credentials = credentials
 	policy, err := p.sandboxes.networkPolicy(context.Background())

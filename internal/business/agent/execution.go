@@ -24,7 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes"
-	"xorm.io/xorm"
 )
 
 type ExecutionClientConfig struct {
@@ -187,8 +186,8 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		},
 		newExecutionSandboxes,
 		newExecutionLifecycle,
-		func(engine *xorm.Engine, db *jimuxorm.DB, client *sdk.LifecycleClient, models command.PlatformCatalogPort, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
-			return execution.NewSandboxCredentials(engine, db, client, models, http.DefaultClient, cfg.CredentialTransport)
+		func(locks *database.AdvisoryLocks, db *jimuxorm.DB, client *sdk.LifecycleClient, models command.PlatformCatalogPort, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
+			return execution.NewSandboxCredentials(locks, db, client, models, http.DefaultClient, cfg.CredentialTransport)
 		},
 		pkgkubernetes.NewClientset,
 		newManagedEnvironment,

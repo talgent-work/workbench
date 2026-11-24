@@ -2,7 +2,6 @@ package execution
 
 import (
 	"context"
-	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +16,7 @@ import (
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"xorm.io/xorm"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 )
 
 // CredentialManagementPort is the upstream egress API port.
@@ -28,9 +27,7 @@ const CredentialManagementPort = 18080
 // The repository and service credentials it delivers are those Application
 // supplied from Marketplace with each delivery; it calls no other authority.
 type SandboxCredentials struct {
-	// engine lends withLock the physical connection its advisory lock
-	// belongs to.
-	engine    *xorm.Engine
+	locks     *database.AdvisoryLocks
 	lifecycle *sdk.LifecycleClient
 	models    command.PlatformCatalogPort
 	// records checks every delivery against its execution's facts.
@@ -40,8 +37,8 @@ type SandboxCredentials struct {
 	now       func() time.Time
 }
 
-func NewSandboxCredentials(engine *xorm.Engine, db *jimuxorm.DB, lifecycle *sdk.LifecycleClient, models command.PlatformCatalogPort, client *http.Client, transport string) (*SandboxCredentials, error) {
-	if engine == nil || db == nil || lifecycle == nil || models == nil || client == nil {
+func NewSandboxCredentials(locks *database.AdvisoryLocks, db *jimuxorm.DB, lifecycle *sdk.LifecycleClient, models command.PlatformCatalogPort, client *http.Client, transport string) (*SandboxCredentials, error) {
+	if locks == nil || db == nil || lifecycle == nil || models == nil || client == nil {
 		return nil, errors.New("agent: credential persistence, platform catalog and management client required")
 	}
 	// encrypted-network is enabled only by deployment that verifies its actual
@@ -51,38 +48,17 @@ func NewSandboxCredentials(engine *xorm.Engine, db *jimuxorm.DB, lifecycle *sdk.
 	}
 	h := *client
 	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	c := &SandboxCredentials{engine: engine, lifecycle: lifecycle, models: models, records: records{db: db}, http: &h, transport: transport}
+	c := &SandboxCredentials{locks: locks, lifecycle: lifecycle, models: models, records: records{db: db}, http: &h, transport: transport}
 	return c, nil
 }
 
 // withLock serializes preparation with reclamation across controlplane replicas.
-// MySQL advisory locks belong to a physical connection, not a pooled session.
-// Cleanup uses its own deadline so cancellation cannot return a locked connection.
 func (c *SandboxCredentials) withLock(ctx context.Context, id string, work func() error) error {
-	conn, err := c.engine.DB().Conn(ctx)
-	if err != nil {
-		return errors.New("agent: credential reconciliation connection unavailable")
-	}
-	defer conn.Close()
-	key := "vault:" + storageKey(id)[:48]
-	var acquired int
-	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, 0)", key).Scan(&acquired); err != nil {
-		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		return errors.New("agent: credential reconciliation lock unavailable")
-	}
-	if acquired != 1 {
+	err := c.locks.Hold(ctx, "vault:"+storageKey(id)[:48], work)
+	if errors.Is(err, database.ErrLockHeld) {
 		return errEnvironmentConflict
 	}
-	defer func() {
-		release, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		var released int
-		if err := conn.QueryRowContext(release, "SELECT RELEASE_LOCK(?)", key).Scan(&released); err != nil || released != 1 {
-			// sql.Conn.Raw's ErrBadConn retires the physical connection and its locks.
-			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		}
-	}()
-	return work()
+	return err
 }
 
 // errSupplyTemporarilyUnavailable means Marketplace could not supply a
