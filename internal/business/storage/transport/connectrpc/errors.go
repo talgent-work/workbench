@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
-	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 
 	"connectrpc.com/connect/v2"
 
@@ -53,41 +52,41 @@ func mapError(err error) error {
 	case errors.Is(err, domain.ErrSpaceTokenRejected):
 		return connect.NewError(connect.CodePermissionDenied, err.Error()).WithCause(err)
 	case errors.Is(err, application.ErrSourceNotFound):
-		return storageerror.New(connect.CodeNotFound, storageprivatev1.ErrorReason_ERROR_REASON_SOURCE_NOT_FOUND, err)
+		return refusal(connect.CodeNotFound, storageprivatev1.ErrorReason_ERROR_REASON_SOURCE_NOT_FOUND, err)
 	case errors.Is(err, application.ErrFileNotFound), errors.Is(err, domain.ErrShareLinkNotFound), errors.Is(err, domain.ErrShareLinkRevoked):
-		return storageerror.New(connect.CodeNotFound, storageprivatev1.ErrorReason_ERROR_REASON_FILE_NOT_FOUND, err)
+		return refusal(connect.CodeNotFound, storageprivatev1.ErrorReason_ERROR_REASON_FILE_NOT_FOUND, err)
 	case errors.Is(err, application.ErrNameTaken):
-		return storageerror.New(connect.CodeAlreadyExists, storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN, err)
+		return refusal(connect.CodeAlreadyExists, storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN, err)
 	case errors.Is(err, application.ErrInvalidSource):
-		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_SOURCE, err)
+		return refusal(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_SOURCE, err)
 	case errors.Is(err, application.ErrInvalidWorkspacePath):
-		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_WORKSPACE_PATH, err)
+		return refusal(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_WORKSPACE_PATH, err)
 	case errors.Is(err, domain.ErrInvalidFileName), errors.Is(err, domain.ErrInvalidPreviewKey):
-		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_NAME, err)
+		return refusal(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_NAME, err)
 	case errors.Is(err, domain.ErrInvalidLocator):
-		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_LOCATOR, err)
+		return refusal(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_LOCATOR, err)
 	case errors.Is(err, domain.ErrMappingOutsidePrefix):
-		return storageerror.New(connect.CodePermissionDenied, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX, err)
+		return refusal(connect.CodePermissionDenied, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX, err)
 	case errors.Is(err, domain.ErrMappingOverlaps):
-		return storageerror.New(connect.CodeAlreadyExists, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OVERLAPS, err)
+		return refusal(connect.CodeAlreadyExists, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OVERLAPS, err)
 	case errors.Is(err, domain.ErrGrantedReadWrite):
-		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_GRANTED_READ_WRITE, err)
+		return refusal(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_GRANTED_READ_WRITE, err)
 	case errors.Is(err, domain.ErrBackendNotMappable):
-		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_BACKEND_NOT_MAPPABLE, err)
+		return refusal(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_BACKEND_NOT_MAPPABLE, err)
 	case errors.Is(err, domain.ErrDirectoryMapped):
-		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED, err)
+		return refusal(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED, err)
 	case errors.Is(err, application.ErrInvalidRequest), errors.Is(err, domain.ErrActorRequired), errors.Is(err, domain.ErrFileWriterRequired),
 		errors.Is(err, domain.ErrInvalidContentPath), errors.Is(err, domain.ErrInvalidMountPoint), errors.Is(err, domain.ErrInvalidWorkspaceLayout),
 		errors.Is(err, domain.ErrInvalidMappedPath):
-		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST, err)
+		return refusal(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST, err)
 	case errors.Is(err, domain.ErrDirectoryNotOpen):
-		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN, err)
+		return refusal(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN, err)
 	case errors.Is(err, domain.ErrDirectoryNotAllocated):
-		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED, err)
+		return refusal(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED, err)
 	case errors.Is(err, domain.ErrDirectoryReclaimed):
-		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED, err)
+		return refusal(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED, err)
 	case errors.Is(err, domain.ErrPermanentDirectory):
-		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_PERMANENT_DIRECTORY, err)
+		return refusal(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_PERMANENT_DIRECTORY, err)
 	case errors.Is(err, domain.ErrConcurrentModification):
 		return connect.NewError(connect.CodeAborted, err.Error()).WithCause(err)
 	default:

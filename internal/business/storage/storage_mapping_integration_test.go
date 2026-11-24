@@ -16,7 +16,7 @@ import (
 	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/internal/pkg/storageerror"
+	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
 )
 
 // requireSameFile asserts that the view shows the Directory's file itself,
@@ -95,13 +95,13 @@ func TestReadWriteGrantsAndMappingsExcludeEachOther(t *testing.T) {
 	_, err = f.app.AcquireMounts(t.Context(), "work-1", []application.MountRequest{{Directory: shown}})
 	require.ErrorIs(t, err, domain.ErrDirectoryMapped)
 	_, err = f.mounts.AcquireMounts(f.as("a"), &storageprivatev1.AcquireMountsRequest{WorkId: "work-1", Mounts: []*storageprivatev1.MountRequest{{Directory: locatedProto(shown)}}})
-	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED, storageerror.ReasonOf(err))
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED, storageconnect.ReasonOf(err))
 	_, err = f.app.AcquireMounts(t.Context(), "work-1", []application.MountRequest{{Directory: shown, ReadOnly: true}})
 	require.NoError(t, err, "a mapped Directory still mounts read-only")
 
 	// Over the contract, each refusal carries its reason.
 	_, err = f.rpc.MapDirectory(f.as("k"), &storageprivatev1.MapDirectoryRequest{Directory: locatedProto(written), Path: "view/p1/case-3/outputs"})
-	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_GRANTED_READ_WRITE, storageerror.ReasonOf(err))
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_GRANTED_READ_WRITE, storageconnect.ReasonOf(err))
 }
 
 // Overlapping paths, NAS Directories and reclaimed Directories are refused,
@@ -113,7 +113,7 @@ func TestMappingsRefuseOverlapsTheNASAndReclaimedDirectories(t *testing.T) {
 		if err == nil {
 			return storageprivatev1.ErrorReason_ERROR_REASON_UNSPECIFIED
 		}
-		return storageerror.ReasonOf(err)
+		return storageconnect.ReasonOf(err)
 	}
 	inputs := fileSpace(named("inputs", "subject", "case:4"))
 	artifacts := fileSpace(named("artifacts", "subject", "case:4"))
@@ -173,10 +173,10 @@ func TestTheCallersPrefixBoundsItsMappings(t *testing.T) {
 		"a caller without a prefix": {"i", "view/p1/case-5/elsewhere"},
 	} {
 		_, err := f.rpc.MapDirectory(f.as(call.token), &storageprivatev1.MapDirectoryRequest{Directory: locatedProto(inputs), Path: call.path})
-		require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX, storageerror.ReasonOf(err), name)
+		require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX, storageconnect.ReasonOf(err), name)
 	}
 	_, err = f.rpc.UnmapDirectory(f.as("k"), &storageprivatev1.UnmapDirectoryRequest{Directory: locatedProto(inputs).GetDirectory(), Path: "other/case-5/inputs"})
-	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX, storageerror.ReasonOf(err))
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX, storageconnect.ReasonOf(err))
 	_, err = f.rpc.MapDirectory(f.as("nobody"), &storageprivatev1.MapDirectoryRequest{Directory: locatedProto(inputs), Path: "view/p9/x"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 	require.NoDirExists(t, f.viewOf("view/p9"))

@@ -1,4 +1,4 @@
-package storageerror
+package connectrpc
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 
 // A refusal keeps its reason across the wire format of its details.
 func TestReasonTravelsWithTheRefusal(t *testing.T) {
-	refused := New(connect.CodeNotFound, storageprivatev1.ErrorReason_ERROR_REASON_SOURCE_NOT_FOUND, errors.New("missing"))
+	refused := refusal(connect.CodeNotFound, storageprivatev1.ErrorReason_ERROR_REASON_SOURCE_NOT_FOUND, errors.New("missing"))
 	wire := connect.NewError(refused.Code(), refused.Message()).WithRemote()
 	for _, detail := range refused.Details() {
 		wire = wire.WithDetail(detail)

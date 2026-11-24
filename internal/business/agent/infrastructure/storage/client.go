@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
 // Config locates Storage and the control token Agent presents to it.
@@ -150,7 +149,7 @@ func (c *Client) WorkspaceFileLink(ctx context.Context, workspace domain.Workspa
 
 // workspaceError maps Storage's refusals to Agent's workspace outcomes.
 func workspaceError(operation string, err error) error {
-	switch storageerror.ReasonOf(err) {
+	switch refusalReason(err) {
 	case storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED:
 		return domain.ErrWorkspaceNotCreated
 	case storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED:

@@ -11,7 +11,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
 // agentOf is a request of the agent Principal for work.
@@ -54,15 +53,15 @@ func TestDirectoryRefusalsCarryTheirReason(t *testing.T) {
 		domain.ErrDirectoryMapped:       storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED,
 		domain.ErrInvalidMappedPath:     storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST,
 	} {
-		require.Equal(t, want, storageerror.ReasonOf(mapError(err)), err.Error())
+		require.Equal(t, want, ReasonOf(mapError(err)), err.Error())
 	}
 }
 
 // An Artifact command refuses in the public contract's vocabulary: a reason
 // it names keeps its detail, a private-only one travels without one.
 func TestArtifactRefusalsSpeakThePublicContract(t *testing.T) {
-	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN, storageerror.ReasonOf(mapArtifactError(application.ErrNameTaken)))
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN, ReasonOf(mapArtifactError(application.ErrNameTaken)))
 	refused := mapArtifactError(domain.ErrPermanentDirectory)
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(refused))
-	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_UNSPECIFIED, storageerror.ReasonOf(refused))
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_UNSPECIFIED, ReasonOf(refused))
 }
