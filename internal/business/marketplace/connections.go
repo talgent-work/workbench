@@ -25,7 +25,7 @@ import (
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 	"github.com/talgent-work/workbench/internal/pkg/database"
-	"github.com/talgent-work/workbench/internal/pkg/eventlog"
+	"github.com/talgent-work/workbench/internal/pkg/eventbus"
 )
 
 type ConnectionConfig struct {
@@ -73,10 +73,10 @@ var ConnectionsModule = fx.Module(
 		},
 		fx.As(new(domain.ProviderAuthorizationRepository)), fx.As(new(application.AuthorizationStore)),
 	)),
-	fx.Provide(newCredentialEventDispatcher, fx.Private),
+	fx.Provide(eventbus.NewDispatcher, fx.Private),
 	fx.Provide(messagepublisher.NewCredentialChangePublisher),
 	fx.Invoke(func(lc fx.Lifecycle, events *domainevent.InMemoryDispatcher, publisher *messagepublisher.CredentialChangePublisher, logger *slog.Logger) {
-		events.Subscribe(eventlog.Handler(logger, publisher))
+		events.Subscribe(eventbus.Logging(logger, publisher))
 		lc.Append(fx.Hook{OnStop: events.Close})
 	}),
 	fx.Provide(func(catalog *providerCatalog, cfg scmgithub.Config, cipher application.CredentialCipher, httpClient *http.Client) (application.ProviderAuthorizationPorts, error) {
@@ -149,12 +149,3 @@ var ConnectionsModule = fx.Module(
 		connectserver.Mount(params.Mux, server)
 	}),
 )
-
-func newCredentialEventDispatcher(logger *slog.Logger) *domainevent.InMemoryDispatcher {
-	return domainevent.NewDispatcher(
-		domainevent.WithHandlerTimeout(30*time.Second),
-		domainevent.WithUnhandledEventHandler(func(unhandled domainevent.UnhandledContext) {
-			logger.Debug("orphan event (no subscriber)", slog.String("event_kind", string(unhandled.Event.Kind())))
-		}),
-	)
-}

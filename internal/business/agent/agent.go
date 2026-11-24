@@ -9,7 +9,7 @@ import (
 
 	domainevent "github.com/go-jimu/components/ddd/event"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
-	"github.com/talgent-work/workbench/internal/pkg/eventlog"
+	"github.com/talgent-work/workbench/internal/pkg/eventbus"
 
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
@@ -70,7 +70,7 @@ var Module = fx.Module("domain.agent",
 	fx.Provide(fx.Annotate(agentaccount.NewClient, fx.As(new(command.AccountPort)))),
 	fx.Provide(standalonework.New, fx.Private),
 	fx.Provide(newLiveStreamPublisher, newWorkStateUpdates),
-	fx.Provide(newDomainEventDispatcher, fx.Private),
+	fx.Provide(eventbus.NewDispatcher, fx.Private),
 	fx.Provide(func(d *domainevent.InMemoryDispatcher) domainevent.Dispatcher { return d }, fx.Private),
 	fx.Provide(eventhandler.NewWorkAccessWithdrawals),
 	fx.Provide(eventhandler.NewWorkClosures),
@@ -201,20 +201,11 @@ type eventSubscriptions struct {
 }
 
 func subscribeEventHandlers(in eventSubscriptions) {
-	in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Withdrawals))
-	in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Closures))
+	in.Dispatcher.Subscribe(eventbus.Logging(in.Logger, in.Withdrawals))
+	in.Dispatcher.Subscribe(eventbus.Logging(in.Logger, in.Closures))
 	for _, policy := range []domainevent.Handler{in.Begin, in.Exit, in.Retire, in.Reports, in.Checkouts, in.Releases} {
-		in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, policy))
+		in.Dispatcher.Subscribe(eventbus.Logging(in.Logger, policy))
 	}
-}
-
-func newDomainEventDispatcher(logger *slog.Logger) *domainevent.InMemoryDispatcher {
-	return domainevent.NewDispatcher(
-		domainevent.WithHandlerTimeout(30*time.Second),
-		domainevent.WithUnhandledEventHandler(func(unhandled domainevent.UnhandledContext) {
-			logger.Debug("orphan event (no subscriber)", slog.String("event_kind", string(unhandled.Event.Kind())))
-		}),
-	)
 }
 
 func registerDomainEventLifecycle(lc fx.Lifecycle, d *domainevent.InMemoryDispatcher, logger *slog.Logger) {
