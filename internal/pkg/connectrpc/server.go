@@ -150,6 +150,9 @@ func (s *HTTPServer) Address() string { return s.listener.Address() }
 // so an address error fails startup, then reports readiness SERVING and
 // serves in an owned goroutine.
 func (s *HTTPServer) Start(context.Context) error {
+	if err := s.option.Validate(); err != nil {
+		return err
+	}
 	s.mounted.Do(func() {
 		connecthttp.Mount(s.mux, s.rpc, connecthttp.WithConditionalOptions(func(spec connect.Spec) []connecthttp.Option {
 			return []connecthttp.Option{connecthttp.WithReadMaxBytes(s.procedures[spec.Procedure].readMaxBytes)}

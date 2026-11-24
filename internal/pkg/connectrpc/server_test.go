@@ -64,6 +64,13 @@ func TestServerReportsReadinessUntilShutdown(t *testing.T) {
 	require.NotContains(t, logs.String(), "grpc.health.v1.Health")
 }
 
+// A listener without an address fails startup instead of binding a random
+// port.
+func TestServerStartRequiresAnAddress(t *testing.T) {
+	server := connectrpc.New(connectrpc.Option{}, discardLogger(), noShutdown{})
+	require.ErrorContains(t, server.Start(context.Background()), "addr is required")
+}
+
 // An address that cannot be bound fails startup instead of a later goroutine.
 func TestServerStartFailsWhenTheAddressIsTaken(t *testing.T) {
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
