@@ -87,6 +87,8 @@ github.com/go-jimu/contrib/message/kafka v0.5.10 h1:jfCvw0V63rL25VqTDlvEAjMsKTev
 github.com/go-jimu/contrib/message/kafka v0.5.10/go.mod h1:awmOUBRmAbkbLJfXBdsqD3qJ7U6VzeggEh2RQgnGDXk=
 github.com/go-jimu/contrib/taskqueue/asynq v0.5.9 h1:SpirAAcQ4JwNhh9tnD+36TcPk23DenHTxAs1imwcEhA=
 github.com/go-jimu/contrib/taskqueue/asynq v0.5.9/go.mod h1:YzyzLEQcMrPyE6HBk4hyY5DNhg1RpqKlbDWCI+rGMnU=
+github.com/go-jimu/contrib/taskqueue/asynq v0.5.11 h1:hzx8p88Asr1G7YElTrXn1L8HTAimndbWMD3GpLKWtsU=
+github.com/go-jimu/contrib/taskqueue/asynq v0.5.11/go.mod h1:YzyzLEQcMrPyE6HBk4hyY5DNhg1RpqKlbDWCI+rGMnU=
 github.com/go-jimu/contrib/transaction/xorm v0.5.10 h1:aO7IuZdV8Ov2dQufZNKJ9CdFJqF+zWvHJhHoAaU4e4I=
 github.com/go-jimu/contrib/transaction/xorm v0.5.10/go.mod h1:VnjHWkAVSYKNguJxVQR/Wow8ydHDvcCrQ1RoFfoTaPA=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=

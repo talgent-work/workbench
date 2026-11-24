@@ -18,8 +18,8 @@ import (
 func recoveryQueues(t *testing.T) fx.Option {
 	t.Helper()
 	redis := recoveryRedis(t)
-	queue := func(name string, workers int) pkgtaskqueue.Config {
-		return pkgtaskqueue.Config{RedisAddr: redis.address, RedisDB: redis.db, QueueName: name, WorkerConcurrency: workers, RetryDelayMin: pkgtaskqueue.Duration(50 * time.Millisecond), RetryDelayMax: pkgtaskqueue.Duration(500 * time.Millisecond), ShutdownTimeout: pkgtaskqueue.Duration(5 * time.Second)}.
+	queue := func(name string, workers int) pkgtaskqueue.Option {
+		return pkgtaskqueue.Option{RedisAddr: redis.address, RedisDB: redis.db, QueueName: name, WorkerConcurrency: workers, RetryDelayMin: pkgtaskqueue.Duration(50 * time.Millisecond), RetryDelayMax: pkgtaskqueue.Duration(500 * time.Millisecond), ShutdownTimeout: pkgtaskqueue.Duration(5 * time.Second)}.
 			// Idle workers poll every second by default; each recovery hop and each
 			// restart would wait out that poll.
 			WithTaskCheckInterval(10 * time.Millisecond)
@@ -31,8 +31,15 @@ func recoveryQueues(t *testing.T) fx.Option {
 			fx.Annotated{Name: agent.RecoveryQueue, Target: queue("agent-recovery", 4)},
 			fx.Annotated{Name: agent.PreparationQueue, Target: queue("agent-preparation", 2)},
 		),
-		pkgtaskqueue.NamedModule(agent.RecoveryQueue),
-		pkgtaskqueue.NamedModule(agent.PreparationQueue),
+		pkgtaskqueue.Module(agent.RecoveryQueue),
+		pkgtaskqueue.Module(agent.PreparationQueue),
+		// The process runs its lanes through pkg.Lifecycle; the fixture runs
+		// only these.
+		fx.Invoke(fx.Annotate(func(lc fx.Lifecycle, lanes []*pkgtaskqueue.Lane) {
+			for _, lane := range lanes {
+				lc.Append(fx.StartStopHook(lane.Start, lane.Stop))
+			}
+		}, fx.ParamTags("", pkgtaskqueue.LanesTag))),
 	)
 }
 

@@ -58,10 +58,9 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Config is the runtime configuration for the taskqueue producer, worker, and
-// scheduler adapters. Populated from the fx Option tree; defaults are applied
-// by the constructors, not the caller.
-type Config struct {
+// Option configures one lane: its Redis, worker and scheduler. Defaults are
+// applied by the constructors, not the caller.
+type Option struct {
 	// RedisAddr is the Redis host:port (e.g. "redis:6379"). Required.
 	RedisAddr string `yaml:"redis-addr" toml:"redis-addr" json:"redis-addr" validate:"notblank"`
 
@@ -99,16 +98,16 @@ type Config struct {
 	taskCheckInterval time.Duration
 }
 
-// WithTaskCheckInterval returns cfg with idle workers polling every interval,
+// WithTaskCheckInterval returns the option with idle workers polling every interval,
 // for tests that run tasks and restart workers within a few hundred
 // milliseconds. Deployments keep the provider's default; configuration files
 // cannot set it.
-func (cfg Config) WithTaskCheckInterval(interval time.Duration) Config {
+func (cfg Option) WithTaskCheckInterval(interval time.Duration) Option {
 	cfg.taskCheckInterval = interval
 	return cfg
 }
 
-func (cfg Config) Validate() error {
+func (cfg Option) Validate() error {
 	if err := configvalidation.Struct(cfg); err != nil {
 		return err
 	}

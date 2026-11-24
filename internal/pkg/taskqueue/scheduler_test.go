@@ -11,19 +11,19 @@ import (
 
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"github.com/hibiken/asynq"
-	"go.uber.org/fx/fxtest"
 )
 
-// Periodic scheduler wiring must use the component PeriodicTaskScheduler
+// A lane's scheduler uses the component PeriodicTaskScheduler
 // contract so duplicate semantic names fail before startup creates ambiguity.
-func TestNewPeriodicTaskScheduler_RejectsDuplicatePeriodicTaskNames(t *testing.T) {
+func TestNewLane_RejectsDuplicatePeriodicTaskNames(t *testing.T) {
 	periodic := newRuntimePeriodicTask(t, "taskqueue.periodic.duplicate")
 
-	_, err := NewPeriodicTaskScheduler(
-		fxtest.NewLifecycle(t),
-		Config{RedisAddr: "127.0.0.1:6379", QueueName: "maintenance"},
+	_, err := NewLane(
+		"maintenance",
+		Option{RedisAddr: "127.0.0.1:6379", QueueName: "maintenance"},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		PeriodicTaskIn{PeriodicTasks: []componenttaskqueue.PeriodicTask{periodic, periodic}},
+		nil,
+		[]componenttaskqueue.PeriodicTask{periodic, periodic},
 	)
 
 	if !errors.Is(err, componenttaskqueue.ErrDuplicatePeriodicTask) {
@@ -31,23 +31,24 @@ func TestNewPeriodicTaskScheduler_RejectsDuplicatePeriodicTaskNames(t *testing.T
 	}
 }
 
-// Periodic scheduler wiring should accept component PeriodicTask values without
+// A lane accepts component PeriodicTask values without
 // exposing asynq scheduler types or provider schedule strings to callers.
-func TestNewPeriodicTaskScheduler_AcceptsComponentPeriodicTasks(t *testing.T) {
+func TestNewLane_AcceptsComponentPeriodicTasks(t *testing.T) {
 	periodic := newRuntimePeriodicTask(t, "taskqueue.periodic.accepted")
 
-	scheduler, err := NewPeriodicTaskScheduler(
-		fxtest.NewLifecycle(t),
-		Config{RedisAddr: "127.0.0.1:6379", QueueName: "maintenance"},
+	lane, err := NewLane(
+		"maintenance",
+		Option{RedisAddr: "127.0.0.1:6379", QueueName: "maintenance"},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		PeriodicTaskIn{PeriodicTasks: []componenttaskqueue.PeriodicTask{periodic}},
+		nil,
+		[]componenttaskqueue.PeriodicTask{periodic},
 	)
 
 	if err != nil {
-		t.Fatalf("new periodic task scheduler: %v", err)
+		t.Fatalf("new lane: %v", err)
 	}
-	if scheduler == nil {
-		t.Fatal("scheduler should be provided")
+	if lane.scheduler == nil {
+		t.Fatal("a lane with periodic tasks has a scheduler")
 	}
 }
 
@@ -68,10 +69,7 @@ func TestPeriodicSchedulerLogsRefusedEnqueue(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			var logs bytes.Buffer
-			handler := schedulerOpts(slog.New(slog.NewTextHandler(&logs, nil))).EnqueueErrorHandler
-			if handler == nil {
-				t.Fatal("the scheduler has no handler for refused enqueues")
-			}
+			handler := logRefusedEnqueue(slog.New(slog.NewTextHandler(&logs, nil)))
 			handler(asynq.NewTask("taskqueue.periodic.v1", nil), tc.opts, asynq.ErrDuplicateTask)
 			handler(asynq.NewTask("taskqueue.periodic.v1", nil), tc.opts, errors.New("redis down"))
 			line := logs.String()

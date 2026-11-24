@@ -30,7 +30,6 @@ import (
 	runtimequeue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
-	"go.uber.org/fx/fxtest"
 )
 
 func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
@@ -51,11 +50,8 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 	// An idle worker polls every 10ms instead of every second, so it picks up
 	// each run, and stops, without waiting out the provider's idle poll.
 	redisAddr, redisDB := middlewaretest.RedisDB(t)
-	cfg := runtimequeue.Config{RedisAddr: redisAddr, RedisDB: redisDB, WorkerConcurrency: 2, QueueName: "marketplace-maintenance"}.WithTaskCheckInterval(10 * time.Millisecond)
-	producer := fxtest.NewLifecycle(t)
-	enqueuer := runtimequeue.NewEnqueuer(producer, cfg, slog.Default())
-	producer.RequireStart()
-	defer producer.RequireStop()
+	cfg := runtimequeue.Option{RedisAddr: redisAddr, RedisDB: redisDB, WorkerConcurrency: 2, QueueName: "marketplace-maintenance"}.WithTaskCheckInterval(10 * time.Millisecond)
+	enqueuer := runtimequeue.NewEnqueuer(cfg, slog.Default())
 	app := application.NewCatalogSynchronization(runs, synchronizer, enqueuer, time.Minute, true, logger)
 	handler := connecttest.Handler(func(s *connect.Server) {
 		marketplaceprivatev1connect.RegisterSynchronizationServiceHandler(s, transport.NewSynchronizationHandler(app, "fixture-platform-token"))
@@ -101,11 +97,10 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 		require.Equal(t, first.Run.Id, run.Id)
 		require.False(t, run.Force)
 	}
-	worker := fxtest.NewLifecycle(t)
-	_, err = runtimequeue.NewWorker(worker, cfg, logger, runtimequeue.ProcessorIn{Processors: []taskqueue.Processor{taskprocessor.NewSynchronizationProcessor(app)}})
+	lane, err := runtimequeue.NewLane(cfg.QueueName, cfg, logger, []taskqueue.Processor{taskprocessor.NewSynchronizationProcessor(app)}, nil)
 	require.NoError(t, err)
-	worker.RequireStart()
-	defer worker.RequireStop()
+	require.NoError(t, lane.Start(t.Context()))
+	defer func() { require.NoError(t, lane.Stop(context.Background())) }()
 	waitResult := func(id string) *marketplaceprivatev1.SynchronizationRun {
 		var run *marketplaceprivatev1.SynchronizationRun
 		require.Eventually(t, func() bool {

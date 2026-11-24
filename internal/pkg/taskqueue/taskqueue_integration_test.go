@@ -29,9 +29,9 @@ const testTaskCheckInterval = 10 * time.Millisecond
 // enqueue would silence every later wake of that key.
 func TestTaskqueue_ArchivedKeyIsReplacedWhilePendingKeyAbsorbs(t *testing.T) {
 	addr, db := middlewaretest.RedisDB(t)
-	cfg := Config{RedisAddr: addr, RedisDB: db, WorkerConcurrency: 1, QueueName: DefaultQueueName}
+	cfg := Option{RedisAddr: addr, RedisDB: db, WorkerConcurrency: 1, QueueName: DefaultQueueName}
 	lc := fxtest.NewLifecycle(t)
-	enqueuer := NewEnqueuer(lc, cfg, slog.Default())
+	enqueuer := NewEnqueuer(cfg, slog.Default())
 	lc.RequireStart()
 	defer lc.RequireStop()
 	inspector := asynq.NewInspector(redisConn(cfg))

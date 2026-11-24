@@ -57,21 +57,21 @@ type Option struct {
 	// WorkbenchMySQL holds Storage's and Marketplace's records.
 	WorkbenchMySQL       database.Option     `name:"workbench" json:"workbench-mysql" toml:"workbench-mysql" yaml:"workbench-mysql"`
 	AccountMySQL         database.Option     `name:"account" json:"account-mysql" toml:"account-mysql" yaml:"account-mysql"`
-	MarketplaceTaskQueue pkgtaskqueue.Config `name:"marketplace" json:"marketplace-taskqueue" toml:"marketplace-taskqueue" yaml:"marketplace-taskqueue"`
+	MarketplaceTaskQueue pkgtaskqueue.Option `name:"marketplace" json:"marketplace-taskqueue" toml:"marketplace-taskqueue" yaml:"marketplace-taskqueue"`
 	// Agent recovery runs on its own workers: preparation may hold a worker for
 	// minutes, so it has its own lane and concurrency.
-	AgentTaskQueue            pkgtaskqueue.Config  `name:"agent" json:"agent-taskqueue" toml:"agent-taskqueue" yaml:"agent-taskqueue"`
-	AgentPreparationTaskQueue pkgtaskqueue.Config  `name:"agent-preparation" json:"agent-preparation-taskqueue" toml:"agent-preparation-taskqueue" yaml:"agent-preparation-taskqueue"`
+	AgentTaskQueue            pkgtaskqueue.Option  `name:"agent" json:"agent-taskqueue" toml:"agent-taskqueue" yaml:"agent-taskqueue"`
+	AgentPreparationTaskQueue pkgtaskqueue.Option  `name:"agent-preparation" json:"agent-preparation-taskqueue" toml:"agent-preparation-taskqueue" yaml:"agent-preparation-taskqueue"`
 	Marketplace               marketplace.Config   `json:"marketplace" toml:"marketplace" yaml:"marketplace"`
 	Account                   account.Config       `json:"account" toml:"account" yaml:"account"`
 	Kubernetes                pkgkubernetes.Config `json:"kubernetes" toml:"kubernetes" yaml:"kubernetes"`
 	// Storage renders Preview Copies on its own lane; its concurrency is the
 	// conversions one replica runs at once.
-	StoragePreviewTaskQueue     pkgtaskqueue.Config `name:"storage-preview" json:"storage-preview-taskqueue" toml:"storage-preview-taskqueue" yaml:"storage-preview-taskqueue"`
-	StorageMaintenanceTaskQueue pkgtaskqueue.Config `name:"storage-maintenance" json:"storage-maintenance-taskqueue" toml:"storage-maintenance-taskqueue" yaml:"storage-maintenance-taskqueue"`
+	StoragePreviewTaskQueue     pkgtaskqueue.Option `name:"storage-preview" json:"storage-preview-taskqueue" toml:"storage-preview-taskqueue" yaml:"storage-preview-taskqueue"`
+	StorageMaintenanceTaskQueue pkgtaskqueue.Option `name:"storage-maintenance" json:"storage-maintenance-taskqueue" toml:"storage-maintenance-taskqueue" yaml:"storage-maintenance-taskqueue"`
 	// Account rotates signing keys hourly and forgets replaced refresh
 	// secrets daily.
-	AccountMaintenanceTaskQueue pkgtaskqueue.Config `name:"account-maintenance" json:"account-maintenance-taskqueue" toml:"account-maintenance-taskqueue" yaml:"account-maintenance-taskqueue"`
+	AccountMaintenanceTaskQueue pkgtaskqueue.Option `name:"account-maintenance" json:"account-maintenance-taskqueue" toml:"account-maintenance-taskqueue" yaml:"account-maintenance-taskqueue"`
 	// ClickHouse holds Work message streams, read for Work turn results.
 	ClickHouse pkgclickhouse.Config `json:"clickhouse" toml:"clickhouse" yaml:"clickhouse"`
 
@@ -148,14 +148,14 @@ func appOptions(opt Option) []fx.Option {
 		agent.ApplicationRemovalModule,
 		agent.TurnResultModule,
 		trace.Module,
+		pkgtaskqueue.Module(marketplace.Queue),
+		pkgtaskqueue.Module(storage.PreviewQueue),
+		pkgtaskqueue.Module(storage.MaintenanceQueue),
+		pkgtaskqueue.Module(account.MaintenanceQueue),
+		pkgtaskqueue.Module(agent.RecoveryQueue),
+		pkgtaskqueue.Module(agent.PreparationQueue),
+		// The listener, consumers and task lanes stop before any business
+		// module closes its Domain Event dispatcher.
 		internalpkg.Lifecycle,
-		// Task lanes follow the business modules, so they stop first (fx
-		// stops in reverse: tasks, then the listener and messages).
-		pkgtaskqueue.NamedModule(marketplace.Queue),
-		pkgtaskqueue.NamedModule(storage.PreviewQueue),
-		pkgtaskqueue.NamedModule(storage.MaintenanceQueue),
-		pkgtaskqueue.NamedModule(account.MaintenanceQueue),
-		pkgtaskqueue.NamedModule(agent.RecoveryQueue),
-		pkgtaskqueue.NamedModule(agent.PreparationQueue),
 	}
 }

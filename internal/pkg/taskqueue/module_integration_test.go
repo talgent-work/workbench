@@ -18,7 +18,7 @@ import (
 
 // Identical task type names in separate runtime owners must neither collide
 // during registration nor dispatch through a different owner's processor.
-func TestNamedModulesIsolateWorkersAndSchemas(t *testing.T) {
+func TestModulesIsolateLanesAndSchemas(t *testing.T) {
 	addr, db := middlewaretest.RedisDB(t)
 	type receipt struct{ owner, payload string }
 	processed := make(chan receipt, 3)
@@ -28,8 +28,8 @@ func TestNamedModulesIsolateWorkersAndSchemas(t *testing.T) {
 	for _, name := range []string{"storage", "execution", "sandbox"} {
 		tag := fmt.Sprintf(`name:%q`, name)
 		options = append(options,
-			fx.Supply(fx.Annotate(Config{RedisAddr: addr, RedisDB: db, QueueName: name, WorkerConcurrency: 1, taskCheckInterval: testTaskCheckInterval}, fx.ResultTags(tag))),
-			NamedModule(name),
+			fx.Supply(fx.Annotate(Option{RedisAddr: addr, RedisDB: db, QueueName: name, WorkerConcurrency: 1, taskCheckInterval: testTaskCheckInterval}, fx.ResultTags(tag))),
+			Module(name),
 			fx.Module("business."+name,
 				Bind(name),
 				fx.Provide(fx.Annotate(func() componenttaskqueue.Processor {
@@ -46,6 +46,11 @@ func TestNamedModulesIsolateWorkersAndSchemas(t *testing.T) {
 			),
 		)
 	}
+	options = append(options, fx.Invoke(fx.Annotate(func(lc fx.Lifecycle, lanes []*Lane) {
+		for _, lane := range lanes {
+			lc.Append(fx.StartStopHook(lane.Start, lane.Stop))
+		}
+	}, fx.ParamTags("", LanesTag))))
 	app := fxtest.New(t, options...)
 	app.RequireStart()
 	defer app.RequireStop()

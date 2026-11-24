@@ -8,7 +8,7 @@ import (
 )
 
 func TestRetryDelayDoublesFromTheMinimumUpToTheMaximum(t *testing.T) {
-	delay := retryDelay(Config{RetryDelayMin: Duration(time.Second), RetryDelayMax: Duration(time.Minute)})
+	delay := retryDelay(Option{RetryDelayMin: Duration(time.Second), RetryDelayMax: Duration(time.Minute)})
 	for attempt, want := range map[int]time.Duration{0: time.Second, 1: 2 * time.Second, 3: 8 * time.Second, 6: time.Minute, 1000: time.Minute} {
 		got := delay(attempt, nil, nil)
 		if got > want || got < want-want/4 {
@@ -19,13 +19,13 @@ func TestRetryDelayDoublesFromTheMinimumUpToTheMaximum(t *testing.T) {
 
 func TestRetryDelayKeepsTheProviderDefaultWithoutARange(t *testing.T) {
 	task := asynq.NewTask("taskqueue.retry.v1", nil)
-	if got := retryDelay(Config{})(5, nil, task); got <= 0 {
+	if got := retryDelay(Option{})(5, nil, task); got <= 0 {
 		t.Fatalf("default delay = %v", got)
 	}
 }
 
 func TestRetryDelayRangeMustBeOrderedAndComplete(t *testing.T) {
-	for name, cfg := range map[string]Config{
+	for name, cfg := range map[string]Option{
 		"minimum only": {RedisAddr: "redis:6379", RetryDelayMin: Duration(time.Second)},
 		"inverted":     {RedisAddr: "redis:6379", RetryDelayMin: Duration(time.Minute), RetryDelayMax: Duration(time.Second)},
 	} {
@@ -33,7 +33,7 @@ func TestRetryDelayRangeMustBeOrderedAndComplete(t *testing.T) {
 			t.Fatalf("%s: invalid retry delay range accepted", name)
 		}
 	}
-	if err := (Config{RedisAddr: "redis:6379", RetryDelayMin: Duration(time.Second), RetryDelayMax: Duration(time.Minute)}).Validate(); err != nil {
+	if err := (Option{RedisAddr: "redis:6379", RetryDelayMin: Duration(time.Second), RetryDelayMax: Duration(time.Minute)}).Validate(); err != nil {
 		t.Fatal(err)
 	}
 }

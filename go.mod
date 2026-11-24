@@ -16,7 +16,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.13
 	github.com/go-jimu/components v0.12.13
 	github.com/go-jimu/contrib/message/kafka v0.5.10
-	github.com/go-jimu/contrib/taskqueue/asynq v0.5.9
+	github.com/go-jimu/contrib/taskqueue/asynq v0.5.11
 	github.com/go-jimu/contrib/transaction/xorm v0.5.10
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/go-sql-driver/mysql v1.8.1

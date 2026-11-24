@@ -14,6 +14,7 @@ import (
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
+	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -23,7 +24,7 @@ import (
 // failure, so a task needs at least one retry for this to apply.
 func TestKeyedTaskPendingAndRetryLater(t *testing.T) {
 	addr, db := middlewaretest.RedisDB(t)
-	cfg := Config{RedisAddr: addr, RedisDB: db, WorkerConcurrency: 1, QueueName: DefaultQueueName, RetryDelayMin: Duration(100 * time.Millisecond), RetryDelayMax: Duration(200 * time.Millisecond), taskCheckInterval: testTaskCheckInterval}
+	cfg := Option{RedisAddr: addr, RedisDB: db, WorkerConcurrency: 1, QueueName: DefaultQueueName, RetryDelayMin: Duration(100 * time.Millisecond), RetryDelayMax: Duration(200 * time.Millisecond), taskCheckInterval: testTaskCheckInterval}
 	lc := fxtest.NewLifecycle(t)
 	var attempts atomic.Int32
 	release := make(chan struct{})
@@ -34,9 +35,12 @@ func TestKeyedTaskPendingAndRetryLater(t *testing.T) {
 		<-release
 		return nil
 	})
-	enqueuer := NewEnqueuer(lc, cfg, slog.Default())
-	tasks := NewKeyedTasks(lc, cfg)
-	_, err := NewWorker(lc, cfg, slog.New(slog.NewTextHandler(os.Stderr, nil)), ProcessorIn{Processors: []componenttaskqueue.Processor{processor}})
+	enqueuer := NewEnqueuer(cfg, slog.Default())
+	tasks := NewKeyedTasks(cfg)
+	lane, err := NewLane(cfg.QueueName, cfg, slog.New(slog.NewTextHandler(os.Stderr, nil)), []componenttaskqueue.Processor{processor}, nil)
+	if err == nil {
+		lc.Append(fx.StartStopHook(lane.Start, lane.Stop))
+	}
 	require.NoError(t, err)
 	lc.RequireStart()
 	defer lc.RequireStop()

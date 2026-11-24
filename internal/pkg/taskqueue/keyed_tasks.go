@@ -1,12 +1,10 @@
 package taskqueue
 
 import (
-	"context"
 	"errors"
 	"strings"
 
 	"github.com/hibiken/asynq"
-	"go.uber.org/fx"
 )
 
 // KeyedTasks tells whether the task holding a key still waits or runs. A
@@ -15,11 +13,11 @@ type KeyedTasks struct {
 	inspector *asynq.Inspector
 }
 
-// NewKeyedTasks reads the tasks of the queues on the configured Redis.
-func NewKeyedTasks(lc fx.Lifecycle, cfg Config) *KeyedTasks {
-	inspector := asynq.NewInspector(redisConn(cfg))
-	lc.Append(fx.Hook{OnStop: func(context.Context) error { return inspector.Close() }})
-	return &KeyedTasks{inspector: inspector}
+// NewKeyedTasks reads the tasks of the queues on the lane's Redis. Its
+// connections stay open until the process exits, so Domain Event handlers
+// still read while the process drains.
+func NewKeyedTasks(option Option) *KeyedTasks {
+	return &KeyedTasks{inspector: asynq.NewInspector(redisConn(option))}
 }
 
 // Pending says the task keyed key in queue, the lane its definition names,
