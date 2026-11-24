@@ -1,0 +1,16 @@
+# The runtime is built on go-jimu: its fixes reach the services only through an
+# upgrade, so every go-jimu release opens one.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: daily
+    allow:
+      - dependency-name: github.com/go-jimu/*
+    groups:
+      go-jimu:
+        patterns:
+          - github.com/go-jimu/*
+    commit-message:
+      prefix: fix(deps)
