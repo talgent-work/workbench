@@ -8,8 +8,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/go-jimu/components/transaction"
+
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
-	"github.com/talgent-work/workbench/internal/pkg/transaction"
 )
 
 // ClusterQuota supplies, for a Cloud, whether its cluster's quota fits one
@@ -102,13 +103,14 @@ func NewApplication(deps Dependencies) *Application {
 }
 
 // attempts bounds retries of a change that lost a concurrent update of the
-// same Computer.
+// same Computer, or whose transaction the database rolled back on a lock
+// conflict.
 const attempts = 8
 
 func retryConcurrent(ctx context.Context, fn func() error) error {
 	var err error
 	for range attempts {
-		if err = fn(); !errors.Is(err, domain.ErrConcurrentModification) {
+		if err = fn(); !errors.Is(err, domain.ErrConcurrentModification) && !errors.Is(err, transaction.ErrConflict) {
 			return err
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {

@@ -6,13 +6,13 @@ import (
 	"time"
 
 	domainevent "github.com/go-jimu/components/ddd/event"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
-	"xorm.io/xorm"
 )
 
 // committedWorks decorates persistence at composition, after the transaction.
@@ -46,7 +46,7 @@ func newWorkStateUpdates(reader query.WorkQueryRepository, stream eventhandler.L
 func newLiveStreamPublisher(conn *pkgnats.LazyConn) (eventhandler.LiveStreamPort, error) {
 	return infrastructure.NewLiveStreamPublisher(conn, connectrpc.WorkStateFrame)
 }
-func newCommittedWorks(db *xorm.Engine, now func() time.Time, updates *workStateUpdates, events domainevent.Dispatcher) *committedWorks {
+func newCommittedWorks(db *jimuxorm.DB, now func() time.Time, updates *workStateUpdates, events domainevent.Dispatcher) *committedWorks {
 	return &committedWorks{AgentWorkRepository: infrastructure.NewAgentWorkRepository(db, now), workStateUpdates: updates, events: events}
 }
 

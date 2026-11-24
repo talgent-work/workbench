@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -31,10 +32,10 @@ import (
 func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	db := f.db
+	db, jdb := f.db, f.jdb
 	t.Cleanup(func() { _ = db.Close() })
 	id := f.committedCreation(t)
-	reader := infrastructure.NewWorkQueryRepository(db)
+	reader := infrastructure.NewWorkQueryRepository(jdb)
 	initial := f.request.InitialExecution
 	preparation, found, err := reader.GetWorkPreparation(ctx, id)
 	require.NoError(t, err)
@@ -54,7 +55,7 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 
 	// A repeat outside creation is answered from the Work: whatever
 	// repository choices it names, it returns the original Work unchanged.
-	prepare := command.NewPrepareWorkExecutionHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels())
+	prepare := command.NewPrepareWorkExecutionHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels())
 	repeat := *initial
 	repeat.WorkID, repeat.RequestID, repeat.Input.ID, repeat.Input.Text = id, uuid.NewString(), uuid.NewString(), "another task"
 	confirmed, err := prepare.Handle(ctx, repeat)
@@ -73,7 +74,7 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 	reportExit(t, work, domain.HarnessExit{ExitCode: 1})
 	reportReleased(t, work)
 	require.NoError(t, f.sessions.Save(ctx, work))
-	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	_, err = restart.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()})
 	require.NoError(t, err)
 	restarted, _, err := reader.GetWorkPreparation(ctx, id)
@@ -90,7 +91,9 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
-	reader = infrastructure.NewWorkQueryRepository(db)
+	jdb, err = jimuxorm.New(db)
+	require.NoError(t, err)
+	reader = infrastructure.NewWorkQueryRepository(jdb)
 	submitted, err = reader.ListSubmittedPreparations(ctx, "", 1)
 	require.NoError(t, err)
 	require.Len(t, submitted, 1, "first admission remains discoverable after delivery and reconnect")
@@ -118,7 +121,7 @@ func TestClosedWorkKeepsItsFirstStart(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := t.Context()
 	id := f.committedCreation(t)
-	reader := infrastructure.NewWorkQueryRepository(f.db)
+	reader := infrastructure.NewWorkQueryRepository(f.jdb)
 	original, found, err := reader.GetWorkPreparation(ctx, id)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -131,14 +134,16 @@ func TestClosedWorkKeepsItsFirstStart(t *testing.T) {
 	other, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = other.Close() })
-	retained, found, err := infrastructure.NewWorkQueryRepository(other).GetWorkPreparation(ctx, id)
+	otherDB, err := jimuxorm.New(other)
+	require.NoError(t, err)
+	retained, found, err := infrastructure.NewWorkQueryRepository(otherDB).GetWorkPreparation(ctx, id)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, original.RequestID, retained.RequestID)
 	require.Equal(t, original.WorkBranch, retained.WorkBranch)
 	require.Equal(t, original.Checkouts, retained.Checkouts)
 	require.Empty(t, retained.Input, "a closed Work holds no initial task input")
-	closed, err := infrastructure.NewAgentWorkRepository(other, time.Now).Get(ctx, id)
+	closed, err := infrastructure.NewAgentWorkRepository(otherDB, time.Now).Get(ctx, id)
 	require.NoError(t, err)
 	_, pending := closed.PendingInitialTaskInput()
 	require.False(t, pending)
@@ -147,7 +152,7 @@ func TestClosedWorkKeepsItsFirstStart(t *testing.T) {
 func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
 	ctx := t.Context()
-	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
 	type result struct {
 		workID string
 		err    error
@@ -182,7 +187,7 @@ func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	var id string
 	for id = range ids {
 	}
-	preparation, found, err := infrastructure.NewWorkQueryRepository(f.db).GetWorkPreparation(ctx, id)
+	preparation, found, err := infrastructure.NewWorkQueryRepository(f.jdb).GetWorkPreparation(ctx, id)
 	require.NoError(t, err)
 	require.True(t, found)
 	var expected command.PrepareWorkExecution

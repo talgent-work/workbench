@@ -15,6 +15,7 @@ import (
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
+	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -41,7 +42,7 @@ func (b *lockedBuffer) String() string {
 // last cause.
 func TestATaskThatKeepsFailingEndsAtItsCeilingWithAnErrorLog(t *testing.T) {
 	addr, db := middlewaretest.RedisDB(t)
-	cfg := Config{RedisAddr: addr, RedisDB: db, WorkerConcurrency: 1, QueueName: DefaultQueueName, RetryDelayMin: Duration(50 * time.Millisecond), RetryDelayMax: Duration(100 * time.Millisecond), taskCheckInterval: testTaskCheckInterval}
+	cfg := Option{RedisAddr: addr, RedisDB: db, WorkerConcurrency: 1, QueueName: DefaultQueueName, RetryDelayMin: Duration(50 * time.Millisecond), RetryDelayMax: Duration(100 * time.Millisecond), taskCheckInterval: testTaskCheckInterval}
 	lc := fxtest.NewLifecycle(t)
 	var attempts atomic.Int32
 	processor := componenttaskqueue.NewProcessor(testTaskType, func(context.Context, componenttaskqueue.Task) error {
@@ -49,8 +50,11 @@ func TestATaskThatKeepsFailingEndsAtItsCeilingWithAnErrorLog(t *testing.T) {
 		return errors.New("downstream refused")
 	})
 	logs := &lockedBuffer{}
-	enqueuer := NewEnqueuer(lc, cfg, slog.Default())
-	_, err := NewWorker(lc, cfg, slog.New(slog.NewJSONHandler(logs, nil)), ProcessorIn{Processors: []componenttaskqueue.Processor{processor}})
+	enqueuer := NewEnqueuer(cfg, slog.Default())
+	lane, err := NewLane(cfg.QueueName, cfg, slog.New(slog.NewJSONHandler(logs, nil)), []componenttaskqueue.Processor{processor}, nil)
+	if err == nil {
+		lc.Append(fx.StartStopHook(lane.Start, lane.Stop))
+	}
 	require.NoError(t, err)
 	lc.RequireStart()
 	defer lc.RequireStop()

@@ -16,10 +16,12 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"connectrpc.com/connect/v2"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 	"golang.org/x/net/websocket"
 	"xorm.io/xorm"
@@ -60,8 +62,10 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, lifecycle := sandboxClient(t)
-	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	provisioning := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	input := request()
 	input.TraceAttributes = map[string]string{"talgent.case_id": "case-native-connection"}
@@ -115,7 +119,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
-	pass := func() error { return steps.pass(ctx, db) }
+	pass := func() error { return steps.pass(ctx, jdb) }
 	lifecycle.mu.Lock()
 	lifecycle.createPending = true
 	lifecycle.mu.Unlock()
@@ -125,7 +129,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, long, "a pending sandbox is not prepared")
 	require.NoError(t, pass())
-	pending, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
+	pending, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, sandboxID, pending.SandboxID)
 	require.False(t, pending.CredentialsDelivered, "allocation acceptance is not environment readiness")
@@ -134,7 +138,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	lifecycle.info.Status.State = "Running"
 	lifecycle.mu.Unlock()
 	require.Error(t, pass(), "the first delivery, preparation and the Harness start, then an unavailable Dispatcher")
-	recovering, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
+	recovering, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, recovering.CredentialsDelivered)
 	require.True(t, recovering.PreparationRecovering)
@@ -144,7 +148,9 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "changed-binary"}, time.Now, nil)
+	jdb, err = jimuxorm.New(db)
+	require.NoError(t, err)
+	provisioning = NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "changed-binary"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	receiver.provisioning = provisioning
 	receiver.unavailable = false
@@ -156,7 +162,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.Equal(t, 1, preparations, "installation must not repeat during Dispatcher reconnection")
 	require.Len(t, receiver.requests, 2)
 	require.Equal(t, receiver.requests[0], receiver.requests[1])
-	after, found, err := latestAllocation(ctx, provisioning.db, input.WorkID)
+	after, found, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.True(t, after.CredentialsDelivered)
@@ -164,7 +170,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.Equal(t, receiver.requests[0].ProcessId, after.ProcessID)
 	require.Equal(t, record.LaunchCommand, after.LaunchCommand)
 	require.NoError(t, pass())
-	unchanged, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
+	unchanged, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, after.UpdatedAt, unchanged.UpdatedAt, "healthy observation must not rewrite the execution's record")
 	require.Equal(t, after.Version, unchanged.Version)
@@ -187,7 +193,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.False(t, lost.Retired(), "the loss stays recoverable until its Work retires the execution")
 	require.NoError(t, steps.retire(ctx, input.WorkID, domain.RetiredByLoss, time.Now()))
 	require.NoError(t, pass())
-	after, _, err = latestAllocation(ctx, provisioning.db, input.WorkID)
+	after, _, err = latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.NotZero(t, after.DeletedAt)
 	require.NotZero(t, after.ReleasedAt, "nothing is left to delete")
@@ -201,7 +207,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 // management endpoint production preparation requires.
 func attachNativeCredentials(t *testing.T, db *xorm.Engine, p *Provisioning, lifecycle *lifecycleFixture) {
 	t.Helper()
-	credentials, err := NewSandboxCredentials(db, p.sandboxes.client, p.sandboxes.config.Models, p.credentials.http, "encrypted-network")
+	credentials, err := NewSandboxCredentials(database.NewAdvisoryLocks(db.DB().DB), p.db, p.sandboxes.client, p.sandboxes.config.Models, p.credentials.http, "encrypted-network")
 	require.NoError(t, err)
 	p.credentials = credentials
 	policy, err := p.sandboxes.networkPolicy(context.Background())

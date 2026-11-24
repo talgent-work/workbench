@@ -3,10 +3,7 @@
 package account_test
 
 import (
-	"io"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"connectrpc.com/connect/v2"
@@ -18,20 +15,20 @@ import (
 	accountpublicv1 "github.com/talgent-work/contracts/gen/go/account/public/v1"
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 	accountconnect "github.com/talgent-work/workbench/internal/business/account/transport/connectrpc"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // applicationOwnership serves Account's private Application Ownership Query
 // as the controlplane mounts it.
 func (h *harness) applicationOwnership() accountprivatev1connect.ApplicationOwnershipServiceClient {
 	h.t.Helper()
-	server := connectserver.New(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	accountprivatev1connect.RegisterApplicationOwnershipServiceHandler(server, accountconnect.NewApplicationOwnership(h.app))
-	mux := http.NewServeMux()
-	connectserver.Mount(mux, server)
-	rpc := httptest.NewServer(mux)
-	h.t.Cleanup(rpc.Close)
-	return accountprivatev1connect.NewApplicationOwnershipServiceClient(connect.NewClient(connecthttp.NewTransport(rpc.Client(), rpc.URL)))
+	address := connecttest.Serve(h.t, func(server connectrpc.Server) {
+		server.Register(func(s *connect.Server) {
+			accountprivatev1connect.RegisterApplicationOwnershipServiceHandler(s, accountconnect.NewApplicationOwnership(h.app))
+		})
+	})
+	return accountprivatev1connect.NewApplicationOwnershipServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address)))
 }
 
 // A trusted context learns an Application's name and its Application Owner,

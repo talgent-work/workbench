@@ -16,14 +16,15 @@ import (
 	"github.com/talgent-work/workbench/internal/business/trace"
 	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
-	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
-	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/messagebus"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 	pkgredis "github.com/talgent-work/workbench/internal/pkg/redis"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
+	"github.com/talgent-work/workbench/internal/pkg/telemetry"
 	"go.uber.org/fx"
 )
 
@@ -46,31 +47,31 @@ type Option struct {
 	AgentComputerPresence   agent.ComputerPresenceConfig   `json:"agent-computer-presence" yaml:"agent-computer-presence" toml:"agent-computer-presence"`
 	AgentApplicationRemoval agent.ApplicationRemovalConfig `json:"agent-application-removal" yaml:"agent-application-removal" toml:"agent-application-removal"`
 	fx.Out
-	Logger         sloghelper.Options   `json:"logger" toml:"logger" yaml:"logger"`
-	HTTP           pkghttpserver.Config `json:"http" toml:"http" yaml:"http"`
-	ExecutionMySQL pkgmysql.Config      `name:"execution" json:"execution-mysql" toml:"execution-mysql" yaml:"execution-mysql"`
-	Kafka          pkgkafka.Config      `json:"kafka" toml:"kafka" yaml:"kafka"`
-	NATS           pkgnats.Config       `json:"nats" toml:"nats" yaml:"nats"`
-	Redis          pkgredis.Config      `json:"redis" toml:"redis" yaml:"redis"`
+	Logger         sloghelper.Options `json:"logger" toml:"logger" yaml:"logger"`
+	HTTP           connectrpc.Option  `json:"http" toml:"http" yaml:"http"`
+	ExecutionMySQL database.Option    `name:"execution" json:"execution-mysql" toml:"execution-mysql" yaml:"execution-mysql"`
+	Kafka          messagebus.Option  `json:"kafka" toml:"kafka" yaml:"kafka"`
+	NATS           pkgnats.Config     `json:"nats" toml:"nats" yaml:"nats"`
+	Redis          pkgredis.Config    `json:"redis" toml:"redis" yaml:"redis"`
 
 	// WorkbenchMySQL holds Storage's and Marketplace's records.
-	WorkbenchMySQL       pkgmysql.Config     `name:"workbench" json:"workbench-mysql" toml:"workbench-mysql" yaml:"workbench-mysql"`
-	AccountMySQL         pkgmysql.Config     `name:"account" json:"account-mysql" toml:"account-mysql" yaml:"account-mysql"`
-	MarketplaceTaskQueue pkgtaskqueue.Config `name:"marketplace" json:"marketplace-taskqueue" toml:"marketplace-taskqueue" yaml:"marketplace-taskqueue"`
+	WorkbenchMySQL       database.Option     `name:"workbench" json:"workbench-mysql" toml:"workbench-mysql" yaml:"workbench-mysql"`
+	AccountMySQL         database.Option     `name:"account" json:"account-mysql" toml:"account-mysql" yaml:"account-mysql"`
+	MarketplaceTaskQueue pkgtaskqueue.Option `name:"marketplace" json:"marketplace-taskqueue" toml:"marketplace-taskqueue" yaml:"marketplace-taskqueue"`
 	// Agent recovery runs on its own workers: preparation may hold a worker for
 	// minutes, so it has its own lane and concurrency.
-	AgentTaskQueue            pkgtaskqueue.Config  `name:"agent" json:"agent-taskqueue" toml:"agent-taskqueue" yaml:"agent-taskqueue"`
-	AgentPreparationTaskQueue pkgtaskqueue.Config  `name:"agent-preparation" json:"agent-preparation-taskqueue" toml:"agent-preparation-taskqueue" yaml:"agent-preparation-taskqueue"`
+	AgentTaskQueue            pkgtaskqueue.Option  `name:"agent" json:"agent-taskqueue" toml:"agent-taskqueue" yaml:"agent-taskqueue"`
+	AgentPreparationTaskQueue pkgtaskqueue.Option  `name:"agent-preparation" json:"agent-preparation-taskqueue" toml:"agent-preparation-taskqueue" yaml:"agent-preparation-taskqueue"`
 	Marketplace               marketplace.Config   `json:"marketplace" toml:"marketplace" yaml:"marketplace"`
 	Account                   account.Config       `json:"account" toml:"account" yaml:"account"`
 	Kubernetes                pkgkubernetes.Config `json:"kubernetes" toml:"kubernetes" yaml:"kubernetes"`
 	// Storage renders Preview Copies on its own lane; its concurrency is the
 	// conversions one replica runs at once.
-	StoragePreviewTaskQueue     pkgtaskqueue.Config `name:"storage-preview" json:"storage-preview-taskqueue" toml:"storage-preview-taskqueue" yaml:"storage-preview-taskqueue"`
-	StorageMaintenanceTaskQueue pkgtaskqueue.Config `name:"storage-maintenance" json:"storage-maintenance-taskqueue" toml:"storage-maintenance-taskqueue" yaml:"storage-maintenance-taskqueue"`
+	StoragePreviewTaskQueue     pkgtaskqueue.Option `name:"storage-preview" json:"storage-preview-taskqueue" toml:"storage-preview-taskqueue" yaml:"storage-preview-taskqueue"`
+	StorageMaintenanceTaskQueue pkgtaskqueue.Option `name:"storage-maintenance" json:"storage-maintenance-taskqueue" toml:"storage-maintenance-taskqueue" yaml:"storage-maintenance-taskqueue"`
 	// Account rotates signing keys hourly and forgets replaced refresh
 	// secrets daily.
-	AccountMaintenanceTaskQueue pkgtaskqueue.Config `name:"account-maintenance" json:"account-maintenance-taskqueue" toml:"account-maintenance-taskqueue" yaml:"account-maintenance-taskqueue"`
+	AccountMaintenanceTaskQueue pkgtaskqueue.Option `name:"account-maintenance" json:"account-maintenance-taskqueue" toml:"account-maintenance-taskqueue" yaml:"account-maintenance-taskqueue"`
 	// ClickHouse holds Work message streams, read for Work turn results.
 	ClickHouse pkgclickhouse.Config `json:"clickhouse" toml:"clickhouse" yaml:"clickhouse"`
 
@@ -122,19 +123,13 @@ func appOptions(opt Option) []fx.Option {
 		fx.StopTimeout(30 * time.Second),
 		fx.Supply(opt),
 		internalpkg.LoggerModule,
-		internalpkg.MetricsModule("controlplane"),
-		pkgmysql.Module(storage.Database),
-		pkgmysql.Module("execution"),
-		pkgmysql.Module(account.Database),
+		telemetry.Module("controlplane"),
+		database.Module(storage.Database),
+		database.Module("execution"),
+		database.Module(account.Database),
 		internalpkg.RedisModule,
-		internalpkg.H2CClientModule,
-		internalpkg.KafkaProducerModule,
-		internalpkg.KafkaConsumerModule,
-		internalpkg.IntegrationPublisherModule,
-		// Agent runs its own consumers of Marketplace's credential changes,
-		// Storage's file changes, Computer's Desk seatings and Presence changes
-		// and Account's Application removals.
-		internalpkg.IntegrationPayloadModule,
+		connectrpc.Module,
+		messagebus.PublisherModule,
 		internalpkg.NATSLazyModule,
 		internalpkg.LazyClickHouseModule,
 		account.Module,
@@ -147,17 +142,20 @@ func appOptions(opt Option) []fx.Option {
 		agent.InputChangeModule,
 		agent.DeskAssignmentModule,
 		agent.ComputerPresenceModule,
+		// Agent runs its own consumers of Marketplace's credential changes,
+		// Storage's file changes, Computer's Desk seatings and Presence changes
+		// and Account's Application removals.
 		agent.ApplicationRemovalModule,
 		agent.TurnResultModule,
 		trace.Module,
-		// Task lanes follow the business modules, so they stop first (fx
-		// stops in reverse: HTTP, tasks, then messages).
-		pkgtaskqueue.NamedModule(marketplace.Queue),
-		pkgtaskqueue.NamedModule(storage.PreviewQueue),
-		pkgtaskqueue.NamedModule(storage.MaintenanceQueue),
-		pkgtaskqueue.NamedModule(account.MaintenanceQueue),
-		pkgtaskqueue.NamedModule(agent.RecoveryQueue),
-		pkgtaskqueue.NamedModule(agent.PreparationQueue),
-		internalpkg.HTTPModule,
+		pkgtaskqueue.Module(marketplace.Queue),
+		pkgtaskqueue.Module(storage.PreviewQueue),
+		pkgtaskqueue.Module(storage.MaintenanceQueue),
+		pkgtaskqueue.Module(account.MaintenanceQueue),
+		pkgtaskqueue.Module(agent.RecoveryQueue),
+		pkgtaskqueue.Module(agent.PreparationQueue),
+		// The listener, consumers and task lanes stop before any business
+		// module closes its Domain Event dispatcher.
+		internalpkg.Lifecycle,
 	}
 }

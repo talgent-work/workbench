@@ -31,7 +31,8 @@ These blocks appear in several processes and mean the same everywhere.
 |---|---|
 | `logger.level` | `debug`, `info`, `warn` or `error`; `${LOG_LEVEL:info}` |
 | `logger.output` | `console` for standard output, or a file path; `${LOG_OUTPUT:console}`. A file rotates by `logger.max_size` (MB, default 100), `max_age` (days), `max_backups`, `local_time`, `compress`. Logs are JSON. |
-| `http.addr` | The listen address of the process's HTTP and ConnectRPC server |
+| `http.addr` | The listen address of the process's one HTTP and ConnectRPC server. It also answers gRPC health checks (`grpc.health.v1`): readiness under the empty service name, liveness under `liveness`; the Kubernetes probes use them |
+| `http.shutdown-delay` | How long the server keeps serving after readiness turns `NOT_SERVING` on stop, before it drains; none when unset |
 | `*-mysql.dsn` | A MySQL DSN, `user:password@tcp(host:port)/database?charset=utf8mb4&parseTime=true` |
 | `*-mysql.max-open-conns`, `max-idle-conns`, `conn-max-lifetime`, `conn-max-idle-time`, `ping-timeout` | Connection pool; defaults 20, 5, `30m`, `5m`, `3s` |
 | `redis.addr`, `redis.password`, `redis.db` | Redis connection |
@@ -234,7 +235,6 @@ heartbeats its ownership in Redis and the others take over the Works of one that
 | `redis` | `${REDIS_ADDR:127.0.0.1:6379}`, `${REDIS_PASSWORD:}`, `${REDIS_DB:0}` | | Snapshots, delivery buffers and ownership |
 | `clickhouse.dsn` | `${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}` | service account | Where Work messages are recorded (`talgent_messages`, created at startup) |
 | `kafka.brokers` | `${KAFKA_BROKER:127.0.0.1:9092}` | | |
-| `integration-messages.consumer_group` | `${KAFKA_CONSUMER_GROUP:dispatcher-service}` | `dispatcher-service` | Its Kafka consumer group |
 | `nats.url` | `${NATS_URL:nats://localhost:4222}` | | Live output fan-out |
 | `ownership.ttl`, `heartbeat`, `scan` | `6s`, `2s`, `3s` | | A replica's liveness lasts `ttl` and is renewed every `heartbeat`; others check every `scan`. `ttl` exceeds two heartbeats. |
 | `ownership.snapshot-ttl` | `168h` | | How long snapshots are kept |

@@ -25,9 +25,14 @@ type Files interface {
 	Open(ctx context.Context, token string) (application.OpenedWorkspaceFile, error)
 }
 
+// Mux is where the endpoint is mounted.
+type Mux interface {
+	Handle(pattern string, handler http.Handler)
+}
+
 // Register mounts the endpoint on mux.
-func Register(mux *http.ServeMux, files Files, logger *slog.Logger) {
-	mux.HandleFunc("GET "+Path, func(w http.ResponseWriter, r *http.Request) {
+func Register(mux Mux, files Files, logger *slog.Logger) {
+	mux.Handle("GET "+Path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		opened, err := files.Open(r.Context(), r.URL.Query().Get("grant"))
 		if err != nil {
 			writeError(w, r, err, logger)
@@ -35,7 +40,7 @@ func Register(mux *http.ServeMux, files Files, logger *slog.Logger) {
 		}
 		defer opened.Content.Close()
 		serve(w, opened)
-	})
+	}))
 }
 
 // serve streams the file under its own name and the type its name gives,

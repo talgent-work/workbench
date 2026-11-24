@@ -6,11 +6,11 @@ import (
 	"errors"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	drivermysql "github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
 
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 var computerColumns = []string{"id", "kind", "owner_id", "name", "capacity", "occupied", "admission_policy", "waiting_line", "reachable", "unreachable_since", "talgent_computer_version", "claude_code_version", "claude_code_sandbox", "credential_digest", "credential_expires_at", "pending_credential_digest", "pending_credential_expires_at", "pending_credential_issued_at", "retired_credential_digest", "retired_credential_expires_at", "state", "version"}
@@ -18,19 +18,23 @@ var computerColumns = []string{"id", "kind", "owner_id", "name", "capacity", "oc
 // ComputerRepository persists Computers; it joins the Application
 // transaction the context is in.
 type ComputerRepository struct {
-	executors *pkgmysql.Executors
-	now       func() time.Time
+	db  *jimuxorm.DB
+	now func() time.Time
 }
 
 var _ domain.ComputerRepository = (*ComputerRepository)(nil)
 
-func NewComputerRepository(executors *pkgmysql.Executors, now func() time.Time) *ComputerRepository {
-	return &ComputerRepository{executors: executors, now: now}
+func NewComputerRepository(db *jimuxorm.DB, now func() time.Time) *ComputerRepository {
+	return &ComputerRepository{db: db, now: now}
 }
 
 func (r *ComputerRepository) Get(ctx context.Context, id string) (*domain.Computer, error) {
 	row := new(computerDO)
-	found, err := r.executors.Resolve(ctx).Cols(computerColumns...).Where("id = ? AND deleted_at = 0", id).Get(row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Cols(computerColumns...).Where("id = ? AND deleted_at = 0", id).Get(row)
 	if err != nil {
 		return nil, oops.With("operation", "computer.get").With("computer_id", id).Wrap(err)
 	}
@@ -49,7 +53,11 @@ func (r *ComputerRepository) FindByCredential(ctx context.Context, digest string
 	if digest == "" {
 		return nil, oops.With("operation", "computer.find_by_credential").Wrap(domain.ErrComputerNotFound)
 	}
-	found, err := r.executors.Resolve(ctx).Cols(computerColumns...).
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Cols(computerColumns...).
 		Where("(credential_digest = ? OR pending_credential_digest = ? OR retired_credential_digest = ?) AND kind = ? AND deleted_at = 0", digest, digest, digest, string(domain.KindManaged)).Get(row)
 	if err != nil {
 		return nil, oops.With("operation", "computer.find_by_credential").Wrap(err)
@@ -72,11 +80,14 @@ func (r *ComputerRepository) Save(ctx context.Context, computer *domain.Computer
 	if err != nil {
 		return oops.With("operation", "computer.encode").With("computer_id", computer.ID).Wrap(err)
 	}
-	executor := r.executors.Resolve(ctx)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return err
+	}
 	now := r.now().UnixMilli()
 	if computer.Version == 0 {
 		row.Version, row.CreatedAt, row.UpdatedAt = 1, now, now
-		affected, err := executor.Insert(row)
+		affected, err := session.Insert(row)
 		if err != nil {
 			if isDuplicate(err) {
 				return oops.With("operation", "computer.insert").With("computer_id", computer.ID).Wrap(domain.ErrConcurrentModification)
@@ -89,7 +100,7 @@ func (r *ComputerRepository) Save(ctx context.Context, computer *domain.Computer
 		return nil
 	}
 	row.UpdatedAt = now
-	affected, err := executor.Cols("name", "capacity", "occupied", "admission_policy", "waiting_line", "reachable", "unreachable_since", "talgent_computer_version", "claude_code_version", "claude_code_sandbox", "credential_digest", "credential_expires_at", "pending_credential_digest", "pending_credential_expires_at", "pending_credential_issued_at", "retired_credential_digest", "retired_credential_expires_at", "state", "updated_at").
+	affected, err := session.Cols("name", "capacity", "occupied", "admission_policy", "waiting_line", "reachable", "unreachable_since", "talgent_computer_version", "claude_code_version", "claude_code_sandbox", "credential_digest", "credential_expires_at", "pending_credential_digest", "pending_credential_expires_at", "pending_credential_issued_at", "retired_credential_digest", "retired_credential_expires_at", "state", "updated_at").
 		Incr("version").Where("id = ? AND version = ? AND deleted_at = 0", computer.ID, computer.Version).Update(row)
 	if err != nil {
 		return oops.With("operation", "computer.update").With("computer_id", computer.ID).Wrap(err)
@@ -105,19 +116,23 @@ var deskColumns = []string{"id", "work_id", "computer_id", "demand", "state", "s
 // DeskRepository persists Desks; it joins the Application transaction the
 // context is in.
 type DeskRepository struct {
-	executors *pkgmysql.Executors
-	now       func() time.Time
+	db  *jimuxorm.DB
+	now func() time.Time
 }
 
 var _ domain.DeskRepository = (*DeskRepository)(nil)
 
-func NewDeskRepository(executors *pkgmysql.Executors, now func() time.Time) *DeskRepository {
-	return &DeskRepository{executors: executors, now: now}
+func NewDeskRepository(db *jimuxorm.DB, now func() time.Time) *DeskRepository {
+	return &DeskRepository{db: db, now: now}
 }
 
 func (r *DeskRepository) Get(ctx context.Context, id string) (*domain.Desk, error) {
 	row := new(deskDO)
-	found, err := r.executors.Resolve(ctx).Cols(deskColumns...).Where("id = ? AND deleted_at = 0", id).Get(row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Cols(deskColumns...).Where("id = ? AND deleted_at = 0", id).Get(row)
 	if err != nil {
 		return nil, oops.With("operation", "desk.get").With("desk_id", id).Wrap(err)
 	}
@@ -139,11 +154,14 @@ func (r *DeskRepository) Save(ctx context.Context, desk *domain.Desk) error {
 	if err != nil {
 		return oops.With("operation", "desk.encode").With("desk_id", desk.ID).Wrap(err)
 	}
-	executor := r.executors.Resolve(ctx)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return err
+	}
 	now := r.now().UnixMilli()
 	if desk.Version == 0 {
 		row.Version, row.CreatedAt, row.UpdatedAt = 1, now, now
-		affected, err := executor.Insert(row)
+		affected, err := session.Insert(row)
 		if err != nil {
 			if isDuplicate(err) {
 				return oops.With("operation", "desk.insert").With("desk_id", desk.ID).Wrap(domain.ErrDeskTaken)
@@ -156,7 +174,7 @@ func (r *DeskRepository) Save(ctx context.Context, desk *domain.Desk) error {
 		return nil
 	}
 	row.UpdatedAt = now
-	affected, err := executor.Cols("state", "since", "updated_at").Incr("version").
+	affected, err := session.Cols("state", "since", "updated_at").Incr("version").
 		Where("id = ? AND version = ? AND deleted_at = 0", desk.ID, desk.Version).Update(row)
 	if err != nil {
 		return oops.With("operation", "desk.update").With("desk_id", desk.ID).Wrap(err)
@@ -169,7 +187,11 @@ func (r *DeskRepository) Save(ctx context.Context, desk *domain.Desk) error {
 
 func (r *DeskRepository) ListOpen(ctx context.Context, computerID string) ([]*domain.Desk, error) {
 	var rows []deskDO
-	err := r.executors.Resolve(ctx).Cols(deskColumns...).
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Cols(deskColumns...).
 		Where("computer_id = ? AND state IN (?, ?) AND deleted_at = 0", computerID, string(domain.DeskStateWaiting), string(domain.DeskStateOccupied)).
 		OrderBy("id").Find(&rows)
 	if err != nil {

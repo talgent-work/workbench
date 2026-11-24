@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -51,9 +52,13 @@ func pluginResultFromDO(row pluginResultDO) domain.PluginResult {
 }
 
 // pluginResults reads the execution's Plugin outcomes.
-func pluginResults(ctx context.Context, db *xorm.Engine, executionID string) ([]domain.PluginResult, error) {
+func pluginResults(ctx context.Context, db *jimuxorm.DB, executionID string) ([]domain.PluginResult, error) {
 	var rows []pluginResultDO
-	if err := db.Context(ctx).Where("execution_id = ? AND deleted_at = 0", executionID).Asc("slug").Find(&rows); err != nil {
+	session, err := db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Where("execution_id = ? AND deleted_at = 0", executionID).Asc("slug").Find(&rows); err != nil {
 		return nil, oops.With("operation", "execution.plugin_results", "execution_id", executionID).Wrap(err)
 	}
 	if len(rows) == 0 {

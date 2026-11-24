@@ -4,23 +4,27 @@ import (
 	"context"
 	"strings"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"xorm.io/xorm"
 )
 
-type AgentDefinitionQueryRepository struct{ db *xorm.Engine }
+type AgentDefinitionQueryRepository struct{ db *jimuxorm.DB }
 
 var _ query.AgentDefinitionQueryRepository = (*AgentDefinitionQueryRepository)(nil)
 
-func NewAgentDefinitionQueryRepository(db *xorm.Engine) *AgentDefinitionQueryRepository {
+func NewAgentDefinitionQueryRepository(db *jimuxorm.DB) *AgentDefinitionQueryRepository {
 	return &AgentDefinitionQueryRepository{db: db}
 }
 
 func (r *AgentDefinitionQueryRepository) FindForPurpose(ctx context.Context, input query.GetAgentDefinitionForPurpose) (string, error) {
 	var row agentDefinitionDO
-	found, err := r.db.Context(ctx).Cols("id").Where("scope_kind = ? AND scope_ref = ? AND purpose = ? AND deleted_at = 0", input.ScopeKind, input.ScopeReference, input.Purpose).Get(&row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return "", err
+	}
+	found, err := session.Cols("id").Where("scope_kind = ? AND scope_ref = ? AND purpose = ? AND deleted_at = 0", input.ScopeKind, input.ScopeReference, input.Purpose).Get(&row)
 	if err != nil {
 		return "", oops.With("operation", "agent.find_for_purpose").Wrap(err)
 	}
@@ -37,7 +41,11 @@ func (r *AgentDefinitionQueryRepository) ListEmployeeAgents(ctx context.Context,
 		return views, nil
 	}
 	var rows []agentDefinitionDO
-	if err := r.db.Context(ctx).Cols("id", "scope_ref", "agent_name", "icon_glyph", "icon_color").Where("scope_kind = ? AND purpose = ? AND deleted_at = 0", "employee", purpose).In("scope_ref", employeeIDs).Find(&rows); err != nil {
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Cols("id", "scope_ref", "agent_name", "icon_glyph", "icon_color").Where("scope_kind = ? AND purpose = ? AND deleted_at = 0", "employee", purpose).In("scope_ref", employeeIDs).Find(&rows); err != nil {
 		return nil, oops.With("operation", "agent.list_employee_agents").Wrap(err)
 	}
 	for _, row := range rows {
@@ -67,7 +75,11 @@ func (r *AgentDefinitionQueryRepository) ListWorkAgents(ctx context.Context, wor
 	statement := `SELECT s.id AS work_id, a.id AS agent_id, a.agent_name, a.icon_glyph, a.icon_color
 FROM agent_session s JOIN agent_definition a ON a.id = s.agent_id AND a.deleted_at = 0
 WHERE s.deleted_at = 0 AND s.id IN (` + placeholders + `)`
-	if err := r.db.Context(ctx).SQL(statement, args...).Find(&rows); err != nil {
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.SQL(statement, args...).Find(&rows); err != nil {
 		return nil, oops.With("operation", "agent.list_work_agents").Wrap(err)
 	}
 	for _, row := range rows {

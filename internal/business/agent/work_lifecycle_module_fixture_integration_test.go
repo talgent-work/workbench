@@ -6,7 +6,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/computer"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -86,16 +86,15 @@ func (m *lifecycleModule) start() *lifecycleModule {
 	t.Helper()
 	db, err := xorm.NewEngine("mysql", m.dsn)
 	require.NoError(t, err)
-	mux := http.NewServeMux()
-	server := httptest.NewServer(mux)
+	server := connecttest.NewFronted(t)
 	catalog := moduleCatalog()
 	if m.catalog != nil {
 		catalog = fx.Replace(fx.Annotate(m.catalog, fx.As(new(command.MarketplacePort))))
 	}
 	app := fx.New(computer.Module, agent.Module, catalog, sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
-		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("10", "10Gi", "64")),
-		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
-		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
+		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("10", "10Gi", "64")),
+		mysqltest.Provide(t, "execution", db),
+		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return m.capacity }),
 		fx.Provide(func() command.DispatcherPort { return m.port }),
 		m.runs.option(),

@@ -18,7 +18,8 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
-	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
+	"github.com/talgent-work/workbench/internal/business/computergateway/connectionrecord"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 )
 
 // Config is the Gateway's deployment configuration.
@@ -67,17 +68,16 @@ func newGateway(lc fx.Lifecycle, config Config, client *http.Client, rdb *goredi
 			return next(ctx, spec)
 		}
 	}))
-	gateway := NewGateway(computers, computerconnection.NewWriter(rdb), computerconnection.NewReader(rdb), Replica{Name: config.Replica, Endpoint: config.Endpoint, ControlToken: config.ControlToken, TargetVersion: config.ReleaseVersion}, logger)
+	gateway := NewGateway(computers, connectionrecord.NewWriter(rdb), connectionrecord.NewReader(rdb), Replica{Name: config.Replica, Endpoint: config.Endpoint, ControlToken: config.ControlToken, TargetVersion: config.ReleaseVersion}, logger)
 	lc.Append(fx.StopHook(gateway.Stop))
 	return gateway, nil
 }
 
-func register(mux *http.ServeMux, gateway *Gateway, config Config) {
-	mux.HandleFunc("GET /computer/v1/connect", gateway.ServeConnect)
-	mux.Handle("GET /computer/v1/release", Release{Version: config.ReleaseVersion})
+func register(server connectrpc.Server, gateway *Gateway, config Config) {
+	server.Handle("GET /computer/v1/connect", http.HandlerFunc(gateway.ServeConnect))
+	server.Handle("GET /computer/v1/release", Release{Version: config.ReleaseVersion})
 	// The relay is reached inside the cluster only; no public route leads here.
-	mux.HandleFunc("/relay/{computer}/works/{work}", gateway.ServeRelay)
-	mux.HandleFunc("/relay/{computer}/works/{work}/{rest...}", gateway.ServeRelay)
-	mux.HandleFunc("/relay/{computer}/reconciliation", gateway.ServeMachineRelay)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	server.Handle("/relay/{computer}/works/{work}", http.HandlerFunc(gateway.ServeRelay))
+	server.Handle("/relay/{computer}/works/{work}/{rest...}", http.HandlerFunc(gateway.ServeRelay))
+	server.Handle("/relay/{computer}/reconciliation", http.HandlerFunc(gateway.ServeMachineRelay))
 }

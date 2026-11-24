@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -27,7 +28,9 @@ func TestAuthorizationMaintenanceCandidatesMySQL(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	repo := NewProviderAuthorizations(db)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	repo := NewProviderAuthorizations(jdb)
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	ids := map[string]string{}
 	for _, kind := range []string{"due", "target-due", "stale", "fresh", "leased", "revoked", "deleted"} {
@@ -60,7 +63,7 @@ func TestAuthorizationMaintenanceCandidatesMySQL(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}
-	queries := NewProviderAuthorizationQueries(db)
+	queries := NewProviderAuthorizationQueries(jdb)
 	for _, check := range []struct {
 		limit    int
 		expected []string
@@ -76,5 +79,5 @@ func TestAuthorizationMaintenanceCandidatesMySQL(t *testing.T) {
 	actual, err := queries.ListRefreshCandidates(ctx, now, now.Add(2*time.Minute), 10)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{ids["due"], ids["target-due"], ids["leased"]}, actual)
-	t.Run("revocation event pages", func(t *testing.T) { testConnectionMaintenancePages(t, db) })
+	t.Run("revocation event pages", func(t *testing.T) { testConnectionMaintenancePages(t, db, jdb) })
 }

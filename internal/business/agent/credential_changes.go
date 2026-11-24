@@ -4,13 +4,11 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/go-jimu/components/ddd/message"
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
-	pkgintegrationmessage "github.com/talgent-work/workbench/internal/pkg/integrationmessage"
-	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
+	"github.com/talgent-work/workbench/internal/pkg/messagebus"
 )
 
 // CredentialChangeConfig names Agent's own consumer group for Marketplace's
@@ -24,24 +22,20 @@ const defaultCredentialChangeGroup = "agent-credential-changes"
 
 // CredentialChangeModule consumes the Credential Change Published Fact and
 // replaces the delivered credentials of the Works using the changed
-// authorization. It requires RecoveryModule and a Kafka consumer factory.
+// authorization. It requires RecoveryModule and the process's message bus Option.
 var CredentialChangeModule = fx.Module("agent.credential_changes",
-	fx.Invoke(consumeCredentialChanges),
+	fx.Provide(fx.Annotate(newCredentialChangeConsumer, fx.ResultTags(messagebus.ConsumerTag))),
 )
 
-func consumeCredentialChanges(lc fx.Lifecycle, shutdowner fx.Shutdowner, cfg CredentialChangeConfig, factory *pkgkafka.ConsumerFactory, resolver message.PayloadResolver, recovery *application.Recovery, logger *slog.Logger) error {
-	group := strings.TrimSpace(cfg.ConsumerGroup)
-	if group == "" {
-		group = defaultCredentialChangeGroup
+func newCredentialChangeConsumer(cfg CredentialChangeConfig, bus messagebus.Option, shutdowner fx.Shutdowner, recovery *application.Recovery, logger *slog.Logger) (*messagebus.Consumer, error) {
+	return messagebus.NewConsumer(bus, consumerGroup(cfg.ConsumerGroup, defaultCredentialChangeGroup), shutdowner, logger, messagehandler.NewCredentialChangedHandler(recovery))
+}
+
+// consumerGroup is the configured consumer group of one of Agent's consumers,
+// or its default.
+func consumerGroup(configured, fallback string) string {
+	if group := strings.TrimSpace(configured); group != "" {
+		return group
 	}
-	handler := messagehandler.NewCredentialChangedHandler(recovery)
-	consumer, err := pkgintegrationmessage.NewConsumer(pkgintegrationmessage.Config{ConsumerGroup: group}, factory, resolver, logger, pkgintegrationmessage.IntegrationTopics(handler.Listening()))
-	if err != nil {
-		return err
-	}
-	if err := consumer.Subscribe(handler); err != nil {
-		return err
-	}
-	pkgintegrationmessage.RunWithLifecycle(lc, consumer, shutdowner, logger)
-	return nil
+	return fallback
 }

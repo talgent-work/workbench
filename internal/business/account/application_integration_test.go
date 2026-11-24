@@ -5,10 +5,7 @@ package account_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -23,20 +20,20 @@ import (
 	"github.com/talgent-work/contracts/gen/go/account/public/v1/accountpublicv1connect"
 	accountconnect "github.com/talgent-work/workbench/internal/business/account/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // applicationService serves Account's public Application procedures behind
 // the admission interceptor, as the controlplane mounts them.
 func (h *harness) applicationService() accountpublicv1connect.ApplicationServiceClient {
 	h.t.Helper()
-	server := connectserver.New(slog.New(slog.NewTextHandler(io.Discard, nil)), authn.NewPrincipalInterceptor())
-	accountpublicv1connect.RegisterApplicationServiceHandler(server, accountconnect.NewApplications(h.app))
-	mux := http.NewServeMux()
-	connectserver.Mount(mux, server)
-	rpc := httptest.NewServer(mux)
-	h.t.Cleanup(rpc.Close)
-	return accountpublicv1connect.NewApplicationServiceClient(connect.NewClient(connecthttp.NewTransport(rpc.Client(), rpc.URL)))
+	address := connecttest.Serve(h.t, func(server connectrpc.Server) {
+		server.Register(func(s *connect.Server) {
+			accountpublicv1connect.RegisterApplicationServiceHandler(s, accountconnect.NewApplications(h.app))
+		}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
+	})
+	return accountpublicv1connect.NewApplicationServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address)))
 }
 
 func newPerson() string { return uuid.Must(uuid.NewV7()).String() }

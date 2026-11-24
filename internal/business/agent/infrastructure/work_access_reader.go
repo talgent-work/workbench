@@ -16,7 +16,11 @@ func (r *WorkQueryRepository) WorkOwners(ctx context.Context, workID string) ([]
 		Owners             string `xorm:"owners"`
 		ApplicationRemoved bool   `xorm:"application_removed"`
 	}
-	err := r.db.Context(ctx).SQL("SELECT d.owners, d.application_removed FROM agent_session s JOIN agent_definition d ON d.id = s.agent_id AND d.deleted_at = 0 WHERE s.id = ? AND s.deleted_at = 0", workID).Find(&rows)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	err = session.SQL("SELECT d.owners, d.application_removed FROM agent_session s JOIN agent_definition d ON d.id = s.agent_id AND d.deleted_at = 0 WHERE s.id = ? AND s.deleted_at = 0", workID).Find(&rows)
 	if err != nil {
 		return nil, false, oops.With("operation", "agent_work.owners").Wrap(err)
 	}

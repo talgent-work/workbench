@@ -9,7 +9,6 @@ import (
 	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
 // OpenDirectory opens a located Directory for its Space Token.
@@ -131,7 +130,7 @@ func fileError(operation string, err error) error {
 	case connect.CodeInvalidArgument:
 		// Only a person's file name is theirs to correct; any other refusal
 		// is Agent's own fault.
-		if storageerror.ReasonOf(err) == storageprivatev1.ErrorReason_ERROR_REASON_INVALID_NAME {
+		if refusalReason(err) == storageprivatev1.ErrorReason_ERROR_REASON_INVALID_NAME {
 			return command.ErrInvalidFileName
 		}
 	}

@@ -17,6 +17,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
 	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
@@ -59,6 +60,8 @@ func newOAuthFixture(t *testing.T, client oauthprovider.Client, declaration doma
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	cipher, err := credentialcipher.New("oauth test cipher key")
 	require.NoError(t, err)
 	authorizer, err := oauthprovider.NewAuthorizer([]oauthprovider.Client{client}, cipher, nil)
@@ -66,12 +69,12 @@ func newOAuthFixture(t *testing.T, client oauthprovider.Client, declaration doma
 	port, err := oauthprovider.NewPort(client, cipher, nil)
 	require.NoError(t, err)
 	providers := providertest.Declarations{declaration}
-	store := persistence.NewProviderAuthorizations(db)
+	store := persistence.NewProviderAuthorizations(jdb)
 	credentials := application.NewProviderCredentials(store, providers, singlePort{port}, cipher,
 		application.CredentialTiming{RequestSkew: 5 * time.Minute, ProactiveWindow: 30 * time.Minute, LeaseDuration: 30 * time.Second})
-	connections := application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: store, Queries: persistence.NewProviderAuthorizationQueries(db),
+	connections := application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: store, Queries: persistence.NewProviderAuthorizationQueries(jdb),
 		Providers: providers, OAuth: authorizer, Credentials: credentials})
-	app := application.NewApplication(nil, nil, nil, persistence.NewProviderAuthorizationQueries(db), connections, application.ConnectorDependencies{})
+	app := application.NewApplication(nil, nil, nil, persistence.NewProviderAuthorizationQueries(jdb), connections, application.ConnectorDependencies{})
 	mux := http.NewServeMux()
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))

@@ -21,6 +21,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -38,8 +39,10 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Original instructions", RequiredPlugins: []string{"review"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "review:architect"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
@@ -67,7 +70,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "Answer with the conclusion first.", agent.Soul)
 
 	traceAttributes := map[string]string{"talgent.project_id": "project-1", "talgent.owner_id": "case"}
-	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, TraceAttributes: traceAttributes})
+	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, TraceAttributes: traceAttributes})
 	require.NoError(t, err)
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -78,7 +81,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	located := session.LocatedLayout
 	require.Equal(t, "claude-code", session.AgentHarnessReference)
 
-	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
+	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
 	require.NoError(t, authorizer.AuthorizeWork(ctx, "owner", session.ID))
 	require.ErrorIs(t, authorizer.AuthorizeWork(ctx, "Owner", session.ID), access.ErrAccessDenied)
 	require.ErrorIs(t, authorizer.AuthorizeWork(ctx, "intruder", session.ID), access.ErrAccessDenied)
@@ -119,8 +122,10 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
-	authorizer = access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
+	jdb, err = jimuxorm.New(db)
+	require.NoError(t, err)
+	sessions = infrastructure.NewAgentWorkRepository(jdb, time.Now)
+	authorizer = access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
 	require.NoError(t, authorizer.AuthorizeWork(ctx, "owner", id))
 	require.ErrorIs(t, authorizer.AuthorizeWork(ctx, "intruder", id), access.ErrAccessDenied)
 	session = reload()
@@ -176,16 +181,18 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(setup, time.Minute)
 	defer cancel()
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Base", RequiredPlugins: []string{"base"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "base:member"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
 	const workers = 8
 	lookup := &creationRaceLookup{AgentWorkRepository: sessions, workers: workers, arrived: make(chan struct{}, workers), release: make(chan struct{})}
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels()))
 	request := command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project-a"}, WorkKey: domain.WorkKey{Kind: "case", ID: "Work-A"}, TraceAttributes: map[string]string{"talgent.project_id": "project-a"}}
 	type result struct {
 		id  string
@@ -239,8 +246,10 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
-	handler = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, infrastructure.NewAgentDefinitionRepository(db, time.Now), sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
+	jdb, err = jimuxorm.New(db)
+	require.NoError(t, err)
+	sessions = infrastructure.NewAgentWorkRepository(jdb, time.Now)
+	handler = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, infrastructure.NewAgentDefinitionRepository(jdb, time.Now), sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels()))
 	request.AgentHarness = "claude-code"
 	request.CapabilityDifferences = domain.CapabilityDifferences{Plugins: []domain.PluginChoice{{Slug: "duplicate", Include: true}, {Slug: "duplicate", Include: true}}}
 	id, err := handler.Handle(ctx, request)
@@ -266,7 +275,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 		require.NoError(t, sessions.Save(ctx, work))
 	}
 	stopRetainedWork()
-	verifyConcurrentAdmission(t, db, originalID)
+	verifyConcurrentAdmission(t, jdb, originalID)
 	stopRetainedWork()
 	request.RequestID = uuid.NewString()
 	request.WorkKey, request.WorkCaller = domain.WorkKey{Kind: "case", ID: "Work-B"}, domain.WorkCaller{Kind: "project", ID: "project-b"}
@@ -281,7 +290,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	require.NotEqual(t, original.HarnessSessionReference, other.HarnessSessionReference)
 }
 
-func verifyConcurrentAdmission(t *testing.T, db *xorm.Engine, sessionID string) {
+func verifyConcurrentAdmission(t *testing.T, db *jimuxorm.DB, sessionID string) {
 	t.Helper()
 	ctx := context.Background()
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)

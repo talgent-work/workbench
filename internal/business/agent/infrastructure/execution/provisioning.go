@@ -7,10 +7,10 @@ import (
 	"slices"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"xorm.io/xorm"
 )
 
 // Each external attempt leaves time for durable bookkeeping and other records.
@@ -38,7 +38,7 @@ type Provisioning struct {
 	attemptTimeout time.Duration
 }
 
-func NewProvisioning(db *xorm.Engine, sandboxes *Sandboxes, credentials *SandboxCredentials, native NativeLaunchConfig, now func() time.Time, managed *ManagedEnvironment) *Provisioning {
+func NewProvisioning(db *jimuxorm.DB, sandboxes *Sandboxes, credentials *SandboxCredentials, native NativeLaunchConfig, now func() time.Time, managed *ManagedEnvironment) *Provisioning {
 	return &Provisioning{records: records{db: db}, sandboxes: sandboxes, credentials: credentials, managed: managed, native: native, now: now, attemptTimeout: reconciliationAttemptTimeout}
 }
 
@@ -76,7 +76,11 @@ func (p *Provisioning) specify(ctx context.Context, record executionRecord, supp
 	if plan == nil {
 		plan = []byte("null")
 	}
-	_, err = p.db.Context(ctx).Exec(`UPDATE agent_execution SET specification_json = ?, authorization_ids = ?, launch_command = ?, preparation_command = ?, native_session_id = ?, credential_plan_json = ?, updated_at = ?
+	session, err := p.db.Session(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = session.Exec(`UPDATE agent_execution SET specification_json = ?, authorization_ids = ?, launch_command = ?, preparation_command = ?, native_session_id = ?, credential_plan_json = ?, updated_at = ?
  WHERE id = ? AND JSON_TYPE(specification_json) = 'NULL'`, spec.document, spec.authorizations, native.Command, native.PreparationCommand, native.SessionID, plan, p.now().UnixMilli(), record.ID)
 	if err != nil {
 		return oops.With("operation", "specify_execution").Wrap(err)
@@ -87,7 +91,11 @@ func (p *Provisioning) specify(ctx context.Context, record executionRecord, supp
 // recordRecovery records whether the latest attempt at a step left the start
 // recovering, which its startup progress shows.
 func (p *Provisioning) recordRecovery(ctx context.Context, record executionRecord, recovering bool) error {
-	result, err := p.db.Context(ctx).Exec("UPDATE agent_execution SET preparation_recovering = ?, updated_at = ? WHERE id = ? AND preparation_recovering <> ? AND deleted_at = 0", recovering, p.now().UnixMilli(), record.ID, recovering)
+	session, err := p.db.Session(ctx)
+	if err != nil {
+		return err
+	}
+	result, err := session.Exec("UPDATE agent_execution SET preparation_recovering = ?, updated_at = ? WHERE id = ? AND preparation_recovering <> ? AND deleted_at = 0", recovering, p.now().UnixMilli(), record.ID, recovering)
 	if err != nil {
 		return oops.Wrap(err)
 	}
@@ -105,7 +113,11 @@ func (p *Provisioning) recordRecovery(ctx context.Context, record executionRecor
 // recorded environment; the execution's facts and version are untouched.
 func (p *Provisioning) technical(ctx context.Context, record executionRecord, assignment string, values ...any) error {
 	args := append(values, p.now().UnixMilli(), record.ID, record.SandboxID)
-	if _, err := p.db.Context(ctx).Exec(append([]any{"UPDATE agent_execution SET " + assignment + ", updated_at = ? WHERE id = ? AND sandbox_id = ? AND deleted_at = 0"}, args...)...); err != nil {
+	session, err := p.db.Session(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := session.Exec(append([]any{"UPDATE agent_execution SET " + assignment + ", updated_at = ? WHERE id = ? AND sandbox_id = ? AND deleted_at = 0"}, args...)...); err != nil {
 		return oops.With("operation", "record_execution_progress").Wrap(err)
 	}
 	if p.ProgressCommitted != nil {

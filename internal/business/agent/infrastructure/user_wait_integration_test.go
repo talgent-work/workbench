@@ -9,6 +9,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
@@ -29,16 +30,18 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	origin := time.Date(2026, 9, 11, 12, 0, 0, 123000000, time.UTC)
 	now := origin
 	clock := func() time.Time { return now }
-	agents := infrastructure.NewAgentDefinitionRepository(db, clock)
-	sessions := infrastructure.NewAgentWorkRepository(db, clock)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, clock)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, clock)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
-	run := newRunsAt(t, db, sessions, clock)
-	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID})
+	run := newRunsAt(t, jdb, sessions, clock)
+	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID})
 	require.NoError(t, err)
 	feedback := func(kind command.ExecutionFeedbackKind, interaction, stop string) error {
 		return run.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id, InteractionID: interaction, ObservationSequence: 1000, RequiredInteractionIDs: []string{interaction}})
@@ -54,15 +57,17 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 		require.NoError(t, db.Close())
 		db, err = xorm.NewEngine("mysql", dsn)
 		require.NoError(t, err)
-		agents = infrastructure.NewAgentDefinitionRepository(db, clock)
-		sessions = infrastructure.NewAgentWorkRepository(db, clock)
-		run = newRunsAt(t, db, sessions, clock)
+		jdb, err = jimuxorm.New(db)
+		require.NoError(t, err)
+		agents = infrastructure.NewAgentDefinitionRepository(jdb, clock)
+		sessions = infrastructure.NewAgentWorkRepository(jdb, clock)
+		run = newRunsAt(t, jdb, sessions, clock)
 	}
 	reconnect()
 	waiting, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, origin, waiting.HarnessProcess.WaitingSince, "reconnect and duplicate feedback must retain original deadline")
-	ids, err := infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
+	ids, err := infrastructure.NewExecutionQueryRepository(jdb).ListWorkIDs(ctx, "", 100)
 	require.NoError(t, err)
 	require.Contains(t, ids, id, "existing production recovery scan includes the waiting execution")
 	recover := func() error {
@@ -81,7 +86,7 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	// committed, cancelling the paused Turn first (Stop between Turns).
 	require.NoError(t, recover())
 	asked := run.latest(ctx, id)
-	durable, err := infrastructure.NewAgentWorkRepository(db, clock).Get(ctx, id)
+	durable, err := infrastructure.NewAgentWorkRepository(jdb, clock).Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopping, durable.State)
 	require.Equal(t, domain.StopReasonWaitingTimeout, durable.StopReason)
@@ -106,13 +111,13 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, durable.State)
 	originalContext := durable.HarnessSessionReference
-	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
+	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
 	require.NoError(t, err)
 	durable, err = sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Empty(t, durable.StopReason)
 	require.Equal(t, originalContext, durable.HarnessSessionReference)
-	events, err := infrastructure.NewWorkQueryRepository(db).ListWorkLifecycleEvents(ctx, id)
+	events, err := infrastructure.NewWorkQueryRepository(jdb).ListWorkLifecycleEvents(ctx, id)
 	require.NoError(t, err)
 	var states []domain.WorkState
 	for _, event := range events {

@@ -13,10 +13,10 @@ import (
 	"sync"
 	"testing"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"xorm.io/xorm"
 )
 
 // cloudComputers describes every Computer as a Cloud.
@@ -324,11 +324,11 @@ func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 
 	machines, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
-	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, nil, unusedWorks{})
+	_, err = NewManagedEnvironment(&jimuxorm.DB{}, machines, nil, unusedWorks{})
 	require.Error(t, err, "the Managed realization needs the Model Configurations")
 	_, err = NewManagedEnvironment(nil, machines, fixtureModels(), unusedWorks{})
 	require.Error(t, err, "the Managed realization keeps its marks on the executions")
-	managed, err := NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{})
+	managed, err := NewManagedEnvironment(&jimuxorm.DB{}, machines, fixtureModels(), unusedWorks{})
 	require.NoError(t, err)
 	authority, err = NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, managed).authority(executionRecord{Realization: realizationManaged})
 	require.NoError(t, err)

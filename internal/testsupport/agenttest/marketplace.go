@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -45,8 +46,10 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	ctx := context.Background()
-	store := marketstore.NewProviderAuthorizations(db)
+	store := marketstore.NewProviderAuthorizations(jdb)
 	ids := map[string]string{}
 	for _, granted := range authorizations {
 		authorization, err := marketdomain.NewProviderAuthorization(marketdomain.ProviderAuthorizationInput{
@@ -63,12 +66,12 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 	}
 	providers := providertest.Declarations{providertest.GitHub()}
 	credentials := marketapp.NewProviderCredentials(store, providers, nil, plainText{}, marketapp.CredentialTiming{RequestSkew: 5 * time.Minute})
-	personal := marketapp.NewPersonalConnections(marketapp.ConnectionDependencies{Authorizations: store, Queries: marketstore.NewProviderAuthorizationQueries(db),
+	personal := marketapp.NewPersonalConnections(marketapp.ConnectionDependencies{Authorizations: store, Queries: marketstore.NewProviderAuthorizationQueries(jdb),
 		Providers: providers, GitHub: ownRepository{}, Credentials: credentials})
 	for _, id := range ids {
 		require.NoError(t, personal.ObserveAccessScope(ctx, id))
 	}
-	market := marketapp.NewApplication(nil, nil, nil, marketstore.NewProviderAuthorizationQueries(db), personal, marketapp.ConnectorDependencies{})
+	market := marketapp.NewApplication(nil, nil, nil, marketstore.NewProviderAuthorizationQueries(jdb), personal, marketapp.ConnectorDependencies{})
 	marketplace := connect.NewServer(authn.NewPrincipalInterceptor())
 	marketplacepublicv1connect.RegisterMarketplaceServiceHandler(marketplace, markettransport.NewHandler(market, marketapp.NewOwners(noApplications{})))
 	mux := http.NewServeMux()

@@ -30,7 +30,7 @@ func (creationConnections) ListAccessibleRepositories(_ context.Context, owner s
 
 func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
 	id, err := handler.Handle(t.Context(), f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)
@@ -48,7 +48,7 @@ func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	require.Equal(t, []domain.RepositoryCheckout{{RepositoryID: "123", Reason: domain.CheckoutTimedOut}}, work.RepositoryCheckouts, "checkout outcomes survive reload")
 	require.Empty(t, work.RemainingRepositories())
 	// A repository no longer reachable cannot stop reuse or change the original selection.
-	handler = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	handler = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
 	reuse := f.request
 	initial := *f.request.InitialExecution
 	initial.RequestID, initial.Input.ID = uuid.NewString(), uuid.NewString()
@@ -68,10 +68,10 @@ func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	work, err = f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, want, work.RepositorySelection)
-	recent, err := infrastructure.NewWorkQueryRepository(f.db).ListRecentRepositoryIDs(t.Context(), "owner")
+	recent, err := infrastructure.NewWorkQueryRepository(f.jdb).ListRecentRepositoryIDs(t.Context(), "owner")
 	require.NoError(t, err)
 	require.Equal(t, []string{"123"}, recent, "the owner's own Works supply recently used repositories")
-	other, err := infrastructure.NewWorkQueryRepository(f.db).ListRecentRepositoryIDs(t.Context(), "another-owner")
+	other, err := infrastructure.NewWorkQueryRepository(f.jdb).ListRecentRepositoryIDs(t.Context(), "another-owner")
 	require.NoError(t, err)
 	require.Empty(t, other)
 }

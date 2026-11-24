@@ -58,7 +58,8 @@ func reportLoads(t *testing.T, repository *AgentExecutionRepository, run *domain
 // independent, and a save that loses its version writes no outcome.
 func TestAgentExecutionRepositoryKeepsPluginOutcomesWithTheRun(t *testing.T) {
 	ctx := context.Background()
-	repository := NewAgentExecutionRepository(executionDatabase(t), time.Now)
+	_, db := executionDatabase(t)
+	repository := NewAgentExecutionRepository(db, time.Now)
 	run := beginPluginRun(t, repository, uuid.NewString(), time.Now(),
 		domain.PluginInstallation{Slug: "runtime", Reason: "installation_failed"}, domain.PluginInstallation{Slug: "tools", Installed: true})
 	require.Equal(t, []domain.PluginResult{
@@ -98,10 +99,10 @@ func TestAgentExecutionRepositoryKeepsPluginOutcomesWithTheRun(t *testing.T) {
 // not current.
 func TestCurrentPluginResultsReadTheLatestExecutionOnly(t *testing.T) {
 	ctx := context.Background()
-	db := executionDatabase(t)
+	_, jdb := executionDatabase(t)
 	at := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(db, func() time.Time { return at })
-	results := infrastructure.NewExecutionQueryRepository(db)
+	repository := NewAgentExecutionRepository(jdb, func() time.Time { return at })
+	results := infrastructure.NewExecutionQueryRepository(jdb)
 	workID := uuid.NewString()
 
 	none, err := results.ListCurrentPluginResults(ctx, workID)

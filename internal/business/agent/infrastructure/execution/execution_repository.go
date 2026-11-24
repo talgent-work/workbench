@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -22,7 +23,7 @@ type AgentExecutionRepository struct {
 
 var _ domain.AgentExecutionRepository = (*AgentExecutionRepository)(nil)
 
-func NewAgentExecutionRepository(db *xorm.Engine, now func() time.Time) *AgentExecutionRepository {
+func NewAgentExecutionRepository(db *jimuxorm.DB, now func() time.Time) *AgentExecutionRepository {
 	return &AgentExecutionRepository{records: records{db: db}, now: now}
 }
 
@@ -73,25 +74,21 @@ func (r *AgentExecutionRepository) Save(ctx context.Context, execution *domain.A
 	}
 	now := r.now().UnixMilli()
 	record.UpdatedAt = now
-	tx := r.db.NewSession()
-	defer tx.Close()
-	tx = tx.Context(ctx)
-	if err := tx.Begin(); err != nil {
-		return oops.With("operation", "save_execution", "execution_id", execution.ID).Wrap(err)
-	}
-	defer tx.Rollback()
-	if execution.Version == 0 {
-		err = insertExecution(tx, record, execution.Launch.AuthorizationSelection, now)
-	} else {
-		err = updateExecution(tx, record, execution.Version)
-	}
-	if err != nil {
-		return err
-	}
-	if err := savePluginResults(tx, execution.ID, execution.PluginResults, now); err != nil {
-		return err
-	}
-	return oops.With("operation", "commit_execution", "execution_id", execution.ID).Wrap(tx.Commit())
+	return r.db.Manager().WithinOrJoin(ctx, func(ctx context.Context) error {
+		tx, err := r.db.Session(ctx)
+		if err != nil {
+			return err
+		}
+		if execution.Version == 0 {
+			err = insertExecution(tx, record, execution.Launch.AuthorizationSelection, now)
+		} else {
+			err = updateExecution(tx, record, execution.Version)
+		}
+		if err != nil {
+			return err
+		}
+		return savePluginResults(tx, execution.ID, execution.PluginResults, now)
+	})
 }
 
 // updateExecution writes the execution's facts under its loaded version.

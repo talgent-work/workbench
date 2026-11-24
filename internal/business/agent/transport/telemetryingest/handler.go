@@ -43,15 +43,20 @@ const (
 	maxDecodedBytes = 16 << 20
 )
 
+// Mux is where the endpoint is mounted.
+type Mux interface {
+	Handle(pattern string, handler http.Handler)
+}
+
 // Register mounts the endpoint on mux.
-func Register(mux *http.ServeMux, attributions query.ExecutionQueryRepository, collector *Collector, logger *slog.Logger) {
+func Register(mux Mux, attributions query.ExecutionQueryRepository, collector *Collector, logger *slog.Logger) {
 	h := handler{attributions: attributions, collector: collector, logger: logger}
-	mux.HandleFunc("POST "+Prefix+tracesPath, func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST "+Prefix+tracesPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.serve(w, r, tracesPath, attributeTraces)
-	})
-	mux.HandleFunc("POST "+Prefix+logsPath, func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.Handle("POST "+Prefix+logsPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.serve(w, r, logsPath, attributeLogs)
-	})
+	}))
 }
 
 type handler struct {

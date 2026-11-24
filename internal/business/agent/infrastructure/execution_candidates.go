@@ -15,7 +15,11 @@ import (
 // listed.
 func (r *ExecutionQueryRepository) ListOutstandingExecutions(ctx context.Context, afterID string, limit int) ([]string, error) {
 	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT id FROM (
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.SQL(`SELECT id FROM (
  SELECT id FROM agent_execution WHERE deleted_at = 0 AND id > ?
  UNION
  SELECT id FROM agent_execution WHERE retired = 1 AND released_at = 0 AND id > ?
@@ -33,7 +37,11 @@ func (r *ExecutionQueryRepository) ListExecutionsUsingAuthorization(ctx context.
 		return nil, nil
 	}
 	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT id FROM agent_execution
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.SQL(`SELECT id FROM agent_execution
  WHERE ? MEMBER OF(authorization_ids) AND deleted_at = 0`, authorizationID).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "list_executions_using_authorization").Wrap(err)

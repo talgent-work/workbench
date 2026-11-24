@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/contracts/gen/go/storage/public/v1/storagepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
 // ArtifactHandler serves the Storage Agent Command Contract to Work Agents,
@@ -97,7 +96,7 @@ func (h *ArtifactHandler) DeleteArtifact(ctx context.Context, request *storagepu
 // storage.public.v1.ErrorReason names travels as that value, any other none.
 func mapArtifactError(err error) error {
 	refused := mapError(err)
-	reason := storageerror.ReasonOf(refused)
+	reason := ReasonOf(refused)
 	if reason == storageprivatev1.ErrorReason_ERROR_REASON_UNSPECIFIED {
 		return refused
 	}
@@ -107,7 +106,7 @@ func mapArtifactError(err error) error {
 	}
 	public := connect.NewError(connectErr.Code(), connectErr.Message()).WithCause(err)
 	if _, named := storagepublicv1.ErrorReason_value[reason.String()]; named {
-		detail, detailErr := connectproto.NewErrorDetail(&errdetails.ErrorInfo{Domain: storageerror.Domain, Reason: reason.String()})
+		detail, detailErr := connectproto.NewErrorDetail(&errdetails.ErrorInfo{Domain: ErrorDomain, Reason: reason.String()})
 		if detailErr == nil {
 			public = public.WithDetail(detail)
 		}

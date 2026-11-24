@@ -35,7 +35,7 @@ func TestIdleTimeoutAndInputAcceptanceShareCommitOrder(t *testing.T) {
 			ctx := t.Context()
 			now := time.Now().UTC()
 			origin := now.Add(-30 * time.Minute)
-			feedback := newRunsAt(t, f.db, f.sessions, func() time.Time { return origin })
+			feedback := newRunsAt(t, f.jdb, f.sessions, func() time.Time { return origin })
 			// A Turn ending at origin leaves the Work idle since then.
 			require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.TurnStarted, ObservationSequence: 1}))
 			require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.TurnFinished, ObservationSequence: 2}))

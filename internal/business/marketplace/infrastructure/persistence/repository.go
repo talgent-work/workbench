@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
@@ -17,11 +17,11 @@ import (
 
 var _ application.AuthorizationStore = (*ProviderAuthorizations)(nil)
 
-type ProviderAuthorizations struct{ db *xorm.Engine }
+type ProviderAuthorizations struct{ db *jimuxorm.DB }
 
 const providerAuthorizationSelectColumns = "id, owner_id, provider, provider_account_id, provider_login, access_token_ciphertext, refresh_token_ciphertext, expires_at, refresh_token_expires_at, status, refresh_lease_id, refresh_lease_until, last_refreshed_at, last_checked_at, last_failure_code, last_failure_detail, access_scope_json, access_scope_observed_at, target_credentials_json, version, created_at, updated_at, deleted_at"
 
-func NewProviderAuthorizations(db *xorm.Engine) *ProviderAuthorizations {
+func NewProviderAuthorizations(db *jimuxorm.DB) *ProviderAuthorizations {
 	return &ProviderAuthorizations{db: db}
 }
 
@@ -31,15 +31,19 @@ func (r *ProviderAuthorizations) Save(ctx context.Context, authorization *domain
 		return err
 	}
 	row.UpdatedAt = time.Now().UTC().UnixMilli()
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return err
+	}
 	if authorization.Version == 0 {
 		row.CreatedAt = row.UpdatedAt
 		row.Version = 1
-		if _, err := r.db.Context(ctx).Insert(&row); err != nil {
+		if _, err := session.Insert(&row); err != nil {
 			return mapDuplicateKey(err, domain.ErrConcurrentModification)
 		}
 		return nil
 	}
-	result, err := r.db.Context(ctx).Exec(
+	result, err := session.Exec(
 		"UPDATE scm_provider_authorization SET provider_account_id = ?, provider_login = ?, access_token_ciphertext = ?, refresh_token_ciphertext = ?, expires_at = ?, refresh_token_expires_at = ?, status = ?, refresh_lease_id = '', refresh_lease_until = 0, last_refreshed_at = ?, last_checked_at = ?, last_failure_code = ?, last_failure_detail = ?, access_scope_json = ?, access_scope_observed_at = ?, target_credentials_json = ?, credentials_expire_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND deleted_at = 0",
 		row.ProviderAccountID, row.ProviderLogin, row.AccessTokenCiphertext, row.RefreshTokenCiphertext, row.ExpiresAt, row.RefreshTokenExpiresAt, row.Status, row.LastRefreshedAt, row.LastCheckedAt, row.LastFailureCode, row.LastFailureDetail, row.AccessScopeJSON, row.AccessScopeObservedAt, row.TargetCredentialsJSON, row.CredentialsExpireAt, row.UpdatedAt, row.ID, row.Version,
 	)
@@ -75,7 +79,11 @@ func (r *ProviderAuthorizations) AcquireCredentialLease(ctx context.Context, aut
 	if authorization == nil || strings.TrimSpace(leaseID) == "" || !leaseUntil.After(now) {
 		return nil, domain.ErrInvalidRequiredField
 	}
-	result, err := r.db.Context(ctx).Exec(
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result, err := session.Exec(
 		"UPDATE scm_provider_authorization SET refresh_lease_id = ?, refresh_lease_until = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND deleted_at = 0 AND (refresh_lease_until = 0 OR refresh_lease_until <= ?)",
 		leaseID, leaseUntil.UTC().UnixMilli(), now.UTC().UnixMilli(), authorization.ID, authorization.Version, now.UTC().UnixMilli(),
 	)
@@ -131,10 +139,14 @@ func providerConnectionStateFromDO(row ProviderAuthorizationDO) *query.ProviderC
 	return state
 }
 
-func findProviderAuthorizations(ctx context.Context, db *xorm.Engine, where string, args ...any) ([]ProviderAuthorizationDO, error) {
+func findProviderAuthorizations(ctx context.Context, db *jimuxorm.DB, where string, args ...any) ([]ProviderAuthorizationDO, error) {
 	var rows []ProviderAuthorizationDO
 	query := "SELECT " + providerAuthorizationSelectColumns + " FROM scm_provider_authorization WHERE " + where
-	if err := db.Context(ctx).SQL(query, args...).Find(&rows); err != nil {
+	session, err := db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.SQL(query, args...).Find(&rows); err != nil {
 		return nil, err
 	}
 	return rows, nil

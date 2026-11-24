@@ -6,13 +6,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
@@ -32,6 +31,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/computer"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -63,17 +63,15 @@ func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
 	kube := fake.NewClientset(quota)
 	port := &sessionCommandRecorder{}
 	runs := &moduleRuns{}
-	mux := http.NewServeMux()
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
+	server := connecttest.NewFronted(t)
 	var reconciliation *command.ReconcileExecutionHandler
 	var seating *command.SeatExecutionHandler
 	var reconnection *command.ComputerReconnectionHandler
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.Supply(domain.LeaseTerms{}, commandtest.CreationWaits), runs.option(),
-		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("4", "4Gi", "64")),
-		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
-		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
+		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("4", "4Gi", "64")),
+		mysqltest.Provide(t, "execution", db),
+		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return kube }),
 		fx.Provide(func() command.DispatcherPort { return port }),
 		fx.Invoke(func(handler *command.ReconcileExecutionHandler, executions domain.AgentExecutionRepository) {
@@ -122,7 +120,9 @@ func (q *managedQueue) executionsOf(t *testing.T, workID string) []*domain.Agent
 	t.Helper()
 	var ids []string
 	require.NoError(t, q.db.Table("agent_execution").Cols("id").Where("session_id = ?", workID).OrderBy("created_at, id").Find(&ids))
-	repository := execution.NewAgentExecutionRepository(q.db, time.Now)
+	db, err := jimuxorm.New(q.db)
+	require.NoError(t, err)
+	repository := execution.NewAgentExecutionRepository(db, time.Now)
 	var result []*domain.AgentExecution
 	for _, id := range ids {
 		e, err := repository.Get(context.Background(), id)

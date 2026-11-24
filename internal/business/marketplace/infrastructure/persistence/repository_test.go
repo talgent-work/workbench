@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	_ "github.com/mattn/go-sqlite3"
 	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
-func newSCMRepositoryTestEngine(t *testing.T) *xorm.Engine {
+func newSCMRepositoryTestDB(t *testing.T) *jimuxorm.DB {
 	t.Helper()
 	engine, err := xorm.NewEngine("sqlite3", t.TempDir()+"/scm.db")
 	if err != nil {
@@ -22,7 +23,11 @@ func newSCMRepositoryTestEngine(t *testing.T) *xorm.Engine {
 	if err := engine.Sync2(new(ProviderAuthorizationDO)); err != nil {
 		t.Fatalf("sync schema: %v", err)
 	}
-	return engine
+	db, err := jimuxorm.New(engine)
+	if err != nil {
+		t.Fatalf("go-jimu xorm database: %v", err)
+	}
+	return db
 }
 
 func newProviderAuthorizationForTest(t *testing.T, ownerID string) *domain.ProviderAuthorization {
@@ -48,7 +53,7 @@ func newProviderAuthorizationForTest(t *testing.T, ownerID string) *domain.Provi
 // depend on transient provider errors instead of SCM state.
 func TestProviderAuthorizationRepository_RoundTripsTokenLifecycleFields(t *testing.T) {
 	ctx := context.Background()
-	repo := NewProviderAuthorizations(newSCMRepositoryTestEngine(t))
+	repo := NewProviderAuthorizations(newSCMRepositoryTestDB(t))
 	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	auth := newProviderAuthorizationForTest(t, "user-1")
@@ -87,7 +92,7 @@ func TestProviderAuthorizationRepository_RoundTripsTokenLifecycleFields(t *testi
 // provider check alone is not a refresh reason.
 func TestAuthorizationMaintenanceQueries_ListRefreshCandidates(t *testing.T) {
 	ctx := context.Background()
-	repo := NewProviderAuthorizations(newSCMRepositoryTestEngine(t))
+	repo := NewProviderAuthorizations(newSCMRepositoryTestDB(t))
 	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	due := newProviderAuthorizationForTest(t, "user-due")
@@ -135,7 +140,7 @@ func TestAuthorizationMaintenanceQueries_ListRefreshCandidates(t *testing.T) {
 // must persist the lease through an optimistic update and reject stale callers.
 func TestProviderAuthorizationRepository_AcquireCredentialLease(t *testing.T) {
 	ctx := context.Background()
-	repo := NewProviderAuthorizations(newSCMRepositoryTestEngine(t))
+	repo := NewProviderAuthorizations(newSCMRepositoryTestDB(t))
 	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	auth := newProviderAuthorizationForTest(t, "user-1")
@@ -167,7 +172,7 @@ func TestProviderAuthorizationRepository_AcquireCredentialLease(t *testing.T) {
 // return live authorizations without relying on owner-user routing.
 func TestAuthorizationEventQueries_Account(t *testing.T) {
 	ctx := context.Background()
-	repo := NewProviderAuthorizations(newSCMRepositoryTestEngine(t))
+	repo := NewProviderAuthorizations(newSCMRepositoryTestDB(t))
 
 	first := newProviderAuthorizationForTest(t, "user-1")
 	first.ProviderAccountID = "account-1"

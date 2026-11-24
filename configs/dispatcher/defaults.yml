@@ -21,9 +21,6 @@ kafka:
   brokers:
     - "${KAFKA_BROKER:127.0.0.1:9092}"
 
-integration-messages:
-  consumer_group: "${KAFKA_CONSUMER_GROUP:dispatcher-service}"
-
 nats:
   url: "${NATS_URL:nats://localhost:4222}"
 

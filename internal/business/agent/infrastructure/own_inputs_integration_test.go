@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -26,8 +27,10 @@ func TestAWorksAgentReadsItsOwnInputs(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	spaces := &librarySpaces{}
-	works, app := standaloneWorksFixture(t, db, spaces)
+	works, app := standaloneWorksFixture(t, jdb, spaces)
 	owner := standalonework.Caller{UserID: "owner", DisplayName: "Owner"}
 
 	standalone, err := works.Start(ctx, standalonework.StartWork{Caller: owner, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})

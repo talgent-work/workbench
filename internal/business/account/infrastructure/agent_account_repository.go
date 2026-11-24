@@ -6,9 +6,9 @@ import (
 	"errors"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 )
@@ -18,18 +18,22 @@ var agentAccountColumns = []string{"work_id", "work_caller_kind", "work_caller_i
 // AgentAccountRepository persists Agent Accounts. An Agent Account's facts
 // never change, so it is only ever inserted.
 type AgentAccountRepository struct {
-	engine *xorm.Engine
+	db *jimuxorm.DB
 }
 
 var _ domain.AgentAccountRepository = (*AgentAccountRepository)(nil)
 
-func NewAgentAccountRepository(engine *xorm.Engine) *AgentAccountRepository {
-	return &AgentAccountRepository{engine: engine}
+func NewAgentAccountRepository(db *jimuxorm.DB) *AgentAccountRepository {
+	return &AgentAccountRepository{db: db}
 }
 
 func (r *AgentAccountRepository) Get(ctx context.Context, work domain.WorkID) (*domain.AgentAccount, error) {
 	row := new(agentAccountDO)
-	found, err := r.engine.Context(ctx).Cols(agentAccountColumns...).Where("work_id = ? AND deleted_at = 0", string(work)).Get(row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Cols(agentAccountColumns...).Where("work_id = ? AND deleted_at = 0", string(work)).Get(row)
 	if err != nil {
 		return nil, oops.With("operation", "agent_account.get").Wrap(err)
 	}
@@ -51,7 +55,11 @@ func (r *AgentAccountRepository) Save(ctx context.Context, account *domain.Agent
 	row := agentAccountToDO(account)
 	row.Version = 1
 	row.UpdatedAt = row.CreatedAt
-	if _, err := r.engine.Context(ctx).Insert(row); err != nil {
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := session.Insert(row); err != nil {
 		var duplicate *mysql.MySQLError
 		if errors.As(err, &duplicate) && duplicate.Number == mysqlDuplicateEntry {
 			return domain.ErrAgentAccountExists

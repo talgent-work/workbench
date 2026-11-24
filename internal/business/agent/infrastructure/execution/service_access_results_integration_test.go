@@ -4,6 +4,7 @@ package execution
 
 import (
 	"context"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -27,7 +28,9 @@ import (
 func TestServiceAccessResultsThroughAuthenticatedPublicAPI(t *testing.T) {
 	f := newNativeWorkLifecycle(t, t.Context())
 	work, _ := f.createWithAuthorization(t, t.Context(), domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, domain.WorkAuthorizationInput{OwnerID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerID: "lifecycle-owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}})
-	app := &application.Application{Works: f.works, WorkPrincipals: serviceObservationAccess{workID: work.ID}, ExecutionQueries: NewExecutionQueryRepository(f.db)}
+	db, err := jimuxorm.New(f.db)
+	require.NoError(t, err)
+	app := &application.Application{Works: f.works, WorkPrincipals: serviceObservationAccess{workID: work.ID}, ExecutionQueries: NewExecutionQueryRepository(db)}
 	mux := http.NewServeMux()
 	mux.Handle("/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
@@ -47,7 +50,7 @@ func TestServiceAccessResultsThroughAuthenticatedPublicAPI(t *testing.T) {
 		}
 		return client.GetWorkServiceAccess(ctx, request)
 	}
-	_, err := read("", work.ID)
+	_, err = read("", work.ID)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 	_, err = read("bea682bb-1121-576c-82f4-c9a39d76f9d1", work.ID)
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))

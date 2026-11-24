@@ -28,8 +28,6 @@ data:
     kafka:
       brokers:
         - ${KAFKA_BROKER}
-    integration-messages:
-      consumer_group: dispatcher-service
     nats:
       url: ${NATS_URL}
     agent-feedback:
@@ -815,19 +813,20 @@ spec:
               mountPath: /app/configs/dispatcher
               readOnly: true
           readinessProbe:
-            tcpSocket:
+            grpc:
               port: 8083
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 2
           livenessProbe:
-            tcpSocket:
+            grpc:
               port: 8083
+              service: liveness
             initialDelaySeconds: 20
             periodSeconds: 20
             timeoutSeconds: 2
           startupProbe:
-            tcpSocket:
+            grpc:
               port: 8083
             failureThreshold: 30
             periodSeconds: 2
@@ -933,15 +932,14 @@ spec:
               sleep:
                 seconds: 5
           readinessProbe:
-            httpGet:
-              path: /healthz
+            grpc:
               port: 8085
             periodSeconds: 10
             timeoutSeconds: 2
           livenessProbe:
-            httpGet:
-              path: /healthz
+            grpc:
               port: 8085
+              service: liveness
             initialDelaySeconds: 20
             periodSeconds: 20
             timeoutSeconds: 2
@@ -1022,19 +1020,20 @@ spec:
               sleep:
                 seconds: 5
           readinessProbe:
-            tcpSocket:
+            grpc:
               port: 8084
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 2
           livenessProbe:
-            tcpSocket:
+            grpc:
               port: 8084
+              service: liveness
             initialDelaySeconds: 20
             periodSeconds: 20
             timeoutSeconds: 2
           startupProbe:
-            tcpSocket:
+            grpc:
               port: 8084
             failureThreshold: 30
             periodSeconds: 2
@@ -1241,8 +1240,9 @@ spec:
           livenessProbe:
             initialDelaySeconds: 20
             periodSeconds: 20
-            tcpSocket:
+            grpc:
               port: 8080
+              service: liveness
             timeoutSeconds: 2
           name: controlplane
           ports:
@@ -1250,13 +1250,13 @@ spec:
           readinessProbe:
             initialDelaySeconds: 5
             periodSeconds: 10
-            tcpSocket:
+            grpc:
               port: 8080
             timeoutSeconds: 2
           startupProbe:
             failureThreshold: 30
             periodSeconds: 2
-            tcpSocket:
+            grpc:
               port: 8080
             timeoutSeconds: 2
           volumeMounts:

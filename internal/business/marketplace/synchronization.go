@@ -3,9 +3,9 @@ package marketplace
 import (
 	"errors"
 	"log/slog"
-	"net/http"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
@@ -13,7 +13,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/marketplace/transport/taskprocessor"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
 )
@@ -50,12 +50,12 @@ var SynchronizationModule = fx.Module("marketplace.synchronization",
 	}),
 	fx.Provide(fx.Annotate(taskprocessor.NewSynchronizationProcessor, fx.ResultTags(pkgtaskqueue.ProcessorTag(Queue)))),
 	fx.Provide(fx.Annotate(newSynchronizationPeriodicTasks, fx.ResultTags(pkgtaskqueue.PeriodicTasksTag(Queue)))),
-	fx.Invoke(func(config Config, app *application.CatalogSynchronization, mux *http.ServeMux, logger *slog.Logger) {
+	fx.Invoke(func(config Config, app *application.CatalogSynchronization, server connectrpc.Server) {
 		// This private service authenticates the platform token itself; it does not
 		// require a delegated human or expose its methods through the public gateway.
-		server := connectserver.New(logger)
-		marketplaceprivatev1connect.RegisterSynchronizationServiceHandler(server, transport.NewSynchronizationHandler(app, config.Connections.CredentialToken))
-		connectserver.Mount(mux, server)
+		server.Register(func(s *connect.Server) {
+			marketplaceprivatev1connect.RegisterSynchronizationServiceHandler(s, transport.NewSynchronizationHandler(app, config.Connections.CredentialToken))
+		})
 	}),
 )
 

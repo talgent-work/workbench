@@ -23,7 +23,7 @@ import (
 func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
 	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(ctx, id)
@@ -38,11 +38,11 @@ func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T
 	work, err = f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, lost, work.DisconnectedSince)
-	view, err := infrastructure.NewWorkQueryRepository(f.db).GetWorkView(ctx, id)
+	view, err := infrastructure.NewWorkQueryRepository(f.jdb).GetWorkView(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, lost, view.DisconnectedSince)
 
-	works := infrastructure.NewExecutionQueryRepository(f.db)
+	works := infrastructure.NewExecutionQueryRepository(f.jdb)
 	running, err := works.ListRunningWorkIDs(ctx, work.ComputerID, "", 10)
 	require.NoError(t, err)
 	require.Equal(t, []string{id}, running)
@@ -93,7 +93,7 @@ func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T
 func TestAReachResumeMarkPersistsAndIsFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
 	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
 	// The Work recovery its creation wakes hands off its initial task input.
@@ -107,7 +107,7 @@ func TestAReachResumeMarkPersistsAndIsFoundByComputer(t *testing.T) {
 	require.Equal(t, domain.WorkStopped, work.State)
 	require.NoError(t, f.sessions.Save(ctx, work))
 
-	works := infrastructure.NewExecutionQueryRepository(f.db)
+	works := infrastructure.NewExecutionQueryRepository(f.jdb)
 	marked, err := works.ListReachResumeWorkIDs(ctx, work.ComputerID, "", 10)
 	require.NoError(t, err)
 	require.Empty(t, marked, "an unmarked Work is not resumed on reconnection")

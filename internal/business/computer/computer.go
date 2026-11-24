@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	integrationmessage "github.com/go-jimu/components/ddd/message"
+	"github.com/go-jimu/components/transaction"
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/fx"
@@ -32,9 +33,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/computer/infrastructure/registration"
 	transport "github.com/talgent-work/workbench/internal/business/computer/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 )
 
 // Database is the Workbench core's MySQL engine, holding Computers and Desks.
@@ -117,16 +117,15 @@ func room(list corev1.ResourceList, desks int64) domain.Room {
 }
 
 var Module = fx.Module("domain.computer",
-	pkgmysql.Bind(Database),
+	database.Bind(Database),
 	fx.Provide(
 		fx.Private,
 		func() func() time.Time { return time.Now },
-		pkgmysql.NewExecutors,
 		infrastructure.NewComputerRepository,
 		infrastructure.NewDeskRepository,
 		infrastructure.NewQueries,
 		func(rdb *goredis.Client) *registration.Store { return registration.NewStore(rdb) },
-		func(rdb *goredis.Client) *computerconnection.Reader { return computerconnection.NewReader(rdb) },
+		infrastructure.NewGatewayConnections,
 		newApplication,
 	),
 	fx.Invoke(ensureCloud, sweepPresence, registerHandlers),
@@ -134,12 +133,12 @@ var Module = fx.Module("domain.computer",
 
 type dependencies struct {
 	fx.In
-	Executors     *pkgmysql.Executors
+	Transactions  transaction.Transactor
 	Computers     *infrastructure.ComputerRepository
 	Desks         *infrastructure.DeskRepository
 	Queries       *infrastructure.Queries
 	Registrations *registration.Store
-	Connections   *computerconnection.Reader
+	Connections   *infrastructure.GatewayConnections
 	Client        kubernetes.Interface
 	// Bus publishes Desk Assigned and Presence changes; without it Agent
 	// finds seated Desks and its Works' Disconnections only by asking.
@@ -167,7 +166,7 @@ func newApplication(deps dependencies) (*application.Application, error) {
 		return nil, err
 	}
 	return application.NewApplication(application.Dependencies{
-		Computers: deps.Computers, Desks: deps.Desks, Transactions: deps.Executors, Quota: quota, Queries: deps.Queries,
+		Computers: deps.Computers, Desks: deps.Desks, Transactions: deps.Transactions, Quota: quota, Queries: deps.Queries,
 		Registrations: deps.Registrations, Connections: deps.Connections, Cloud: cloud, MinimumVersion: config.MinimumVersion, Now: deps.Now, Logger: deps.Logger,
 		Seatings: seatings(deps.Lifecycle, deps.Bus, deps.Logger), Presences: presences(deps.Lifecycle, deps.Bus, deps.Logger),
 		Removals: removals(deps.Lifecycle, deps.Bus, deps.Logger),
@@ -252,7 +251,7 @@ func ensureCloud(lc fx.Lifecycle, app *application.Application, logger *slog.Log
 	}})
 }
 
-func registerHandlers(mux *http.ServeMux, app *application.Application, config Config, logger *slog.Logger) error {
+func registerHandlers(server connectrpc.Server, app *application.Application, config Config) error {
 	if strings.TrimSpace(config.ControlToken) == "" {
 		return errors.New("computer: control token is required")
 	}
@@ -260,13 +259,13 @@ func registerHandlers(mux *http.ServeMux, app *application.Application, config C
 	if err != nil || verification.Scheme != "https" && verification.Scheme != "http" || verification.Host == "" {
 		return errors.New("computer: an absolute verification URI is required")
 	}
-	server := connectserver.New(logger)
-	computerprivatev1connect.RegisterAdmissionServiceHandler(server, transport.NewAdmissionHandler(app, config.ControlToken))
-	computerprivatev1connect.RegisterConnectionServiceHandler(server, transport.NewConnectionHandler(app, config.ControlToken))
-	connectserver.Mount(mux, server)
-	public := connectserver.New(logger, authn.NewPrincipalInterceptor())
-	computerpublicv1connect.RegisterRegistrationServiceHandler(public, transport.NewRegistrationHandler(app, verification.String()))
-	computerpublicv1connect.RegisterComputerServiceHandler(public, transport.NewComputerHandler(app))
-	connectserver.Mount(mux, public)
+	server.Register(func(private *connect.Server) {
+		computerprivatev1connect.RegisterAdmissionServiceHandler(private, transport.NewAdmissionHandler(app, config.ControlToken))
+		computerprivatev1connect.RegisterConnectionServiceHandler(private, transport.NewConnectionHandler(app, config.ControlToken))
+	})
+	server.Register(func(public *connect.Server) {
+		computerpublicv1connect.RegisterRegistrationServiceHandler(public, transport.NewRegistrationHandler(app, verification.String()))
+		computerpublicv1connect.RegisterComputerServiceHandler(public, transport.NewComputerHandler(app))
+	}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
 	return nil
 }

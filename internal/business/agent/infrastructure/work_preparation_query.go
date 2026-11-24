@@ -36,7 +36,11 @@ func (r *WorkQueryRepository) ListSubmittedPreparations(ctx context.Context, aft
 
 func (r *WorkQueryRepository) preparations(ctx context.Context, condition string, args ...any) ([]query.WorkPreparation, error) {
 	var rows []workPreparationRow
-	err := r.db.Context(ctx).SQL(`SELECT s.id, s.started_by, s.thinking_level, s.initial_task_input, s.repository_selection, s.repository_checkouts
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.SQL(`SELECT s.id, s.started_by, s.thinking_level, s.initial_task_input, s.repository_selection, s.repository_checkouts
  FROM agent_session s WHERE s.deleted_at = 0
  AND `+condition, args...).Find(&rows)
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
@@ -65,8 +66,10 @@ func setupWithCatalog(t *testing.T, catalog application.PluginCatalogQueryReposi
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	repository := infrastructure.NewInstalledPluginRepository(db)
-	app := application.NewApplication(repository, repository, catalog, persistence.NewProviderAuthorizationQueries(db), declaredConnections(db), connectorDependencies(db))
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	repository := infrastructure.NewInstalledPluginRepository(jdb)
+	app := application.NewApplication(repository, repository, catalog, persistence.NewProviderAuthorizationQueries(jdb), declaredConnections(jdb), connectorDependencies(jdb))
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())
@@ -204,7 +207,7 @@ func TestPersonalInstallationConcurrencyAndPagination(t *testing.T) {
 // whose target credentials never expire, as a deployment does.
 // connectorDependencies reach the real Connector tables; the deployment's
 // Platform Connectors are talgent and github.
-func connectorDependencies(db *xorm.Engine) application.ConnectorDependencies {
+func connectorDependencies(db *jimuxorm.DB) application.ConnectorDependencies {
 	connectors, installed := infrastructure.NewConnectorRepository(db), infrastructure.NewInstalledConnectorRepository(db)
 	return application.ConnectorDependencies{Catalog: connectors, Installed: installed, CatalogQueries: connectors, InstalledQueries: installed,
 		Publishers: publisherNames{}, PlatformNames: []string{"github", "talgent"}}
@@ -226,7 +229,7 @@ func (publisherNames) ApplicationName(_ context.Context, id string) (string, err
 	return "Application " + id[len(id)-2:], nil
 }
 
-func declaredConnections(db *xorm.Engine) *application.PersonalConnections {
+func declaredConnections(db *jimuxorm.DB) *application.PersonalConnections {
 	return application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: persistence.NewProviderAuthorizations(db),
 		Queries: persistence.NewProviderAuthorizationQueries(db), Providers: providertest.Declarations{providertest.GitHub(), providertest.Enterprise()}})
 }

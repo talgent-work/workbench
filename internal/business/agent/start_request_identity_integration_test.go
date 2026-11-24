@@ -4,6 +4,7 @@ package agent_test
 
 import (
 	"context"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"net/http"
 	"strings"
 	"testing"
@@ -64,7 +65,9 @@ func (c *oneRoomCloud) awaitReleased(t *testing.T, ctx context.Context, workID s
 	t.Helper()
 	c.runs.await(t, ctx, workID, func(e *domain.AgentExecution) bool { return e.State == domain.ExecutionReleased }, "the run's compute is released")
 	require.Eventually(t, func() bool { return c.desks(t, "occupied") == 0 }, 10*time.Second, 50*time.Millisecond, "the run's Desk leaves")
-	works := infrastructure.NewAgentWorkRepository(c.db, time.Now)
+	db, err := jimuxorm.New(c.db)
+	require.NoError(t, err)
+	works := infrastructure.NewAgentWorkRepository(db, time.Now)
 	require.Eventually(t, func() bool {
 		work, err := works.Get(ctx, workID)
 		require.NoError(t, err)

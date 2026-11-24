@@ -38,7 +38,7 @@ func (m managedAdmission) AdmitRun(ctx context.Context, run command.RunAdmission
 
 func TestTheMachineLoginSurvivesReloadAndIsShownOnTheWork(t *testing.T) {
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), managedAdmission{computertest.Checked(startupAuthority{})}, creationPreparation(f.db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), managedAdmission{computertest.Checked(startupAuthority{})}, creationPreparation(f.jdb, creationModels()))
 	creation := f.request
 	creation.ComputerID, creation.WorkModel = fixtureManagedComputer, domain.MachineLoginModel()
 	id, err := handler.Handle(t.Context(), creation)
@@ -48,7 +48,7 @@ func TestTheMachineLoginSurvivesReloadAndIsShownOnTheWork(t *testing.T) {
 	require.Equal(t, domain.MachineLoginModel(), work.WorkModel)
 	require.Equal(t, fixtureManagedComputer, work.ComputerID)
 	require.Equal(t, domain.ComputerManaged, work.ComputerKind, "the Computer kind survives reload")
-	view, err := infrastructure.NewWorkQueryRepository(f.db).GetWorkView(t.Context(), id)
+	view, err := infrastructure.NewWorkQueryRepository(f.jdb).GetWorkView(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, domain.MachineLoginModel(), view.WorkModel)
 }

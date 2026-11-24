@@ -17,11 +17,10 @@ import (
 func (c *Client) ReadConnectorSelection(ctx context.Context, user string) (command.ConnectorSelection, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	ctx, info, err := delegated(ctx, user)
+	ctx, err := c.credentialed(ctx, user)
 	if err != nil {
 		return command.ConnectorSelection{}, err
 	}
-	info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
 	response, err := c.selection.ReadConnectorSelection(ctx, &marketplaceprivatev1.ReadConnectorSelectionRequest{})
 	if err != nil {
 		return command.ConnectorSelection{}, oops.With("operation", "agent.connector_selection.read").Wrap(err)

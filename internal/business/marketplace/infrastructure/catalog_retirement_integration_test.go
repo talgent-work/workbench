@@ -33,7 +33,7 @@ func TestCatalogSynchronizationRetiresRemovedSource(t *testing.T) {
 	writeMetadata(t, kept, "plugins/shared-plugin/.claude-plugin/plugin.json", shared)
 	writeCatalog(t, kept, "kept-catalog", []map[string]any{{"name": "kept-plugin", "source": "./plugins/kept-plugin"}, {"name": "shared-plugin", "source": "./plugins/shared-plugin"}})
 	content := t.TempDir()
-	db := catalogDatabase(t)
+	engine, db := catalogEngine(t)
 	store, err := infrastructure.NewCatalogStore(db, content, "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
 	handler := marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorDependencies{}), slog.Default())
@@ -59,7 +59,7 @@ func TestCatalogSynchronizationRetiresRemovedSource(t *testing.T) {
 	}
 	live := func(table, source string) int {
 		t.Helper()
-		count, err := db.Context(ctx).Table(table).Where("source = ? AND deleted_at = 0", source).Count()
+		count, err := engine.Context(ctx).Table(table).Where("source = ? AND deleted_at = 0", source).Count()
 		require.NoError(t, err)
 		return int(count)
 	}

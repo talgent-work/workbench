@@ -11,6 +11,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
@@ -25,11 +26,11 @@ import (
 )
 
 func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
-	db, definitions, works, agent := startingCreationDatabase(t)
+	db, jdb, definitions, works, agent := startingCreationDatabase(t)
 	catalog := &creationCatalog{}
 	capacity := &initialCreationCapacity{err: domain.ErrCapacityUnavailable}
 	execution := &creationExecution{AgentWorkRepository: works, db: db}
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), creationPreparation(db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), creationPreparation(jdb, creationModels()))
 	request := creationInput(agent.ID, "first")
 	workID, err := handler.Handle(t.Context(), request)
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
@@ -64,9 +65,9 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 }
 
 func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
-	db, definitions, works, agent := startingCreationDatabase(t)
+	db, jdb, definitions, works, agent := startingCreationDatabase(t)
 	port := &creationExecution{AgentWorkRepository: works, db: db}
-	winner := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
+	winner := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(jdb, creationModels()))
 	winning := creationInput(agent.ID, "same-subject")
 	var winnerID string
 	// The winner commits the same Subject after the loser's lookup, and the
@@ -76,7 +77,7 @@ func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 		winnerID, err = winner.Handle(t.Context(), winning)
 		return err
 	}, err: domain.ErrCapacityUnavailable}
-	loser := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(capacity), creationPreparation(db, creationModels()))
+	loser := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(capacity), creationPreparation(jdb, creationModels()))
 	reused, err := loser.Handle(t.Context(), creationInput(agent.ID, "same-subject"))
 	require.NoError(t, err)
 	require.Equal(t, winnerID, reused)
@@ -100,19 +101,21 @@ func (c *creationBeforeCapacity) AdmitRoom(context.Context) error {
 	return c.err
 }
 
-func startingCreationDatabase(t *testing.T) (*xorm.Engine, *infrastructure.AgentDefinitionRepository, *infrastructure.AgentWorkRepository, *domain.AgentDefinition) {
+func startingCreationDatabase(t *testing.T) (*xorm.Engine, *jimuxorm.DB, *infrastructure.AgentDefinitionRepository, *infrastructure.AgentWorkRepository, *domain.AgentDefinition) {
 	t.Helper()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	works := infrastructure.NewAgentWorkRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	definitions := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	works := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, Capabilities: domain.CapabilityConfiguration{RequiredPlugins: []string{"runtime"}}})
 	require.NoError(t, err)
 	require.NoError(t, definitions.Save(t.Context(), agent))
 	agent, err = definitions.Get(t.Context(), agent.ID)
 	require.NoError(t, err)
-	return db, definitions, works, agent
+	return db, jdb, definitions, works, agent
 }
 
 func creationInput(agentID, reference string) command.CreateWork {

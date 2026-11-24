@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
@@ -26,8 +27,10 @@ func TestCreationRetainsPersonalOwner(t *testing.T) {
 	otherDB, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = otherDB.Close() })
-	works := infrastructure.NewAgentWorkRepository(otherDB, time.Now)
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(otherDB).WorkOwners), deploymentModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(otherDB, deploymentModels()))
+	other, err := jimuxorm.New(otherDB)
+	require.NoError(t, err)
+	works := infrastructure.NewAgentWorkRepository(other, time.Now)
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(other).WorkOwners), deploymentModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(other, deploymentModels()))
 	id, err := handler.Handle(t.Context(), f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)

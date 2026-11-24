@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
 	"xorm.io/builder"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/storage/application/query"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
@@ -14,20 +14,24 @@ import (
 
 // DirectoryQueries reads Directory facts from the Directory table.
 type DirectoryQueries struct {
-	engine *xorm.Engine
+	db *jimuxorm.DB
 }
 
 var _ query.DirectoryQueryRepository = (*DirectoryQueries)(nil)
 
-func NewDirectoryQueries(engine *xorm.Engine) *DirectoryQueries {
-	return &DirectoryQueries{engine: engine}
+func NewDirectoryQueries(db *jimuxorm.DB) *DirectoryQueries {
+	return &DirectoryQueries{db: db}
 }
 
 // WorkDirectories reads the Directories with the Work's lifetime whose owner
 // names the Work, by the indexed Work fact.
 func (r *DirectoryQueries) WorkDirectories(ctx context.Context, workID string) ([]query.WorkDirectory, error) {
 	var rows []directoryDO
-	err := r.engine.Context(ctx).Cols("owner_key", "name", "backend", "lifetime", "state").
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Cols("owner_key", "name", "backend", "lifetime", "state").
 		Where("work_id = ? AND lifetime = ? AND deleted_at = 0", workID, string(domain.LifetimeWork)).Asc("owner_key", "name").Find(&rows)
 	if err != nil {
 		return nil, oops.With("operation", "storage.directories.of_work").Wrap(err)
@@ -55,7 +59,11 @@ func (r *DirectoryQueries) MappingsAround(ctx context.Context, path domain.Mappe
 		around = append(around, ancestor)
 	}
 	var rows []mappingDO
-	err := r.engine.Context(ctx).Cols(mappingColumns...).
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Cols(mappingColumns...).
 		Where(builder.Or(builder.In("path", around...), builder.And(builder.Gt{"path": string(path) + "/"}, builder.Lt{"path": string(path) + "0"}))).
 		Asc("path").Find(&rows)
 	if err != nil {
@@ -67,7 +75,11 @@ func (r *DirectoryQueries) MappingsAround(ctx context.Context, path domain.Mappe
 // Mappings reads every mapping by path.
 func (r *DirectoryQueries) Mappings(ctx context.Context) ([]query.Mapping, error) {
 	var rows []mappingDO
-	if err := r.engine.Context(ctx).Cols(mappingColumns...).Asc("path").Find(&rows); err != nil {
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Cols(mappingColumns...).Asc("path").Find(&rows); err != nil {
 		return nil, oops.With("operation", "storage.mappings.all").Wrap(err)
 	}
 	return mappingsFromDO(rows)

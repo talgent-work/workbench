@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 	"xorm.io/xorm"
@@ -228,7 +229,9 @@ func launches(t *testing.T, db *xorm.Engine) []domain.LaunchSpecification {
 	t.Helper()
 	var ids []string
 	require.NoError(t, db.Table("agent_execution").Cols("id").OrderBy("created_at, id").Find(&ids))
-	repository := execution.NewAgentExecutionRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	repository := execution.NewAgentExecutionRepository(jdb, time.Now)
 	result := make([]domain.LaunchSpecification, 0, len(ids))
 	for _, id := range ids {
 		begun, err := repository.Get(context.Background(), id)

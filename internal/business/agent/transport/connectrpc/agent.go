@@ -7,10 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/talgent-work/workbench/internal/pkg/otelsetup"
+	rpcruntime "github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
-
-	"go.opentelemetry.io/otel/propagation"
 
 	"connectrpc.com/connect/v2"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
@@ -40,7 +38,7 @@ func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *agentp
 	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), request.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	ctx = propagation.TraceContext{}.Extract(ctx, otelsetup.ConnectCarrier{Header: requestHeader(ctx)})
+	ctx = rpcruntime.CallerTraceContext(ctx)
 	input := command.PrepareWorkExecution{ThinkingLevel: request.GetThinkingLevel(), SubjectID: request.GetSubjectId(), WorkID: request.GetWorkId(), RequestID: request.GetRequestId(), WorkBranch: request.GetWorkBranch(), Input: command.ExecutionInput{ID: request.GetInputId(), Text: request.GetInput()}}
 	for _, selection := range request.GetSelections() {
 		input.Selections = append(input.Selections, command.RepositorySelection{RepositoryID: selection.GetRepositoryId(), BaseBranch: selection.GetBaseBranch()})
@@ -102,7 +100,7 @@ func (h *AgentHandler) ResumeWork(ctx context.Context, req *agentprivatev1.Resum
 	if err := h.application.AdmitDelegatedControl(ctx, req.GetWorkId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	ctx = propagation.TraceContext{}.Extract(ctx, otelsetup.ConnectCarrier{Header: requestHeader(ctx)})
+	ctx = rpcruntime.CallerTraceContext(ctx)
 	err := h.application.Commands.ResumeWork.Handle(ctx, command.StartWork{RequestID: req.GetRequestId(), SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId()})
 	if err != nil {
 		return nil, mapAgentError(err)
@@ -117,7 +115,7 @@ func (h *AgentHandler) RestartWork(ctx context.Context, req *agentprivatev1.Rest
 	if err := h.application.AdmitDelegatedControl(ctx, req.GetWorkId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	ctx = propagation.TraceContext{}.Extract(ctx, otelsetup.ConnectCarrier{Header: requestHeader(ctx)})
+	ctx = rpcruntime.CallerTraceContext(ctx)
 	_, err := h.application.Commands.RestartWork.Handle(ctx, command.StartWork{RequestID: req.GetRequestId(), SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId()})
 	if err != nil {
 		return nil, mapAgentError(err)
@@ -361,7 +359,7 @@ func (h *AgentHandler) GetWorkOrigin(ctx context.Context, request *agentprivatev
 	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	ctx = propagation.TraceContext{}.Extract(ctx, otelsetup.ConnectCarrier{Header: requestHeader(ctx)})
+	ctx = rpcruntime.CallerTraceContext(ctx)
 	origin, err := h.application.Queries.GetWorkOrigin.Handle(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, mapAgentError(err)

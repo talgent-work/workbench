@@ -15,9 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	integrationmessage "github.com/go-jimu/components/ddd/message"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"go.uber.org/fx"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/contracts/gen/go/account/private/v1/accountprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/account/public/v1/accountpublicv1connect"
@@ -27,8 +28,8 @@ import (
 	accountconnect "github.com/talgent-work/workbench/internal/business/account/transport/connectrpc"
 	accounthttp "github.com/talgent-work/workbench/internal/business/account/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 )
 
@@ -201,7 +202,7 @@ func newRuntime(cfg Config) (runtime, error) {
 
 type applicationDependencies struct {
 	fx.In
-	Engine *xorm.Engine
+	DB     *jimuxorm.DB
 	Policy policy
 	Keys   *infrastructure.SigningKeys
 	GitHub *infrastructure.GitHubIdentity
@@ -213,24 +214,24 @@ type applicationDependencies struct {
 }
 
 func newApplication(deps applicationDependencies) *application.Application {
-	engine, p, keys, github := deps.Engine, deps.Policy, deps.Keys, deps.GitHub
+	db, p, keys, github := deps.DB, deps.Policy, deps.Keys, deps.GitHub
 	var publisher application.AccountPublisherPort
 	if deps.Bus != nil {
 		publisher = infrastructure.NewAccountPublisher(deps.Bus)
 	}
-	sessions := infrastructure.NewLoginSessionRepository(engine)
+	sessions := infrastructure.NewLoginSessionRepository(db)
 	return application.NewApplication(application.Dependencies{
-		Accounts:           infrastructure.NewAccountRepository(engine),
+		Accounts:           infrastructure.NewAccountRepository(db),
 		Sessions:           sessions,
 		GitHub:             github,
 		Tokens:             keys,
-		Directory:          infrastructure.NewUserDirectoryQueries(engine),
+		Directory:          infrastructure.NewUserDirectoryQueries(db),
 		Lifetimes:          p.lifetimes,
-		AgentAccounts:      infrastructure.NewAgentAccountRepository(engine),
+		AgentAccounts:      infrastructure.NewAgentAccountRepository(db),
 		AgentTokenLifetime: p.agentToken,
 
-		Applications:             infrastructure.NewApplicationRepository(engine),
-		ApplicationQueries:       infrastructure.NewApplicationQueries(engine),
+		Applications:             infrastructure.NewApplicationRepository(db),
+		ApplicationQueries:       infrastructure.NewApplicationQueries(db),
 		ApplicationTokenLifetime: p.applicationToken,
 		SecretOverlap:            p.secretOverlap,
 		Publisher:                publisher,
@@ -245,8 +246,7 @@ func newGitHubIdentity(cfg infrastructure.GitHubOAuthConfig) (*infrastructure.Gi
 type registration struct {
 	fx.In
 	App     *application.Application
-	Mux     *http.ServeMux
-	Logger  *slog.Logger
+	Server  connectrpc.Server
 	Handler *accounthttp.Handler
 }
 
@@ -257,24 +257,24 @@ func newHTTPHandler(app *application.Application, cfg accounthttp.Config, logger
 }
 
 func register(r registration) {
-	r.Mux.Handle(accounthttp.PathPrefix, r.Handler)
-	private := connectserver.New(r.Logger)
-	accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
-	accountprivatev1connect.RegisterAgentAccountServiceHandler(private, accountconnect.NewAgentAccounts(r.App))
-	accountprivatev1connect.RegisterApplicationOwnershipServiceHandler(private, accountconnect.NewApplicationOwnership(r.App))
-	connectserver.Mount(r.Mux, private)
+	r.Server.Handle(accounthttp.PathPrefix, r.Handler)
+	r.Server.Register(func(private *connect.Server) {
+		accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
+		accountprivatev1connect.RegisterAgentAccountServiceHandler(private, accountconnect.NewAgentAccounts(r.App))
+		accountprivatev1connect.RegisterApplicationOwnershipServiceHandler(private, accountconnect.NewApplicationOwnership(r.App))
+	})
 	// The browser reads who is signed in, and a person registers and reads
 	// their Applications, under the identity the entry verified.
-	public := connectserver.New(r.Logger, authn.NewPrincipalInterceptor())
-	accountpublicv1connect.RegisterSessionServiceHandler(public, accountconnect.Session{})
-	accountpublicv1connect.RegisterApplicationServiceHandler(public, accountconnect.NewApplications(r.App))
-	connectserver.Mount(r.Mux, public)
+	r.Server.Register(func(public *connect.Server) {
+		accountpublicv1connect.RegisterSessionServiceHandler(public, accountconnect.Session{})
+		accountpublicv1connect.RegisterApplicationServiceHandler(public, accountconnect.NewApplications(r.App))
+	}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
 }
 
 // Module wires Account into the controlplane process. The named MySQL
 // connection "account" must be supplied by process composition.
 var Module = fx.Module("domain.account",
-	pkgmysql.Bind(Database),
+	database.Bind(Database),
 	fx.Provide(newRuntime, fx.Private),
 	fx.Provide(infrastructure.NewSigningKeys, fx.Private),
 	fx.Provide(newGitHubIdentity, fx.Private),

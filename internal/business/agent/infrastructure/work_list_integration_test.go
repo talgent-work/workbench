@@ -48,8 +48,8 @@ func TestWorkListsSelectAdmittedWorksByWorkCaller(t *testing.T) {
 	const owner = "123456789012345680"
 	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
-	principal := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
-	reader := infrastructure.NewWorkQueryRepository(f.db)
+	principal := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
+	reader := infrastructure.NewWorkQueryRepository(f.jdb)
 	app := &application.Application{WorkQueries: reader, Queries: application.Queries{ListWorks: query.NewListWorksHandler(reader)}}
 	api := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterWorkFactsServiceHandler(s, transport.NewWorkFactsHandler(app, "control"))
@@ -57,7 +57,7 @@ func TestWorkListsSelectAdmittedWorksByWorkCaller(t *testing.T) {
 	server := httptest.NewServer(api)
 	defer server.Close()
 	client := agentprivatev1connect.NewWorkFactsServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	feedback := newRuns(t, f.db, f.sessions)
+	feedback := newRuns(t, f.jdb, f.sessions)
 	project := uuid.NewString()
 	caller := domain.WorkCaller{Kind: "project", ID: project}
 	byCaller := &agentpublicv1.WorkCaller{Kind: "project", Id: project}
@@ -69,14 +69,14 @@ func TestWorkListsSelectAdmittedWorksByWorkCaller(t *testing.T) {
 		creation.InitialExecution = &preparation
 		creation.RequestID = preparation.RequestID
 		creation.WorkKey, creation.WorkCaller = domain.WorkKey{Kind: "case", ID: uuid.NewString()}, domain.WorkCaller{Kind: "project", ID: projectID}
-		id, e := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels())).Handle(ctx, creation)
+		id, e := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels())).Handle(ctx, creation)
 		require.NoError(t, e)
 		if stopped {
 			require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 			for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 				require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id}))
 			}
-			require.NoError(t, command.NewStopWorkHandler(f.sessions, principal, executionsOf(f.db)).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: id, RequestID: uuid.NewString()}))
+			require.NoError(t, command.NewStopWorkHandler(f.sessions, principal, executionsOf(f.jdb)).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: id, RequestID: uuid.NewString()}))
 			feedback.exit(ctx, id)
 			feedback.release(ctx, id)
 		}
@@ -168,7 +168,7 @@ func TestWorkListsSelectAdmittedWorksByWorkCaller(t *testing.T) {
 
 	// An older archived Work remains discoverable even when newer live Works fill
 	// the requested page. Filtering must precede LIMIT.
-	require.NoError(t, command.NewCloseWorkHandler(f.sessions, principal, executionsOf(f.db), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: first, RequestID: uuid.NewString()}))
+	require.NoError(t, command.NewCloseWorkHandler(f.sessions, principal, executionsOf(f.jdb), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: first, RequestID: uuid.NewString()}))
 	_, err = f.db.Exec("UPDATE agent_session SET updated_at=500 WHERE id=?", first)
 	require.NoError(t, err)
 	archived, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{AgentOwner: owner, WorkCaller: byCaller, Recent: true, Limit: 1, Archived: proto.Bool(true)})

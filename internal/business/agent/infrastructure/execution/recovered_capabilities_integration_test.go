@@ -9,6 +9,7 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -28,9 +29,11 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, _ := sandboxClient(t)
-	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
-	executions := NewAgentExecutionRepository(db, time.Now)
+	provisioning := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	executions := NewAgentExecutionRepository(jdb, time.Now)
 	empty, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}}, nil)
 	require.NoError(t, err)
 	components, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"review"}}, []domain.PluginRelease{{CatalogName: "talgent", Slug: "review", Source: "owned", Version: "1", RetrievalRef: "archive:review-1", NativeEntry: []byte(`{"name":"review","version":"1"}`), Skills: []domain.SkillComponent{}, Agents: []domain.AgentComponent{}, MCPServers: []domain.MCPComponent{}}})
@@ -38,7 +41,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 	for name, snapshot := range map[string]domain.CapabilitySnapshot{"nil plugins": {}, "empty plugins": empty, "empty components": components} {
 		t.Run(name, func(t *testing.T) {
 			snapshot.Connectors = []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}
-			definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
+			definitions := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
 			definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}})
 			require.NoError(t, err)
 			require.NoError(t, definitions.Save(ctx, definition))
@@ -46,7 +49,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			require.NoError(t, err)
 			work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 			require.NoError(t, err)
-			works := infrastructure.NewAgentWorkRepository(db, time.Now)
+			works := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 			work.DefinitionVersion = definition.Version
 			require.NoError(t, works.Save(ctx, work))
 			require.NoError(t, command.NewExecutionCoordination(time.Now, works, commandtest.Definitions{}, executions, &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID))
@@ -60,13 +63,15 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			reopened, err := xorm.NewEngine("mysql", dsn)
 			require.NoError(t, err)
 			defer reopened.Close()
-			recoveredWorks := infrastructure.NewAgentWorkRepository(reopened, time.Now)
+			reopenedDB, err := jimuxorm.New(reopened)
+			require.NoError(t, err)
+			recoveredWorks := infrastructure.NewAgentWorkRepository(reopenedDB, time.Now)
 			recovered, err := recoveredWorks.Get(ctx, work.ID)
 			require.NoError(t, err)
 			require.Equal(t, snapshot.Connectors, recovered.CapabilitySnapshot.Connectors)
 			_, err = recovered.RecoverExecution()
 			require.NoError(t, err)
-			require.NoError(t, command.NewExecutionCoordination(time.Now, recoveredWorks, commandtest.Definitions{}, NewAgentExecutionRepository(reopened, time.Now), &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID), "recovery must reuse the admitted execution")
+			require.NoError(t, command.NewExecutionCoordination(time.Now, recoveredWorks, commandtest.Definitions{}, NewAgentExecutionRepository(reopenedDB, time.Now), &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID), "recovery must reuse the admitted execution")
 			retained, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 			require.True(t, found)

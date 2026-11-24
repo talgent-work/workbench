@@ -3,10 +3,10 @@ package taskqueue
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
-	"github.com/hibiken/asynq"
 )
 
 // The default queue is a generic fallback for services that have not supplied
@@ -30,11 +30,11 @@ func TestDuplicateRefusalCoversTheEnqueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new task: %v", err)
 	}
-	if err := (duplicateTolerantEnqueuer{next: refusingEnqueuer{err: asynq.ErrDuplicateTask}}).Enqueue(context.Background(), task); err != nil {
+	if err := (keyedEnqueuer{next: refusingEnqueuer{err: fmt.Errorf("%w: held", componenttaskqueue.ErrDuplicateTask)}}).Enqueue(context.Background(), task); err != nil {
 		t.Fatalf("duplicate refusal surfaced: %v", err)
 	}
 	broken := errors.New("redis unavailable")
-	if err := (duplicateTolerantEnqueuer{next: refusingEnqueuer{err: broken}}).Enqueue(context.Background(), task); !errors.Is(err, broken) {
+	if err := (keyedEnqueuer{next: refusingEnqueuer{err: broken}}).Enqueue(context.Background(), task); !errors.Is(err, broken) {
 		t.Fatalf("other refusal = %v, want %v", err, broken)
 	}
 }

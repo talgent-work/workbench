@@ -7,11 +7,11 @@ import (
 	"errors"
 	"net/http"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
-	"xorm.io/xorm"
 )
 
 // ManagedEnvironment is the Managed realization's environment authority. A
@@ -43,7 +43,7 @@ var (
 
 // NewManagedEnvironment is the Managed realization of a deployment whose
 // relay reaches Managed Computers.
-func NewManagedEnvironment(db *xorm.Engine, machines *ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository) (*ManagedEnvironment, error) {
+func NewManagedEnvironment(db *jimuxorm.DB, machines *ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository) (*ManagedEnvironment, error) {
 	if db == nil || machines == nil || models == nil || sessions == nil {
 		return nil, errors.New("agent: executions, Managed Computers, Model Configurations and Works are required for the Managed realization")
 	}
@@ -204,7 +204,11 @@ func (m ManagedEnvironment) remove(ctx context.Context, record executionRecord, 
 	if err != nil || !released {
 		return err
 	}
-	if _, err := m.records.db.Context(ctx).Exec("UPDATE agent_execution SET handles_released = 1 WHERE id = ?", record.ID); err != nil {
+	session, err := m.records.db.Session(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := session.Exec("UPDATE agent_execution SET handles_released = 1 WHERE id = ?", record.ID); err != nil {
 		return oops.With("operation", "record_released_handles").Wrap(err)
 	}
 	return nil

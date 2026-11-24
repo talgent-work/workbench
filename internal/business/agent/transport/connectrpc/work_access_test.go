@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"sync"
 	"testing"
@@ -28,6 +27,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // accessFixture serves Agent's handlers over in-memory Works: a human's Work
@@ -54,7 +54,7 @@ func newAccessFixture(t *testing.T) *accessFixture {
 func newAccessFixtureWith(t *testing.T, views application.WorkspaceReadingPort) *accessFixture {
 	t.Helper()
 	agents := &rpcAgents{items: map[string]*domain.AgentDefinition{}}
-	dispatcher := domainevent.NewDispatcher(domainevent.WithDelayClose(0))
+	dispatcher := domainevent.NewDispatcher()
 	t.Cleanup(func() { _ = dispatcher.Close(context.Background()) })
 	sessions := &rpcSessions{items: map[string]*domain.AgentWork{}, events: dispatcher}
 	employee := accessDefinition(t, agents, domain.UsageScope{Kind: "employee", Reference: "owner"}, domain.VisibilityRule{})
@@ -69,15 +69,14 @@ func newAccessFixtureWith(t *testing.T, views application.WorkspaceReadingPort) 
 		Queries:    application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions: sessions})},
 		Workspaces: views,
 	}
-	mux := http.NewServeMux()
-	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, slog.Default(), nil)
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-	f.public = agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	f.access = agentprivatev1connect.NewWorkAccessServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	f.workspaces = agentprivatev1connect.NewWorkspaceReadingServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	f.publicWorkspaces = agentpublicv1connect.NewWorkWorkspaceServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	f.agent = agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	server := connecttest.NewServer()
+	agentmodule.RegisterRPCHandlers(server, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, nil)
+	address := connecttest.Start(t, server)
+	f.public = agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address, connecthttp.WithReadMaxBytes(0))))
+	f.access = agentprivatev1connect.NewWorkAccessServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address, connecthttp.WithReadMaxBytes(0))))
+	f.workspaces = agentprivatev1connect.NewWorkspaceReadingServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address, connecthttp.WithReadMaxBytes(0))))
+	f.publicWorkspaces = agentpublicv1connect.NewWorkWorkspaceServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address, connecthttp.WithReadMaxBytes(0))))
+	f.agent = agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address, connecthttp.WithReadMaxBytes(0))))
 	return f
 }
 

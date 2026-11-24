@@ -7,16 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"path"
 	"strings"
 	"time"
 
-	"connectrpc.com/connect/v2/connecthttp"
+	"connectrpc.com/connect/v2"
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"go.uber.org/fx"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/storage/public/v1/storagepublicv1connect"
@@ -29,8 +28,8 @@ import (
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
 	"github.com/talgent-work/workbench/internal/business/storage/transport/taskprocessor"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 )
 
@@ -188,7 +187,7 @@ func parseDuration(value string, fallback time.Duration) (time.Duration, error) 
 
 var Module = fx.Module(
 	"domain.storage",
-	pkgmysql.Bind(Database),
+	database.Bind(Database),
 	// Each lane's tasks go through that lane's own client.
 	fx.Provide(fx.Annotate(newApplication, fx.ParamTags(``, ``, pkgtaskqueue.EnqueuerTag(PreviewQueue), pkgtaskqueue.EnqueuerTag(MaintenanceQueue)))),
 	fx.Provide(
@@ -211,9 +210,9 @@ const PreviewQueue = applicationtask.Queue
 // and lapsed Preview Copies and repairs the Mapped View on.
 const MaintenanceQueue = applicationtask.MaintenanceQueue
 
-func newApplication(config Config, engine *xorm.Engine, renderings, maintenance componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
+func newApplication(config Config, db *jimuxorm.DB, renderings, maintenance componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
 	tasks := application.TaskLanes{Renderings: renderings, Maintenance: maintenance}
-	return assemble(config, infrastructure.NewDirectoryRepository(engine), infrastructure.NewDirectoryQueries(engine), tasks, bus, logger)
+	return assemble(config, infrastructure.NewDirectoryRepository(db), infrastructure.NewDirectoryQueries(db), tasks, bus, logger)
 }
 
 // prepareMappedView creates the standing paths' folders at start, which the
@@ -301,26 +300,26 @@ func mechanisms(config Config, queries query.DirectoryQueryRepository, tasks app
 // content.
 const artifactMessageOverhead = 64 << 10
 
-func registerHandlers(app *application.Application, config Config, mux *http.ServeMux, logger *slog.Logger) {
-	server := connectserver.New(logger)
+func registerHandlers(app *application.Application, config Config, server connectrpc.Server) {
 	// Validated when the application was assembled.
 	content, _ := config.contentCallers()
-	storageprivatev1connect.RegisterDirectoryServiceHandler(server, storageconnect.NewDirectoryHandler(app, append([]string{config.AgentToken}, config.DirectoryTokens...), content))
-	storageprivatev1connect.RegisterSandboxMountServiceHandler(server, storageconnect.NewSandboxMountHandler(app, config.AgentToken))
-	connectserver.Mount(mux, server)
-	mountArtifactService(mux, app, logger)
+	server.Register(func(s *connect.Server) {
+		storageprivatev1connect.RegisterDirectoryServiceHandler(s, storageconnect.NewDirectoryHandler(app, append([]string{config.AgentToken}, config.DirectoryTokens...), content))
+		storageprivatev1connect.RegisterSandboxMountServiceHandler(s, storageconnect.NewSandboxMountHandler(app, config.AgentToken))
+	})
+	registerArtifactService(server, app)
 	limit := config.MaxUploadBytes
 	if limit == 0 {
 		limit = defaultMaxUploadBytes
 	}
-	storagehttp.Register(mux, app, limit)
+	storagehttp.Register(server, app, limit)
 }
 
-// mountArtifactService serves the Work Agent's Artifact commands to the
+// registerArtifactService serves the Work Agent's Artifact commands to the
 // agent Principals the contract admits; a publication carries at most the
 // content a Work sends, with room for the rest of its message.
-func mountArtifactService(mux connecthttp.ServeMux, app *application.Application, logger *slog.Logger) {
-	server := connectserver.New(logger, authn.NewPrincipalInterceptor())
-	storagepublicv1connect.RegisterArtifactServiceHandler(server, storageconnect.NewArtifactHandler(app))
-	connectserver.Mount(mux, server, connecthttp.WithReadMaxBytes(app.SentContentLimit()+artifactMessageOverhead))
+func registerArtifactService(server connectrpc.Server, app *application.Application) {
+	server.Register(func(s *connect.Server) {
+		storagepublicv1connect.RegisterArtifactServiceHandler(s, storageconnect.NewArtifactHandler(app))
+	}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()), connectrpc.WithReadMaxBytes(app.SentContentLimit()+artifactMessageOverhead))
 }

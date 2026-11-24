@@ -14,6 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -55,11 +56,13 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
 	newCreation := func(requestID string) command.CreateWork {
 		agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.Must(uuid.NewV7()).String()}, Capabilities: domain.CapabilityConfiguration{Prompt: "Run"}})
 		require.NoError(t, err)
@@ -71,7 +74,7 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	var starts atomic.Int32
 	started := startedWorks{AgentWorkRepository: sessions, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
 	barrier := admissionSaveBarrier{AgentWorkRepository: started, arrived: make(chan struct{}, 2), proceed: make(chan struct{})}
-	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, barrier, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, barrier, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels()))
 	type result struct {
 		id  string
 		err error
@@ -115,7 +118,7 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 // Independent definitions must both admit their first Work; range locks on an
 // empty holding set must not make one creation fail with a database deadlock.
 func TestConcurrentIndependentDefinitionsAdmitTheirFirstWorks(t *testing.T) {
-	db, definitions, works, first := startingCreationDatabase(t)
+	db, jdb, definitions, works, first := startingCreationDatabase(t)
 	second, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"second-owner"},
 		Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "second-owner"},
 	})
@@ -125,7 +128,7 @@ func TestConcurrentIndependentDefinitionsAdmitTheirFirstWorks(t *testing.T) {
 	defer cancel()
 	barrier := admissionSaveBarrier{AgentWorkRepository: works, arrived: make(chan struct{}, 2), proceed: make(chan struct{})}
 	execution := &creationExecution{AgentWorkRepository: barrier, db: db}
-	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels()))
 	type result struct {
 		id  string
 		err error

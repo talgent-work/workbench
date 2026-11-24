@@ -2,15 +2,12 @@ package agent
 
 import (
 	"log/slog"
-	"strings"
 
-	"github.com/go-jimu/components/ddd/message"
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
-	pkgintegrationmessage "github.com/talgent-work/workbench/internal/pkg/integrationmessage"
-	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
+	"github.com/talgent-work/workbench/internal/pkg/messagebus"
 )
 
 // ComputerPresenceConfig names Agent's own consumer group for Computer's
@@ -29,24 +26,11 @@ const defaultComputerPresenceGroup = "agent-computer-presence"
 // the execution environment of every Work on it. Without it, each Work's
 // recovery still reads its Computer's Presence and removal and retries an
 // owed Resume, only later. It requires RecoveryModule, for the reconnection,
-// and a Kafka consumer factory.
+// and the process's message bus Option.
 var ComputerPresenceModule = fx.Module("agent.computer_presence",
-	fx.Invoke(consumeComputerPresence),
+	fx.Provide(fx.Annotate(newComputerPresenceConsumer, fx.ResultTags(messagebus.ConsumerTag))),
 )
 
-func consumeComputerPresence(lc fx.Lifecycle, shutdowner fx.Shutdowner, cfg ComputerPresenceConfig, factory *pkgkafka.ConsumerFactory, resolver message.PayloadResolver, reach *command.ComputerReachHandler, reconnection *command.ComputerReconnectionHandler, logger *slog.Logger) error {
-	group := strings.TrimSpace(cfg.ConsumerGroup)
-	if group == "" {
-		group = defaultComputerPresenceGroup
-	}
-	handler := messagehandler.NewComputerPresenceHandler(reach, reconnection)
-	consumer, err := pkgintegrationmessage.NewConsumer(pkgintegrationmessage.Config{ConsumerGroup: group}, factory, resolver, logger, pkgintegrationmessage.IntegrationTopics(handler.Listening()))
-	if err != nil {
-		return err
-	}
-	if err := consumer.Subscribe(handler); err != nil {
-		return err
-	}
-	pkgintegrationmessage.RunWithLifecycle(lc, consumer, shutdowner, logger)
-	return nil
+func newComputerPresenceConsumer(cfg ComputerPresenceConfig, bus messagebus.Option, shutdowner fx.Shutdowner, reach *command.ComputerReachHandler, reconnection *command.ComputerReconnectionHandler, logger *slog.Logger) (*messagebus.Consumer, error) {
+	return messagebus.NewConsumer(bus, consumerGroup(cfg.ConsumerGroup, defaultComputerPresenceGroup), shutdowner, logger, messagehandler.NewComputerPresenceHandler(reach, reconnection))
 }

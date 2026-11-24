@@ -30,10 +30,10 @@ func (waitingComputer) AdmitRun(context.Context, command.RunAdmission) (command.
 func TestWorkViewShowsDeskWaitingUntilTheExecutionIsSeated(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
-	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}, creationPreparation(f.db, creationModels())).Handle(ctx, f.request)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
+	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}, creationPreparation(f.jdb, creationModels())).Handle(ctx, f.request)
 	require.NoError(t, err)
-	views := infrastructure.NewWorkQueryRepository(f.db)
+	views := infrastructure.NewWorkQueryRepository(f.jdb)
 	deskWaiting := func() bool {
 		t.Helper()
 		view, err := views.GetWorkView(ctx, id)
@@ -41,7 +41,7 @@ func TestWorkViewShowsDeskWaitingUntilTheExecutionIsSeated(t *testing.T) {
 		return view.DeskWaiting
 	}
 	require.True(t, deskWaiting(), "a waiting start whose execution is not begun waits for its Desk")
-	run := newRuns(t, f.db, f.sessions)
+	run := newRuns(t, f.jdb, f.sessions)
 	queued := run.latest(ctx, id)
 	require.True(t, queued.Queued())
 	require.True(t, deskWaiting(), "a Queued execution waits for its Desk")
@@ -61,10 +61,10 @@ func TestWorkViewShowsDeskWaitingUntilTheExecutionIsSeated(t *testing.T) {
 func TestRecoveryListsAWithdrawnStartUntilItsExecutionRetires(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
-	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}, creationPreparation(f.db, creationModels())).Handle(ctx, f.request)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
+	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}, creationPreparation(f.jdb, creationModels())).Handle(ctx, f.request)
 	require.NoError(t, err)
-	run := newRuns(t, f.db, f.sessions)
+	run := newRuns(t, f.jdb, f.sessions)
 	require.True(t, run.latest(ctx, id).Queued())
 	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -74,7 +74,7 @@ func TestRecoveryListsAWithdrawnStartUntilItsExecutionRetires(t *testing.T) {
 	require.NoError(t, f.sessions.Save(ctx, work))
 	listed := func() bool {
 		t.Helper()
-		ids, err := infrastructure.NewExecutionQueryRepository(f.db).ListWorkIDs(ctx, "", 100)
+		ids, err := infrastructure.NewExecutionQueryRepository(f.jdb).ListWorkIDs(ctx, "", 100)
 		require.NoError(t, err)
 		return slices.Contains(ids, id)
 	}

@@ -5,14 +5,14 @@ import (
 	"errors"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
-	"xorm.io/xorm"
 )
 
-type ConnectorRepository struct{ engine *xorm.Engine }
+type ConnectorRepository struct{ db *jimuxorm.DB }
 
 var (
 	_ domain.ConnectorRepository              = (*ConnectorRepository)(nil)
@@ -21,8 +21,8 @@ var (
 	_ query.InstalledConnectorQueryRepository = (*InstalledConnectorRepository)(nil)
 )
 
-func NewConnectorRepository(engine *xorm.Engine) *ConnectorRepository {
-	return &ConnectorRepository{engine: engine}
+func NewConnectorRepository(db *jimuxorm.DB) *ConnectorRepository {
+	return &ConnectorRepository{db: db}
 }
 
 func (r *ConnectorRepository) Get(ctx context.Context, id string) (*domain.Connector, error) {
@@ -35,7 +35,11 @@ func (r *ConnectorRepository) GetPlatform(ctx context.Context, name string) (*do
 
 func (r *ConnectorRepository) get(ctx context.Context, condition string, arguments ...any) (*domain.Connector, error) {
 	var row connectorDO
-	found, err := r.engine.Context(ctx).Cols(connectorAggregateColumns...).Where(condition, arguments...).Get(&row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Cols(connectorAggregateColumns...).Where(condition, arguments...).Get(&row)
 	if err != nil {
 		return nil, oops.With("operation", "marketplace.connector.get").Wrap(err)
 	}
@@ -57,15 +61,19 @@ func (r *ConnectorRepository) Save(ctx context.Context, connector *domain.Connec
 		return err
 	}
 	row.UpdatedAt = time.Now().UnixMilli()
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return err
+	}
 	var affected int64
 	if connector.Version == 0 {
 		row.Version, row.CreatedAt = 1, row.UpdatedAt
-		affected, err = r.engine.Context(ctx).Insert(&row)
+		affected, err = session.Insert(&row)
 		if duplicateKey(err) && !connector.Owner.Platform() {
 			return domain.ErrConnectorNameTaken
 		}
 	} else {
-		affected, err = r.engine.Context(ctx).Cols(connectorChangeColumns...).Incr("version").
+		affected, err = session.Cols(connectorChangeColumns...).Incr("version").
 			Where("id = ? AND version = ? AND deleted_at = 0", connector.ID, connector.Version).Update(&row)
 	}
 	return affectedOne(err, affected, "marketplace.connector.save")
@@ -73,7 +81,11 @@ func (r *ConnectorRepository) Save(ctx context.Context, connector *domain.Connec
 
 // Delete removes the row, so its owner may add the name again.
 func (r *ConnectorRepository) Delete(ctx context.Context, connector *domain.Connector) error {
-	affected, err := r.engine.Context(ctx).Where("id = ? AND version = ? AND state = ? AND deleted_at = 0", connector.ID, connector.Version, uint8(domain.ConnectorPrivate)).Delete(&connectorDO{})
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return err
+	}
+	affected, err := session.Where("id = ? AND version = ? AND state = ? AND deleted_at = 0", connector.ID, connector.Version, uint8(domain.ConnectorPrivate)).Delete(&connectorDO{})
 	return affectedOne(err, affected, "marketplace.connector.delete")
 }
 
@@ -92,7 +104,11 @@ func (r *ConnectorRepository) ListPublished(ctx context.Context) ([]query.Catalo
 
 func (r *ConnectorRepository) list(ctx context.Context, operation, condition string, arguments ...any) ([]query.CatalogConnector, error) {
 	var rows []connectorDO
-	if err := r.engine.Context(ctx).Cols(connectorColumns...).Where(condition, arguments...).Asc("name", "id").Find(&rows); err != nil {
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Cols(connectorColumns...).Where(condition, arguments...).Asc("name", "id").Find(&rows); err != nil {
 		return nil, oops.With("operation", operation).Wrap(err)
 	}
 	result := make([]query.CatalogConnector, 0, len(rows))
@@ -108,7 +124,11 @@ func (r *ConnectorRepository) list(ctx context.Context, operation, condition str
 
 func (r *InstalledConnectorRepository) ListInstalled(ctx context.Context, ownerID string) ([]query.InstalledConnector, error) {
 	var rows []installedConnectorDO
-	if err := r.engine.Context(ctx).Cols(installedConnectorColumns...).Where("owner_id = ? AND deleted_at = 0", ownerID).Asc("connector_id").Find(&rows); err != nil {
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Cols(installedConnectorColumns...).Where("owner_id = ? AND deleted_at = 0", ownerID).Asc("connector_id").Find(&rows); err != nil {
 		return nil, oops.With("operation", "marketplace.installed_connector.list").Wrap(err)
 	}
 	result := make([]query.InstalledConnector, 0, len(rows))
@@ -118,15 +138,19 @@ func (r *InstalledConnectorRepository) ListInstalled(ctx context.Context, ownerI
 	return result, nil
 }
 
-type InstalledConnectorRepository struct{ engine *xorm.Engine }
+type InstalledConnectorRepository struct{ db *jimuxorm.DB }
 
-func NewInstalledConnectorRepository(engine *xorm.Engine) *InstalledConnectorRepository {
-	return &InstalledConnectorRepository{engine: engine}
+func NewInstalledConnectorRepository(db *jimuxorm.DB) *InstalledConnectorRepository {
+	return &InstalledConnectorRepository{db: db}
 }
 
 func (r *InstalledConnectorRepository) Get(ctx context.Context, userID, connectorID string) (*domain.InstalledConnector, error) {
 	var row installedConnectorDO
-	found, err := r.engine.Context(ctx).Cols(installedConnectorColumns...).Where("owner_id = ? AND connector_id = ? AND deleted_at = 0", userID, connectorID).Get(&row)
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.Cols(installedConnectorColumns...).Where("owner_id = ? AND connector_id = ? AND deleted_at = 0", userID, connectorID).Get(&row)
 	if err != nil {
 		return nil, oops.With("operation", "marketplace.installed_connector.get").Wrap(err)
 	}
@@ -142,20 +166,27 @@ func (r *InstalledConnectorRepository) Save(ctx context.Context, installation *d
 	}
 	row := installedConnectorToDO(installation)
 	row.UpdatedAt = time.Now().UnixMilli()
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return err
+	}
 	var affected int64
-	var err error
 	if installation.Version == 0 {
 		row.Version, row.CreatedAt = 1, row.UpdatedAt
-		affected, err = r.engine.Context(ctx).Insert(&row)
+		affected, err = session.Insert(&row)
 	} else {
-		affected, err = r.engine.Context(ctx).Cols("state", "updated_at").Incr("version").
+		affected, err = session.Cols("state", "updated_at").Incr("version").
 			Where("id = ? AND owner_id = ? AND version = ? AND deleted_at = 0", installation.ID, installation.OwnerID, installation.Version).Update(&row)
 	}
 	return affectedOne(err, affected, "marketplace.installed_connector.save")
 }
 
 func (r *InstalledConnectorRepository) Delete(ctx context.Context, installation *domain.InstalledConnector) error {
-	affected, err := r.engine.Context(ctx).Where("id = ? AND owner_id = ? AND version = ? AND deleted_at = 0", installation.ID, installation.OwnerID, installation.Version).Delete(&installedConnectorDO{})
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return err
+	}
+	affected, err := session.Where("id = ? AND owner_id = ? AND version = ? AND deleted_at = 0", installation.ID, installation.OwnerID, installation.Version).Delete(&installedConnectorDO{})
 	return affectedOne(err, affected, "marketplace.installed_connector.delete")
 }
 

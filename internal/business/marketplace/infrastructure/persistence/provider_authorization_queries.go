@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
 	"xorm.io/xorm"
 
@@ -15,11 +16,11 @@ import (
 // ProviderAuthorizationQueries reads ProviderAuthorization facts for the
 // selections the repository's Get does not serve. It never projects protected
 // credentials.
-type ProviderAuthorizationQueries struct{ db *xorm.Engine }
+type ProviderAuthorizationQueries struct{ db *jimuxorm.DB }
 
 var _ query.ProviderAuthorizationQueryRepository = (*ProviderAuthorizationQueries)(nil)
 
-func NewProviderAuthorizationQueries(db *xorm.Engine) *ProviderAuthorizationQueries {
+func NewProviderAuthorizationQueries(db *jimuxorm.DB) *ProviderAuthorizationQueries {
 	return &ProviderAuthorizationQueries{db: db}
 }
 
@@ -29,7 +30,11 @@ func (q *ProviderAuthorizationQueries) ListPersonalAuthorizations(ctx context.Co
 		Provider string `xorm:"provider"`
 		Status   string `xorm:"status"`
 	}
-	err := q.db.Context(ctx).Table("scm_provider_authorization").Cols("id", "provider", "status").
+	session, err := q.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Table("scm_provider_authorization").Cols("id", "provider", "status").
 		Where("owner_id = ? AND deleted_at = 0", ownerID).Asc("provider", "id").Find(&rows)
 	if err != nil {
 		return nil, oops.With("operation", "marketplace.list_personal_authorizations").Wrap(err)
@@ -59,7 +64,11 @@ func (q *ProviderAuthorizationQueries) ListRefreshCandidates(ctx context.Context
 	var rows []struct {
 		ID string `xorm:"'id'"`
 	}
-	err := q.db.Context(ctx).Table("scm_provider_authorization").Cols("id").
+	session, err := q.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Table("scm_provider_authorization").Cols("id").
 		Where("status = ? AND deleted_at = 0 AND (refresh_lease_until = 0 OR refresh_lease_until <= ?) AND credentials_expire_at > 0 AND credentials_expire_at <= ?",
 			string(domain.ProviderAuthorizationActive), leaseCutoff.UTC().UnixMilli(), refreshCutoff.UTC().UnixMilli()).
 		Asc("credentials_expire_at", "id").Limit(min(limit, 1000)).Find(&rows)
@@ -80,7 +89,11 @@ func (q *ProviderAuthorizationQueries) ListScopeObservationCandidates(ctx contex
 	var rows []struct {
 		ID string `xorm:"'id'"`
 	}
-	err := q.db.Context(ctx).Table("scm_provider_authorization").Cols("id").
+	session, err := q.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Table("scm_provider_authorization").Cols("id").
 		Where("status = ? AND deleted_at = 0 AND access_scope_observed_at < ?", string(domain.ProviderAuthorizationActive), observedBefore.UTC().UnixMilli()).
 		Asc("access_scope_observed_at", "id").Limit(min(limit, 1000)).Find(&rows)
 	if err != nil {
@@ -100,19 +113,26 @@ type maintenanceIdentity struct {
 }
 
 func (q *ProviderAuthorizationQueries) AuthorizationIDsByAccount(ctx context.Context, provider domain.Provider, accountID, after string) (query.MaintenanceIdentities, error) {
-	session := q.db.Context(ctx).Table("scm_provider_authorization").Cols("id").
+	session, err := q.db.Session(ctx)
+	if err != nil {
+		return query.MaintenanceIdentities{}, err
+	}
+	session.Table("scm_provider_authorization").Cols("id").
 		Where("provider = ? AND provider_account_id = ? AND id > ? AND deleted_at = 0", string(provider), strings.TrimSpace(accountID), after).Asc("id")
 	return maintenanceIdentities(session)
 }
 
 func (q *ProviderAuthorizationQueries) AuthorizationIDsByInstallation(ctx context.Context, provider domain.Provider, installationID, after string) (query.MaintenanceIdentities, error) {
-	session := q.db.Context(ctx).Table("scm_provider_authorization").Cols("id").
+	session, err := q.db.Session(ctx)
+	if err != nil {
+		return query.MaintenanceIdentities{}, err
+	}
+	session.Table("scm_provider_authorization").Cols("id").
 		Where("provider = ? AND CAST(? AS CHAR(32)) MEMBER OF(access_scope_json->'$.installation_ids') AND id > ? AND deleted_at = 0", string(provider), strings.TrimSpace(installationID), after).Asc("id")
 	return maintenanceIdentities(session)
 }
 
 func maintenanceIdentities(session *xorm.Session) (query.MaintenanceIdentities, error) {
-	defer session.Close()
 	var rows []maintenanceIdentity
 	if err := session.Limit(maintenancePageSize + 1).Find(&rows); err != nil {
 		return query.MaintenanceIdentities{}, oops.With("operation", "marketplace.connection_maintenance_candidates").Wrap(err)

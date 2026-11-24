@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	domainevent "github.com/go-jimu/components/ddd/event"
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"go.uber.org/fx"
@@ -23,9 +24,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
-	"github.com/talgent-work/workbench/internal/pkg/eventlog"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/database"
+	"github.com/talgent-work/workbench/internal/pkg/eventbus"
 )
 
 type ConnectionConfig struct {
@@ -43,15 +44,14 @@ type connectionHandlerParams struct {
 	Config ConnectionConfig
 
 	App     *application.PersonalConnections
-	Mux     *http.ServeMux
-	Logger  *slog.Logger
+	Server  connectrpc.Server
 	Webhook *marketplacehttp.WebhookHandler
 }
 
 var ConnectionsModule = fx.Module(
 	"domain.marketplace.connections",
 	fx.Provide(func(cfg Config) ConnectionConfig { return cfg.Connections }),
-	pkgmysql.Bind(Database),
+	database.Bind(Database),
 	fx.Provide(newProviderCatalog, fx.Private),
 	fx.Provide(func(catalog *providerCatalog) application.ProviderDeclarations { return catalog }),
 	fx.Provide(func(cfg ConnectionConfig, catalog *providerCatalog) (scmgithub.Config, error) {
@@ -73,10 +73,10 @@ var ConnectionsModule = fx.Module(
 		},
 		fx.As(new(domain.ProviderAuthorizationRepository)), fx.As(new(application.AuthorizationStore)),
 	)),
-	fx.Provide(newCredentialEventDispatcher, fx.Private),
+	fx.Provide(eventbus.NewDispatcher, fx.Private),
 	fx.Provide(messagepublisher.NewCredentialChangePublisher),
 	fx.Invoke(func(lc fx.Lifecycle, events *domainevent.InMemoryDispatcher, publisher *messagepublisher.CredentialChangePublisher, logger *slog.Logger) {
-		events.Subscribe(eventlog.Handler(logger, publisher))
+		events.Subscribe(eventbus.Logging(logger, publisher))
 		lc.Append(fx.Hook{OnStop: events.Close})
 	}),
 	fx.Provide(func(catalog *providerCatalog, cfg scmgithub.Config, cipher application.CredentialCipher, httpClient *http.Client) (application.ProviderAuthorizationPorts, error) {
@@ -143,21 +143,9 @@ var ConnectionsModule = fx.Module(
 	}),
 	TaskqueueModule,
 	fx.Invoke(func(params connectionHandlerParams) {
-		params.Mux.Handle(marketplacehttp.GitHubWebhookPath, params.Webhook)
-		server := connectserver.New(params.Logger)
-		marketplaceprivatev1connect.RegisterCredentialServiceHandler(server, marketplaceconnect.NewCredentialHandler(params.App, params.Config.CredentialToken))
-		connectserver.Mount(params.Mux, server)
+		params.Server.Handle(marketplacehttp.GitHubWebhookPath, params.Webhook)
+		params.Server.Register(func(s *connect.Server) {
+			marketplaceprivatev1connect.RegisterCredentialServiceHandler(s, marketplaceconnect.NewCredentialHandler(params.App, params.Config.CredentialToken))
+		})
 	}),
 )
-
-func newCredentialEventDispatcher(logger *slog.Logger) *domainevent.InMemoryDispatcher {
-	// No close delay: its close hook is the module's first, so every producer
-	// has stopped by the time it closes.
-	return domainevent.NewDispatcher(
-		domainevent.WithDelayClose(0),
-		domainevent.WithHandlerTimeout(30*time.Second),
-		domainevent.WithUnhandledEventHandler(func(unhandled domainevent.UnhandledContext) {
-			logger.Debug("orphan event (no subscriber)", slog.String("event_kind", string(unhandled.Event.Kind())))
-		}),
-	)
-}

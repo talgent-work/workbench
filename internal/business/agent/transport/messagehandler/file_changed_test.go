@@ -6,7 +6,6 @@ import (
 	"time"
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
-	contribkafka "github.com/go-jimu/contrib/message/kafka"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -63,7 +62,7 @@ func TestFileChangesReachTheirDirectorysReaders(t *testing.T) {
 	} {
 		msg, err := integrationmessage.New(integrationmessage.KindOf(malformed), malformed)
 		require.NoError(t, err)
-		require.ErrorIs(t, handler.Handle(context.Background(), msg), contribkafka.ErrNonRetryable)
+		require.ErrorIs(t, handler.Handle(context.Background(), msg), integrationmessage.ErrPermanent)
 	}
 	require.Len(t, *changed, 4)
 

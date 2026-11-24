@@ -155,7 +155,7 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
     ("branch docs only", "false", "", "docs/guide.md", "push", set(), "false"),
     # These run the real substantive filter: the listed files are identical at
     # both revisions, as a comment-only change compiles to the same code.
-    ("REAL Go comments only", "false", "", "internal/pkg/taskqueue/runtime.go", "push", set(), "false"),
+    ("REAL Go comments only", "false", "", "internal/pkg/taskqueue/lane.go", "push", set(), "false"),
     ("REAL hand-written TS is always a change", "false", "", "apps/workbench-web/src/app.tsx", "push", {"workbench-web"}, "false"),
 ]:
     with tempfile.NamedTemporaryFile() as output:

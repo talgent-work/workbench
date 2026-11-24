@@ -5,6 +5,7 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,9 @@ import (
 func TestAManagedRunsTelemetryTokenAttributesOnlyThatRun(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
-	attributions := NewExecutionQueryRepository(f.db)
+	db, err := jimuxorm.New(f.db)
+	require.NoError(t, err)
+	attributions := NewExecutionQueryRepository(db)
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
 	input.TraceAttributes = map[string]string{"talgent.agent_work_id": input.WorkID, "talgent.user_id": "person-1", "talgent.computer_id": "forged"}

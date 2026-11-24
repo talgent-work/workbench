@@ -2,9 +2,7 @@ package connectrpc_test
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -24,6 +22,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -50,12 +49,11 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 			ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(func() time.Time { return observationTime }, sessions, executions, coordination, buffer, &commandtest.InputSettlements{}),
 		}, Queries: application.Queries{LocateWork: query.NewLocateWorkHandler(agents, sessions, permissions), GetAgentDefinition: query.NewGetAgentDefinitionHandler(agents, application.AssembleAgentDefinition), GetWork: query.NewGetWorkHandler(agents, sessions, permissions, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse)},
 	}
-	mux := http.NewServeMux()
-	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, slog.Default(), nil)
-	server := httptest.NewServer(mux)
-	defer server.Close()
-	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	feedback := agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	server := connecttest.NewServer()
+	agentmodule.RegisterRPCHandlers(server, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, nil)
+	address := connecttest.Start(t, server)
+	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address, connecthttp.WithReadMaxBytes(0))))
+	feedback := agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address, connecthttp.WithReadMaxBytes(0))))
 	create := &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "owner"}, Capabilities: &agentprivatev1.Capabilities{Prompt: "review", StartupAgent: "code-review:architect", RequiredPlugins: []string{"code-review"}}}
 	_, err := client.CreateAgentDefinition(ctx, create)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
@@ -306,11 +304,10 @@ func TestDefinitionRPCPreservesAuthorizedScope(t *testing.T) {
 	ctx := context.Background()
 	agents := &rpcAgents{items: map[string]*domain.AgentDefinition{}}
 	app := &application.Application{Definitions: agents, Queries: application.Queries{GetAgentDefinition: query.NewGetAgentDefinitionHandler(agents, application.AssembleAgentDefinition)}}
-	mux := http.NewServeMux()
-	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, slog.Default(), nil)
-	server := httptest.NewServer(mux)
-	defer server.Close()
-	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	server := connecttest.NewServer()
+	agentmodule.RegisterRPCHandlers(server, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, nil)
+	address := connecttest.Start(t, server)
+	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address, connecthttp.WithReadMaxBytes(0))))
 	request := &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work",
 		UsageScope:   &agentprivatev1.UsageScope{Kind: "employee", Reference: "owner"},
 		Capabilities: &agentprivatev1.Capabilities{StartupAgent: "employees:member"},

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -44,9 +45,11 @@ func newRelease(t *testing.T) *releaseFixture {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	provider, _, lifecycle := sandboxClient(t)
-	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	credentials := fixtureSandboxCredentials(db, jdb, provider)
+	p := NewProvisioning(jdb, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	record, err := register(ctx, p, request(), testMounts)
 	require.NoError(t, err)
 	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
@@ -61,7 +64,7 @@ func newRelease(t *testing.T) *releaseFixture {
 	require.NoError(t, err)
 	var spec sdk.CreateSandboxRequest
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
-	return &releaseFixture{db: db, provisioning: p, steps: steps, lookups: infrastructure.NewExecutionQueryRepository(db), lifecycle: lifecycle, record: record, metadata: spec.Metadata}
+	return &releaseFixture{db: db, provisioning: p, steps: steps, lookups: infrastructure.NewExecutionQueryRepository(jdb), lifecycle: lifecycle, record: record, metadata: spec.Metadata}
 }
 
 // abandon reconciles the start, which no environment answered, past its

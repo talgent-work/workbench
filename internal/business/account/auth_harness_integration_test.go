@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
@@ -166,12 +167,14 @@ func newHarness(t *testing.T) *harness {
 	engine, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
+	db, err := jimuxorm.New(engine)
+	require.NoError(t, err)
 	c := &clock{now: time.Now().UTC().Truncate(time.Millisecond)}
 	gh := &fakeGitHub{users: map[string]githubUser{}, verifiers: map[string]string{}}
 	ghServer := httptest.NewServer(gh)
 	t.Cleanup(ghServer.Close)
 
-	keys, err := infrastructure.NewSigningKeys(engine, infrastructure.SigningKeyConfig{
+	keys, err := infrastructure.NewSigningKeys(db, infrastructure.SigningKeyConfig{
 		Issuer: issuer, Audience: audience, MasterKey: make([]byte, 32),
 		Overlap: 10 * time.Minute, RotationInterval: 30 * 24 * time.Hour,
 		LongestTokenLifetime: agentTokenLifetime, VerificationRetention: lifetimes.Absolute, Now: c.Now,
@@ -182,15 +185,15 @@ func newHarness(t *testing.T) *harness {
 		WebBaseURL: ghServer.URL, APIBaseURL: ghServer.URL,
 	}, ghServer.Client())
 	require.NoError(t, err)
-	sessions := infrastructure.NewLoginSessionRepository(engine)
+	sessions := infrastructure.NewLoginSessionRepository(db)
 	removals := &recordedRemovals{}
 	signer := &switchableSigner{SigningKeys: keys}
 	app := application.NewApplication(application.Dependencies{
-		Accounts: infrastructure.NewAccountRepository(engine), Sessions: sessions, GitHub: github,
-		Tokens: signer, Directory: infrastructure.NewUserDirectoryQueries(engine),
+		Accounts: infrastructure.NewAccountRepository(db), Sessions: sessions, GitHub: github,
+		Tokens: signer, Directory: infrastructure.NewUserDirectoryQueries(db),
 		Lifetimes: lifetimes, Now: c.Now,
-		AgentAccounts: infrastructure.NewAgentAccountRepository(engine), AgentTokenLifetime: agentTokenLifetime,
-		Applications: infrastructure.NewApplicationRepository(engine), ApplicationQueries: infrastructure.NewApplicationQueries(engine),
+		AgentAccounts: infrastructure.NewAgentAccountRepository(db), AgentTokenLifetime: agentTokenLifetime,
+		Applications: infrastructure.NewApplicationRepository(db), ApplicationQueries: infrastructure.NewApplicationQueries(db),
 		ApplicationTokenLifetime: applicationTokenLifetime, SecretOverlap: secretOverlap,
 		Publisher: removals, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})

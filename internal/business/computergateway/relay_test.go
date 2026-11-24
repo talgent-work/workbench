@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
-	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
+	"github.com/talgent-work/workbench/internal/business/computergateway/connectionrecord"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
 
@@ -52,7 +52,7 @@ func startReplicasIdle(t *testing.T, fileIdle time.Duration) *replicas {
 	rdb := goredis.NewClient(&goredis.Options{Addr: miniredis.RunT(t).Addr()})
 	start := func(name string) *httptest.Server {
 		server := httptest.NewUnstartedServer(nil)
-		gateway := NewGateway(computerprivatev1connect.NewConnectionServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, backend.URL, connecthttp.WithReadMaxBytes(0)))), computerconnection.NewWriter(rdb), computerconnection.NewReader(rdb),
+		gateway := NewGateway(computerprivatev1connect.NewConnectionServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, backend.URL, connecthttp.WithReadMaxBytes(0)))), connectionrecord.NewWriter(rdb), connectionrecord.NewReader(rdb),
 			Replica{Name: name, Endpoint: server.Listener.Addr().String(), ControlToken: "control"}, slog.Default())
 		gateway.fileIdle = fileIdle
 		mux := http.NewServeMux()

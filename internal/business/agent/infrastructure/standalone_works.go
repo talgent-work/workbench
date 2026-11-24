@@ -42,7 +42,11 @@ func (r *WorkQueryRepository) ListStandaloneWorks(ctx context.Context, filter qu
 		condition = condition.And(builder.In("s.state", codes))
 	}
 	var rows []standaloneWorkRow
-	err := r.db.Context(ctx).Table("agent_session").Alias("s").
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Table("agent_session").Alias("s").
 		Select("s.id,s.display_title,s.state,s.harness_process,s.stop_reason,s.disconnected_since,s.failure_reason,s.created_at,s.updated_at").
 		Where("s.deleted_at=0").And(condition).
 		Desc("s.updated_at", "s.created_at", "s.id").Limit(filter.Limit).Find(&rows)
@@ -53,7 +57,11 @@ func (r *WorkQueryRepository) ListStandaloneWorks(ctx context.Context, filter qu
 	for _, row := range rows {
 		ids = append(ids, row.ID)
 	}
-	labels, err := listedWorkLabels(r.db.Context(ctx), ids)
+	session, err = r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	labels, err := listedWorkLabels(session, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -74,12 +82,20 @@ func (r *WorkQueryRepository) ListWorkAttributions(ctx context.Context, definiti
 		return nil, nil
 	}
 	var ids []string
-	err := r.db.Context(ctx).Table("agent_session").Alias("s").Cols("s.id").
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = session.Table("agent_session").Alias("s").Cols("s.id").
 		Where("s.deleted_at=0").And(standaloneWorkCondition(definition)).And(builder.In("s.id", workIDs)).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "agent.list_work_attributions").Wrap(err)
 	}
-	labels, err := listedWorkLabels(r.db.Context(ctx), ids)
+	session, err = r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	labels, err := listedWorkLabels(session, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +137,11 @@ type libraryWorkRow struct {
 func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person string, definition query.OwnedDefinition, limit int) ([]query.LibraryWork, error) {
 	read := func(condition builder.Cond) ([]libraryWorkRow, error) {
 		var rows []libraryWorkRow
-		err := r.db.Context(ctx).Table("agent_session").Alias("s").
+		session, err := r.db.Session(ctx)
+		if err != nil {
+			return nil, err
+		}
+		err = session.Table("agent_session").Alias("s").
 			Select("s.id,s.agent_id,s.work_caller_kind,s.work_caller_id,s.file_home_kind,s.display_title,s.located_layout,s.updated_at,"+agentOwnerColumn+" AS agent_owner").
 			Where("s.deleted_at=0").And(condition).Desc("s.updated_at", "s.id").Limit(limit).Find(&rows)
 		return rows, oops.With("operation", "agent.list_library_works").Wrap(err)

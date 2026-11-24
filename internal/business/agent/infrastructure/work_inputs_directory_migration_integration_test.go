@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -117,7 +118,9 @@ func TestWorkInputsDirectoryMigrationKeysEachUnclosedWorksInputs(t *testing.T) {
 	engine, err := xorm.NewEngine("mysql", config.FormatDSN())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
-	found, err := infrastructure.NewWorkQueryRepository(engine).ListUnclosedWorksReadingInputs(ctx, homed, "", 10)
+	jdb, err := jimuxorm.New(engine)
+	require.NoError(t, err)
+	found, err := infrastructure.NewWorkQueryRepository(jdb).ListUnclosedWorksReadingInputs(ctx, homed, "", 10)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{works["homed"].id, works["closing"].id}, found)
 }

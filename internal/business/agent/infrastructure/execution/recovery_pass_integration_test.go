@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -122,8 +123,8 @@ func (s *executionSteps) shortSteps(ctx context.Context, id string) error {
 }
 
 // pass reconciles every outstanding execution once, as one sweep would.
-func (s *executionSteps) pass(ctx context.Context, db *xorm.Engine) error {
-	ids, err := infrastructure.NewExecutionQueryRepository(db).ListOutstandingExecutions(ctx, "", 1000)
+func (s *executionSteps) pass(ctx context.Context, jdb *jimuxorm.DB) error {
+	ids, err := infrastructure.NewExecutionQueryRepository(jdb).ListOutstandingExecutions(ctx, "", 1000)
 	if err != nil {
 		return err
 	}

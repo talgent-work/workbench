@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/account/application/query"
 	"github.com/talgent-work/workbench/internal/business/account/domain"
@@ -13,20 +13,24 @@ import (
 
 // ApplicationQueries reads Applications by their Application Owner.
 type ApplicationQueries struct {
-	engine *xorm.Engine
+	db *jimuxorm.DB
 }
 
 var _ query.ApplicationQueryRepository = (*ApplicationQueries)(nil)
 
-func NewApplicationQueries(engine *xorm.Engine) *ApplicationQueries {
-	return &ApplicationQueries{engine: engine}
+func NewApplicationQueries(db *jimuxorm.DB) *ApplicationQueries {
+	return &ApplicationQueries{db: db}
 }
 
 // OwnedApplications reads the owner's Applications, removed ones included,
 // through idx_owner_registered, then their secrets still valid at now.
 func (r *ApplicationQueries) OwnedApplications(ctx context.Context, owner string, now time.Time) ([]query.OwnedApplication, error) {
 	var rows []applicationDO
-	if err := r.engine.Context(ctx).Cols("id", "name", "registered_at", "state").
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Cols("id", "name", "registered_at", "state").
 		Where("owner_id = ? AND deleted_at = 0", owner).
 		OrderBy("registered_at, id").Find(&rows); err != nil {
 		return nil, oops.With("operation", "application.list_owned").Wrap(err)
@@ -40,7 +44,11 @@ func (r *ApplicationQueries) OwnedApplications(ctx context.Context, owner string
 	}
 	var secrets []clientSecretDO
 	at := now.UnixMilli()
-	if err := r.engine.Context(ctx).Cols(clientSecretColumns...).In("application_id", ids).
+	session, err = r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Cols(clientSecretColumns...).In("application_id", ids).
 		Where("deleted_at = 0 AND (state = ? OR (state = ? AND overlap_ends_at > ?))",
 			int(domain.ClientSecretCurrent), int(domain.ClientSecretOverlapping), at).
 		OrderBy("state, issued_at, id").Find(&secrets); err != nil {

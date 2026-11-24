@@ -2,10 +2,9 @@ package trace
 
 import (
 	"errors"
-	"log/slog"
-	"net/http"
 	"strings"
 
+	"connectrpc.com/connect/v2"
 	"github.com/talgent-work/contracts/gen/go/trace/public/v1/tracepublicv1connect"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -18,7 +17,7 @@ import (
 	tracerpc "github.com/talgent-work/workbench/internal/business/trace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 )
 
 // ClickHouseConfig addresses the native telemetry database, apart from any
@@ -59,9 +58,9 @@ var Module = fx.Module(
 	fx.Provide(query.NewQueries),
 	fx.Provide(application.NewApplication),
 
-	fx.Invoke(func(app *application.Application, mux *http.ServeMux, logger *slog.Logger) {
-		server := connectserver.New(logger, authn.NewPrincipalInterceptor())
-		tracepublicv1connect.RegisterTraceQueryServiceHandler(server, tracerpc.NewHandler(app))
-		connectserver.Mount(mux, server)
+	fx.Invoke(func(app *application.Application, server connectrpc.Server) {
+		server.Register(func(s *connect.Server) {
+			tracepublicv1connect.RegisterTraceQueryServiceHandler(s, tracerpc.NewHandler(app))
+		}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
 	}),
 )

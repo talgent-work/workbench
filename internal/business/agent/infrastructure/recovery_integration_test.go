@@ -11,6 +11,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
@@ -58,8 +59,8 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 			f, id := stoppedContinuationSession(t)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
-			db, agents, sessions := f.db, f.agents, f.sessions
-			auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
+			jdb, agents, sessions := f.jdb, f.agents, f.sessions
+			auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
 			before, err := sessions.Get(ctx, id)
 			require.NoError(t, err)
 			var starts atomic.Int32
@@ -82,7 +83,7 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 				t.Fatal(ctx.Err())
 			}
 			if scenario.closed {
-				require.NoError(t, command.NewCloseWorkHandler(sessions, auth, executionsOf(db), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: "close-before-admission"}))
+				require.NoError(t, command.NewCloseWorkHandler(sessions, auth, executionsOf(jdb), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: "close-before-admission"}))
 			}
 			var expectedStarts int32
 			release()
@@ -98,7 +99,7 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 			saved, err := sessions.Get(ctx, id)
 			require.NoError(t, err)
 			require.Equal(t, !scenario.closed, saved.HoldsProcess())
-			ids, err := infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
+			ids, err := infrastructure.NewExecutionQueryRepository(jdb).ListWorkIDs(ctx, "", 100)
 			require.NoError(t, err)
 			if scenario.closed {
 				require.NotContains(t, ids, id, "a closed Work leaves recovery; Storage owns its workspace reclamation")
@@ -112,7 +113,7 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 				require.Equal(t, domain.WorkStopped, saved.State)
 				require.Equal(t, before.HarnessProcess, saved.HarnessProcess, "failed admission must preserve the completed process")
 			}
-			create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, counted(sessions), auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
+			create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, counted(sessions), auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels()))
 			_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "next-case"}})
 			require.NoError(t, err, "an uncommitted admission holds no concurrency")
 			require.Equal(t, expectedStarts+1, starts.Load())
@@ -126,14 +127,16 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	agents := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Original", RequiredPlugins: []string{"review"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "review:architect"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
-	run := newRuns(t, db, sessions)
+	run := newRuns(t, jdb, sessions)
 	originalRequest := uuid.Must(uuid.NewV7()).String()
-	sessionID, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: originalRequest, SubjectID: "owner", AgentID: agent.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "work"}})
+	sessionID, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{RequestID: originalRequest, SubjectID: "owner", AgentID: agent.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "work"}})
 	require.NoError(t, err)
 	original := requireStartRequested(t, sessions, sessionID)
 	require.Equal(t, domain.ContextFresh, original.ContextMode)
@@ -144,14 +147,16 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 		require.NoError(t, db.Close())
 		db, err = xorm.NewEngine("mysql", dsn)
 		require.NoError(t, err)
-		agents = infrastructure.NewAgentDefinitionRepository(db, time.Now)
-		sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
-		run = newRuns(t, db, sessions)
+		jdb, err = jimuxorm.New(db)
+		require.NoError(t, err)
+		agents = infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
+		sessions = infrastructure.NewAgentWorkRepository(jdb, time.Now)
+		run = newRuns(t, jdb, sessions)
 	}
 	recover := func() {
 		t.Helper()
 		reconnect()
-		ids, err := infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
+		ids, err := infrastructure.NewExecutionQueryRepository(jdb).ListWorkIDs(ctx, "", 100)
 		require.NoError(t, err)
 		require.Equal(t, []string{sessionID}, ids)
 		require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil).Handle(ctx, sessionID))
@@ -162,7 +167,7 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	recover()
 	require.Equal(t, begun.ID, run.latest(ctx, sessionID).ID, "a repeated recovery begins no second execution")
 	run.ready(ctx, sessionID)
-	require.NoError(t, command.NewStopWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), executionsOf(db)).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: "stop"}))
+	require.NoError(t, command.NewStopWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), executionsOf(jdb)).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: "stop"}))
 	unsent, err := run.executions.Latest(ctx, sessionID)
 	require.NoError(t, err)
 	require.False(t, unsent.ExitRequest.Requested(), "the stop's Domain Event is lost")
@@ -183,17 +188,17 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	require.Equal(t, domain.WorkStopped, completed.State)
 	require.False(t, completed.HoldsProcess())
 	reconnect()
-	ids, err := infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
+	ids, err := infrastructure.NewExecutionQueryRepository(jdb).ListWorkIDs(ctx, "", 100)
 	require.NoError(t, err)
 	require.Empty(t, ids, "a stopped Work has no remaining recovery obligation")
 
 	// A close racing an interrupted Resume must retain the selected continuation
 	// context while obtaining the resumed process's exit.
 	resumeRequest := command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessionID}
-	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
+	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
 	beforeReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
-	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
+	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
 	afterReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
 	require.Equal(t, beforeReplay, afterReplay, "a replay cannot admit a second execution")
@@ -202,7 +207,7 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	require.Equal(t, domain.ContextContinue, continuation.ContextMode)
 	require.Equal(t, original.HarnessSessionReference, continuation.HarnessSessionReference)
 	closeWork := func() *command.CloseWorkHandler {
-		return command.NewCloseWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), executionsOf(db), &commandtest.InputBuffer{})
+		return command.NewCloseWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), executionsOf(jdb), &commandtest.InputBuffer{})
 	}
 	closeRequest := command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: "close"}
 	require.ErrorIs(t, closeWork().Handle(ctx, closeRequest), domain.ErrWorkTransition, "a starting Work cannot be closed")
@@ -227,10 +232,10 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	require.Equal(t, domain.WorkClosed, closed.State)
 	require.True(t, closed.HarnessProcess.Exited)
 	require.True(t, closed.HarnessProcess.ComputeReclaimed)
-	ids, err = infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
+	ids, err = infrastructure.NewExecutionQueryRepository(jdb).ListWorkIDs(ctx, "", 100)
 	require.NoError(t, err)
 	require.Empty(t, ids, "a closed Work leaves recovery; Storage owns its workspace reclamation")
-	require.ErrorIs(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest), domain.ErrWorkTransition, "a late repeat of an ended start starts nothing")
+	require.ErrorIs(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest), domain.ErrWorkTransition, "a late repeat of an ended start starts nothing")
 	require.Equal(t, resumed.ID, run.latest(ctx, sessionID).ID, "replaying a historical request begins no execution")
 	closedAfterReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)

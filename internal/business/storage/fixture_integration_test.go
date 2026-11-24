@@ -20,6 +20,7 @@ import (
 	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/go-jimu/components/ddd/message"
 	"github.com/go-jimu/components/taskqueue"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -30,7 +31,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/storage/infrastructure"
 	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
-	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -74,6 +76,8 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	engine, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
+	db, err := jimuxorm.New(engine)
+	require.NoError(t, err)
 	f := &fixture{t: t, persistent: t.TempDir(), working: t.TempDir(), sandboxUID: os.Getuid()}
 	if f.sandboxUID == 0 {
 		f.sandboxUID = nativeSandboxUID
@@ -81,7 +85,7 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	mux := http.NewServeMux()
 	f.server = httptest.NewServer(mux)
 	t.Cleanup(f.server.Close)
-	f.directories = &interruptibleDirectories{DirectoryRepository: infrastructure.NewDirectoryRepository(engine)}
+	f.directories = &interruptibleDirectories{DirectoryRepository: infrastructure.NewDirectoryRepository(db)}
 	f.converter, f.queue, f.published = newFakeConverter(t), newFakeQueue(), &recordedMessages{}
 	config := Config{
 		PersistentRoot: f.persistent, WorkingRoot: f.working, SandboxUID: f.sandboxUID,
@@ -92,18 +96,20 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	}
 	configure(&config)
 	require.NoError(t, config.Validate())
-	ports := mechanisms(config, infrastructure.NewDirectoryQueries(engine), application.TaskLanes{Renderings: f.queue, Maintenance: f.queue}, f.published, slog.Default())
+	ports := mechanisms(config, infrastructure.NewDirectoryQueries(db), application.TaskLanes{Renderings: f.queue, Maintenance: f.queue}, f.published, slog.Default())
 	f.nas = &interruptibleBackend{DirectoryBackendPort: ports.Backends[domain.BackendNAS]}
 	ports.Backends[domain.BackendNAS] = f.nas
 	f.app = assembleWith(config, f.directories, ports, slog.Default())
 	storagehttp.Register(mux, f.app, fixtureMaxUploadBytes)
 	content, err := config.contentCallers()
 	require.NoError(t, err)
-	rpc := connectserver.New(slog.Default())
-	storageprivatev1connect.RegisterDirectoryServiceHandler(rpc, storageconnect.NewDirectoryHandler(f.app, []string{config.AgentToken, "i"}, content))
-	storageprivatev1connect.RegisterSandboxMountServiceHandler(rpc, storageconnect.NewSandboxMountHandler(f.app, config.AgentToken))
-	connectserver.Mount(mux, rpc)
-	client := connect.NewClient(connecthttp.NewTransport(f.server.Client(), f.server.URL))
+	address := connecttest.Serve(t, func(server connectrpc.Server) {
+		server.Register(func(rpc *connect.Server) {
+			storageprivatev1connect.RegisterDirectoryServiceHandler(rpc, storageconnect.NewDirectoryHandler(f.app, []string{config.AgentToken, "i"}, content))
+			storageprivatev1connect.RegisterSandboxMountServiceHandler(rpc, storageconnect.NewSandboxMountHandler(f.app, config.AgentToken))
+		})
+	})
+	client := connect.NewClient(connecthttp.NewTransport(http.DefaultClient, address))
 	f.rpc = storageprivatev1connect.NewDirectoryServiceClient(client)
 	f.mounts = storageprivatev1connect.NewSandboxMountServiceClient(client)
 	return f

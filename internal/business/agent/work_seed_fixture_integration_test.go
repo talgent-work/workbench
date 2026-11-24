@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -40,7 +41,9 @@ func seedDefinition(t *testing.T, db *xorm.Engine) *domain.AgentDefinition {
 		Capabilities: domain.CapabilityConfiguration{Prompt: "base prompt", RequiredPlugins: []string{"custom"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "custom:base"},
 	})
 	require.NoError(t, err)
-	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	definitions := infrastructure.NewAgentDefinitionRepository(jdb, time.Now)
 	require.NoError(t, definitions.Save(t.Context(), created))
 	stored, err := definitions.Get(t.Context(), created.ID)
 	require.NoError(t, err)
@@ -97,7 +100,9 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	if seed.context != "" {
 		work.HarnessProcess.ContextMode = seed.context
 	}
-	works := infrastructure.NewAgentWorkRepository(db, time.Now)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	works := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	require.NoError(t, works.Save(ctx, work))
 	run := seedExecution(t, work, cloud.Name, definition.Purpose)
 	work, err = works.Get(ctx, work.ID)
@@ -105,7 +110,7 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	if seedState(work, run, seed, now) {
 		require.NoError(t, works.Save(ctx, work))
 	}
-	require.NoError(t, execution.NewAgentExecutionRepository(db, time.Now).Save(ctx, run))
+	require.NoError(t, execution.NewAgentExecutionRepository(jdb, time.Now).Save(ctx, run))
 	stored, err := works.Get(ctx, work.ID)
 	require.NoError(t, err)
 	return seededWork{AgentWork: stored, execution: run}

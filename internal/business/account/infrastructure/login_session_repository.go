@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/samber/oops"
 	"xorm.io/xorm"
@@ -17,13 +18,13 @@ var loginSessionColumns = []string{"id", "account_id", "refresh_digest", "expire
 // LoginSessionRepository persists Login Sessions with the refresh secrets they
 // replaced, so a replaced secret still finds its session.
 type LoginSessionRepository struct {
-	engine *xorm.Engine
+	db *jimuxorm.DB
 }
 
 var _ domain.LoginSessionRepository = (*LoginSessionRepository)(nil)
 
-func NewLoginSessionRepository(engine *xorm.Engine) *LoginSessionRepository {
-	return &LoginSessionRepository{engine: engine}
+func NewLoginSessionRepository(db *jimuxorm.DB) *LoginSessionRepository {
+	return &LoginSessionRepository{db: db}
 }
 
 func (r *LoginSessionRepository) Get(ctx context.Context, id string) (*domain.LoginSession, error) {
@@ -42,7 +43,11 @@ func (r *LoginSessionRepository) FindByRefreshSecret(ctx context.Context, digest
 		return nil, domain.PresentedRefreshSecret{}, err
 	}
 	replaced := new(replacedSecretDO)
-	found, err := r.engine.Context(ctx).Cols("session_id").
+	dbSession, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, domain.PresentedRefreshSecret{}, err
+	}
+	found, err := dbSession.Cols("session_id").
 		Where("refresh_digest = ? AND deleted_at = 0", string(digest)).Get(replaced)
 	if err != nil {
 		return nil, domain.PresentedRefreshSecret{}, oops.With("operation", "login_session.find_replaced").Wrap(err)
@@ -59,7 +64,11 @@ func (r *LoginSessionRepository) FindByRefreshSecret(ctx context.Context, digest
 
 func (r *LoginSessionRepository) load(ctx context.Context, where string, arg any) (*domain.LoginSession, error) {
 	row := new(loginSessionDO)
-	found, err := r.engine.Context(ctx).Cols(loginSessionColumns...).Where(where, arg).Get(row)
+	dbSession, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := dbSession.Cols(loginSessionColumns...).Where(where, arg).Get(row)
 	if err != nil {
 		return nil, oops.With("operation", "login_session.get").Wrap(err)
 	}
@@ -76,19 +85,13 @@ func (r *LoginSessionRepository) load(ctx context.Context, where string, arg any
 // Save writes the session row and, after a Refresh, records the secret it
 // replaced so presenting it again is recognized as reuse.
 func (r *LoginSessionRepository) Save(ctx context.Context, session *domain.LoginSession) error {
-	dbSession := r.engine.NewSession().Context(ctx)
-	defer dbSession.Close()
-	if err := dbSession.Begin(); err != nil {
-		return oops.With("operation", "login_session.begin").Wrap(err)
-	}
-	if err := saveLoginSession(dbSession, session); err != nil {
-		_ = dbSession.Rollback()
-		return err
-	}
-	if err := dbSession.Commit(); err != nil {
-		return oops.With("operation", "login_session.commit").With("session_id", session.ID).Wrap(err)
-	}
-	return nil
+	return r.db.Manager().WithinOrJoin(ctx, func(ctx context.Context) error {
+		dbSession, err := r.db.Session(ctx)
+		if err != nil {
+			return err
+		}
+		return saveLoginSession(dbSession, session)
+	})
 }
 
 func saveLoginSession(tx *xorm.Session, session *domain.LoginSession) error {
@@ -133,7 +136,11 @@ func saveLoginSession(tx *xorm.Session, session *domain.LoginSession) error {
 // ForgetReplacedSecrets drops reuse evidence of sessions past their absolute
 // expiry, oldest first and at most limit rows; such sessions issue nothing.
 func (r *LoginSessionRepository) ForgetReplacedSecrets(ctx context.Context, expiredBefore time.Time, limit int) (int64, error) {
-	result, err := r.engine.Context(ctx).Exec(
+	dbSession, err := r.db.Session(ctx)
+	if err != nil {
+		return 0, err
+	}
+	result, err := dbSession.Exec(
 		"DELETE FROM login_session_replaced_secret WHERE expires_at < ? ORDER BY expires_at, id LIMIT ?",
 		expiredBefore.UnixMilli(), limit,
 	)

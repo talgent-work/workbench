@@ -15,6 +15,7 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -43,8 +44,10 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	newProvisioning := func(provider *Sandboxes, now func() time.Time) *Provisioning {
-		return NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, now, nil)
+		return NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, now, nil)
 	}
 	reconcile := func(steps *executionSteps, id string) error {
 		return steps.reconcile(ctx, id)
@@ -52,7 +55,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 	beginAgain := func(launch domain.LaunchSpecification) error {
 		run, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: domain.WorkStartAdmitted{WorkID: launch.WorkID, StartAdmittedAt: time.Now(), DeskID: "desk-again"}, Launch: launch, Realization: domain.RealizationCloud})
 		require.NoError(t, err)
-		return NewAgentExecutionRepository(db, time.Now).Save(ctx, run)
+		return NewAgentExecutionRepository(jdb, time.Now).Save(ctx, run)
 	}
 
 	t.Run("continuation launch retains the Work thinking level", func(t *testing.T) {
@@ -197,6 +200,8 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.NotEmpty(t, spec.Env["EXECD_ACCESS_TOKEN"])
 		require.NoError(t, db.Close())
 		db, err = xorm.NewEngine("mysql", dsn)
+		require.NoError(t, err)
+		jdb, err = jimuxorm.New(db)
 		require.NoError(t, err)
 		changed := config()
 		changed.Image = "new-image:after-restart"

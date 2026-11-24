@@ -34,7 +34,7 @@ func TestCurrentProcessRestoresIdlenessAfterLostInputAndReplyFeedback(t *testing
 		Running: true, Ready: true,
 		Turn: domain.TurnObservation{Sequence: 30, Completed: true}, PhaseSequence: 30,
 	}}
-	feedback := newRunsWith(t, f.db, f.sessions, func() time.Time { return now }, process)
+	feedback := newRunsWith(t, f.jdb, f.sessions, func() time.Time { return now }, process)
 	delivery := command.NewInputAcceptance(f.sessions, buffer)
 	first := command.ExecutionInput{ID: uuid.NewString(), Text: "first task"}
 	require.NoError(t, acceptance(delivery.AcceptInput(ctx, id, first)))

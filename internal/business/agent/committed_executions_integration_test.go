@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
@@ -24,9 +25,11 @@ func TestCommittedExecutionWakesAndDispatchesOnlyAfterItsCommit(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
 	events := &recordedEvents{}
 	var woken []string
-	executions := newCommittedExecutions(db, time.Now, &workStateUpdates{reader: unavailableViews{}, logger: slog.New(slog.DiscardHandler)}, events)
+	executions := newCommittedExecutions(jdb, time.Now, &workStateUpdates{reader: unavailableViews{}, logger: slog.New(slog.DiscardHandler)}, events)
 	executions.wake = func(_ context.Context, id string) { woken = append(woken, id) }
 
 	launch := domain.LaunchSpecification{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "committed-work", HarnessSessionReference: "context",

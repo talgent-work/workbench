@@ -32,11 +32,11 @@ import (
 // Real API, selection, creation and persistence; the catalog is the
 // controlled external authority. Reading options must never load a Harness.
 func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T) {
-	db, definitions, works, definition := startingCreationDatabase(t)
+	_, jdb, definitions, works, definition := startingCreationDatabase(t)
 	catalog := &optionsCatalog{version: "1"}
-	access := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
+	access := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
 	app := &application.Application{
-		Definitions: definitions, DefinitionQueries: infrastructure.NewAgentDefinitionQueryRepository(db),
+		Definitions: definitions, DefinitionQueries: infrastructure.NewAgentDefinitionQueryRepository(jdb),
 		Catalog: commandtest.StartCatalog(catalog, creationConnections{}), Models: creationModels(),
 		Queries: application.Queries{GetWork: query.NewGetWorkHandler(definitions, works, access, application.AssembleAgentWorkEntity, nil)},
 	}
@@ -81,7 +81,7 @@ func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T)
 	require.Len(t, options.Plugins, 1)
 	require.Equal(t, "runtime", options.Plugins[0].Name)
 	require.Equal(t, map[string][2]bool{"talgent": {true, true}, "github": {false, false}}, connectorOptions(options), "another caller may only add GitHub")
-	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, works, access, creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, works, access, creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(jdb, creationModels()))
 	id, err := create.Handle(t.Context(), creationInput(definition.ID, "retained"))
 	require.NoError(t, err)
 	catalog.version = "2"

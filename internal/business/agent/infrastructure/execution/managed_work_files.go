@@ -7,8 +7,8 @@ import (
 	"io"
 	"time"
 
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/samber/oops"
-	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -22,7 +22,7 @@ type ManagedWorkFiles struct {
 	machines *ManagedComputers
 }
 
-func NewManagedWorkFiles(db *xorm.Engine, machines *ManagedComputers) (*ManagedWorkFiles, error) {
+func NewManagedWorkFiles(db *jimuxorm.DB, machines *ManagedComputers) (*ManagedWorkFiles, error) {
 	if db == nil || machines == nil {
 		return nil, errors.New("agent: executions and Managed Computers are required for Managed Works' files")
 	}
@@ -104,11 +104,15 @@ type workAccessTokens interface {
 
 // recordedAccessTokens reads the token from the Work's latest execution that
 // opened an environment.
-type recordedAccessTokens struct{ db *xorm.Engine }
+type recordedAccessTokens struct{ db *jimuxorm.DB }
 
 func (r recordedAccessTokens) accessToken(ctx context.Context, workID string) (string, error) {
 	var record executionRecord
-	found, err := r.db.Context(ctx).Where("session_id = ? AND sandbox_id <> ''", workID).
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return "", err
+	}
+	found, err := session.Where("session_id = ? AND sandbox_id <> ''", workID).
 		Desc("created_at").Desc("id").Cols("specification_json").Get(&record)
 	if err != nil {
 		return "", oops.With("operation", "find_work_access_token").Wrap(err)

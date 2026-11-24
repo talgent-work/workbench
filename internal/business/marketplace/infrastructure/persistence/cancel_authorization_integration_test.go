@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	domainevent "github.com/go-jimu/components/ddd/event"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
@@ -100,7 +101,9 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	repo := NewProviderAuthorizations(db)
+	jdb, err := jimuxorm.New(db)
+	require.NoError(t, err)
+	repo := NewProviderAuthorizations(jdb)
 	owner, other := "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "cfe58e71-efc6-5336-8009-449ad568c42b"
 	auth := newProviderAuthorizationForTest(t, owner)
 	auth.ExpiresAt = time.Now().Add(-time.Minute)
@@ -109,7 +112,7 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	reauthorization := &reauthorizationAuthority{}
 	changes := &credentialChanges{}
 	store := application.NewCredentialChangeDispatch(repo, changes, slog.Default())
-	connections := declaredConnections(store, NewProviderAuthorizationQueries(db), testGitHub{access: unobservableAccess{}, authority: reauthorization}, nil, port)
+	connections := declaredConnections(store, NewProviderAuthorizationQueries(jdb), testGitHub{access: unobservableAccess{}, authority: reauthorization}, nil, port)
 	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorDependencies{})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))

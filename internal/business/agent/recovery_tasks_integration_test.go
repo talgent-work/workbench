@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -17,7 +16,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"go.uber.org/fx"
 	"k8s.io/client-go/kubernetes"
@@ -86,8 +87,8 @@ func TestFailedSweepDoesNotSuppressLaterSweeps(t *testing.T) {
 			return executions
 		}),
 		storageStub(),
-		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
-		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
+		fx.Provide(func() connectrpc.Server { return connecttest.NewServer() }), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
+		mysqltest.Provide(t, "execution", db),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
 		fx.Provide(func() command.DispatcherPort { return port }),
 	)

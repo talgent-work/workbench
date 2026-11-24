@@ -9,20 +9,21 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
+	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/telemetryingest"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/database"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
-	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 	"github.com/talgent-work/workbench/internal/pkg/opensandbox"
 	"go.uber.org/fx"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes"
-	"xorm.io/xorm"
 )
 
 type ExecutionClientConfig struct {
@@ -167,7 +168,7 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, clu
 }
 
 var ExecutionModule = fx.Module("agent.execution-integration",
-	pkgmysql.Bind("execution"),
+	database.Bind("execution"),
 	fx.Provide(
 		// Model Templates and Model Configurations are platform data read
 		// from the deployment's configuration.
@@ -185,12 +186,12 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		},
 		newExecutionSandboxes,
 		newExecutionLifecycle,
-		func(db *xorm.Engine, client *sdk.LifecycleClient, models command.PlatformCatalogPort, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
-			return execution.NewSandboxCredentials(db, client, models, http.DefaultClient, cfg.CredentialTransport)
+		func(locks *database.AdvisoryLocks, db *jimuxorm.DB, client *sdk.LifecycleClient, models command.PlatformCatalogPort, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
+			return execution.NewSandboxCredentials(locks, db, client, models, http.DefaultClient, cfg.CredentialTransport)
 		},
 		pkgkubernetes.NewClientset,
 		newManagedEnvironment,
-		func(db *xorm.Engine, s *execution.Sandboxes, credentials *execution.SandboxCredentials, cfg ExecutionConfig, updates *workStateUpdates, managed *execution.ManagedEnvironment) *execution.Provisioning {
+		func(db *jimuxorm.DB, s *execution.Sandboxes, credentials *execution.SandboxCredentials, cfg ExecutionConfig, updates *workStateUpdates, managed *execution.ManagedEnvironment) *execution.Provisioning {
 			p := execution.NewProvisioning(db, s, credentials, cfg.Native, time.Now, managed)
 			p.ProgressCommitted = updates.publish
 			return p
@@ -237,7 +238,7 @@ func relayClient() *http.Client {
 
 // newManagedEnvironment is the Managed realization, nil without Managed
 // Computers.
-func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository) (*execution.ManagedEnvironment, error) {
+func newManagedEnvironment(db *jimuxorm.DB, machines *execution.ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository) (*execution.ManagedEnvironment, error) {
 	if machines == nil {
 		return nil, nil
 	}
@@ -247,7 +248,7 @@ func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers
 // registerManagedTelemetry takes the telemetry of Works on Managed Computers,
 // attributes it to each run and forwards it to the OTel Collector; nothing
 // without Managed Computers.
-func registerManagedTelemetry(mux *http.ServeMux, attributions query.ExecutionQueryRepository, managed *execution.ManagedEnvironment, cfg ComputerConfig, logger *slog.Logger) error {
+func registerManagedTelemetry(server connectrpc.Server, attributions query.ExecutionQueryRepository, managed *execution.ManagedEnvironment, cfg ComputerConfig, logger *slog.Logger) error {
 	if managed == nil {
 		return nil
 	}
@@ -255,7 +256,7 @@ func registerManagedTelemetry(mux *http.ServeMux, attributions query.ExecutionQu
 	if err != nil {
 		return err
 	}
-	telemetryingest.Register(mux, attributions, collector, logger)
+	telemetryingest.Register(server, attributions, collector, logger)
 	return nil
 }
 

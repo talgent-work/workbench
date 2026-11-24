@@ -17,7 +17,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
-	internalpkg "github.com/talgent-work/workbench/internal/pkg"
+	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/opensandbox"
 	"go.uber.org/fx"
 	"k8s.io/client-go/kubernetes"
@@ -49,7 +49,7 @@ func TestExecutionCompositionReachesHTTP1OpenSandbox(t *testing.T) {
 	}
 	var sandboxes *execution.Sandboxes
 	var models query.ModelConfigurations
-	app := fx.New(fx.NopLogger, fx.Supply(cfg), fx.Provide(internalpkg.NewH2CClient, newExecutionLifecycle, func(cfg ExecutionConfig) (command.PlatformCatalogPort, error) {
+	app := fx.New(fx.NopLogger, fx.Supply(cfg), fx.Provide(connectrpc.NewH2CClient, newExecutionLifecycle, func(cfg ExecutionConfig) (command.PlatformCatalogPort, error) {
 		return platformcatalog.Load(cfg.Models)
 	}, func() kubernetes.Interface { return fake.NewClientset() }, newExecutionSandboxes, newModelConfigurations), fx.Populate(&sandboxes, &models))
 	require.NoError(t, app.Err())
