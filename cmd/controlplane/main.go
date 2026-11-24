@@ -17,9 +17,9 @@ import (
 	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
 	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
-	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
+	"github.com/talgent-work/workbench/internal/pkg/messagebus"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 	pkgredis "github.com/talgent-work/workbench/internal/pkg/redis"
@@ -49,7 +49,7 @@ type Option struct {
 	Logger         sloghelper.Options   `json:"logger" toml:"logger" yaml:"logger"`
 	HTTP           pkghttpserver.Config `json:"http" toml:"http" yaml:"http"`
 	ExecutionMySQL pkgmysql.Config      `name:"execution" json:"execution-mysql" toml:"execution-mysql" yaml:"execution-mysql"`
-	Kafka          pkgkafka.Config      `json:"kafka" toml:"kafka" yaml:"kafka"`
+	Kafka          messagebus.Option    `json:"kafka" toml:"kafka" yaml:"kafka"`
 	NATS           pkgnats.Config       `json:"nats" toml:"nats" yaml:"nats"`
 	Redis          pkgredis.Config      `json:"redis" toml:"redis" yaml:"redis"`
 
@@ -128,13 +128,7 @@ func appOptions(opt Option) []fx.Option {
 		pkgmysql.Module(account.Database),
 		internalpkg.RedisModule,
 		internalpkg.H2CClientModule,
-		internalpkg.KafkaProducerModule,
-		internalpkg.KafkaConsumerModule,
-		internalpkg.IntegrationPublisherModule,
-		// Agent runs its own consumers of Marketplace's credential changes,
-		// Storage's file changes, Computer's Desk seatings and Presence changes
-		// and Account's Application removals.
-		internalpkg.IntegrationPayloadModule,
+		messagebus.PublisherModule,
 		internalpkg.NATSLazyModule,
 		internalpkg.LazyClickHouseModule,
 		account.Module,
@@ -147,9 +141,13 @@ func appOptions(opt Option) []fx.Option {
 		agent.InputChangeModule,
 		agent.DeskAssignmentModule,
 		agent.ComputerPresenceModule,
+		// Agent runs its own consumers of Marketplace's credential changes,
+		// Storage's file changes, Computer's Desk seatings and Presence changes
+		// and Account's Application removals.
 		agent.ApplicationRemovalModule,
 		agent.TurnResultModule,
 		trace.Module,
+		internalpkg.Lifecycle,
 		// Task lanes follow the business modules, so they stop first (fx
 		// stops in reverse: HTTP, tasks, then messages).
 		pkgtaskqueue.NamedModule(marketplace.Queue),

@@ -2,15 +2,12 @@ package agent
 
 import (
 	"log/slog"
-	"strings"
 
-	"github.com/go-jimu/components/ddd/message"
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
-	pkgintegrationmessage "github.com/talgent-work/workbench/internal/pkg/integrationmessage"
-	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
+	"github.com/talgent-work/workbench/internal/pkg/messagebus"
 )
 
 // ApplicationRemovalConfig names Agent's own consumer group for Account's
@@ -26,24 +23,11 @@ const defaultApplicationRemovalGroup = "agent-application-removal"
 // unclosed Work of the removed Application, each by its own bounded task
 // (Close removed Application's Works). Without it, those Works stay open,
 // undrivable, until their idle timeout stops them. It requires RecoveryModule,
-// whose queue runs the closes, and a Kafka consumer factory.
+// whose queue runs the closes, and the process's message bus Option.
 var ApplicationRemovalModule = fx.Module("agent.application_removal",
-	fx.Invoke(consumeApplicationRemovals),
+	fx.Provide(fx.Annotate(newApplicationRemovalConsumer, fx.ResultTags(messagebus.ConsumerTag))),
 )
 
-func consumeApplicationRemovals(lc fx.Lifecycle, shutdowner fx.Shutdowner, cfg ApplicationRemovalConfig, factory *pkgkafka.ConsumerFactory, resolver message.PayloadResolver, recovery *application.Recovery, logger *slog.Logger) error {
-	group := strings.TrimSpace(cfg.ConsumerGroup)
-	if group == "" {
-		group = defaultApplicationRemovalGroup
-	}
-	handler := messagehandler.NewApplicationRemovalHandler(recovery)
-	consumer, err := pkgintegrationmessage.NewConsumer(pkgintegrationmessage.Config{ConsumerGroup: group}, factory, resolver, logger, pkgintegrationmessage.IntegrationTopics(handler.Listening()))
-	if err != nil {
-		return err
-	}
-	if err := consumer.Subscribe(handler); err != nil {
-		return err
-	}
-	pkgintegrationmessage.RunWithLifecycle(lc, consumer, shutdowner, logger)
-	return nil
+func newApplicationRemovalConsumer(cfg ApplicationRemovalConfig, bus messagebus.Option, shutdowner fx.Shutdowner, recovery *application.Recovery, logger *slog.Logger) (*messagebus.Consumer, error) {
+	return messagebus.NewConsumer(bus, consumerGroup(cfg.ConsumerGroup, defaultApplicationRemovalGroup), shutdowner, logger, messagehandler.NewApplicationRemovalHandler(recovery))
 }

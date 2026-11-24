@@ -28,8 +28,6 @@ data:
     kafka:
       brokers:
         - ${KAFKA_BROKER}
-    integration-messages:
-      consumer_group: dispatcher-service
     nats:
       url: ${NATS_URL}
     agent-feedback:

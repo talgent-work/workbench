@@ -234,7 +234,6 @@ heartbeats its ownership in Redis and the others take over the Works of one that
 | `redis` | `${REDIS_ADDR:127.0.0.1:6379}`, `${REDIS_PASSWORD:}`, `${REDIS_DB:0}` | | Snapshots, delivery buffers and ownership |
 | `clickhouse.dsn` | `${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}` | service account | Where Work messages are recorded (`talgent_messages`, created at startup) |
 | `kafka.brokers` | `${KAFKA_BROKER:127.0.0.1:9092}` | | |
-| `integration-messages.consumer_group` | `${KAFKA_CONSUMER_GROUP:dispatcher-service}` | `dispatcher-service` | Its Kafka consumer group |
 | `nats.url` | `${NATS_URL:nats://localhost:4222}` | | Live output fan-out |
 | `ownership.ttl`, `heartbeat`, `scan` | `6s`, `2s`, `3s` | | A replica's liveness lasts `ttl` and is renewed every `heartbeat`; others check every `scan`. `ttl` exceeds two heartbeats. |
 | `ownership.snapshot-ttl` | `168h` | | How long snapshots are kept |

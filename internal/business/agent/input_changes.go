@@ -2,15 +2,12 @@ package agent
 
 import (
 	"log/slog"
-	"strings"
 
-	"github.com/go-jimu/components/ddd/message"
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
-	pkgintegrationmessage "github.com/talgent-work/workbench/internal/pkg/integrationmessage"
-	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
+	"github.com/talgent-work/workbench/internal/pkg/messagebus"
 )
 
 // InputChangeConfig names Agent's own consumer group for Storage's file
@@ -25,24 +22,11 @@ const defaultInputChangeGroup = "agent-input-changes"
 // Managed Computers whose inputs changed receive their current inputs, and
 // every unclosed Work reading them is told of the change by its own bounded
 // task (Notify changed inputs). It requires RecoveryModule, whose queue runs
-// those tasks, and a Kafka consumer factory.
+// those tasks, and the process's message bus Option.
 var InputChangeModule = fx.Module("agent.input_changes",
-	fx.Invoke(consumeInputChanges),
+	fx.Provide(fx.Annotate(newInputChangeConsumer, fx.ResultTags(messagebus.ConsumerTag))),
 )
 
-func consumeInputChanges(lc fx.Lifecycle, shutdowner fx.Shutdowner, cfg InputChangeConfig, factory *pkgkafka.ConsumerFactory, resolver message.PayloadResolver, recovery *application.Recovery, logger *slog.Logger) error {
-	group := strings.TrimSpace(cfg.ConsumerGroup)
-	if group == "" {
-		group = defaultInputChangeGroup
-	}
-	handler := messagehandler.NewFileChangedHandler(recovery)
-	consumer, err := pkgintegrationmessage.NewConsumer(pkgintegrationmessage.Config{ConsumerGroup: group}, factory, resolver, logger, pkgintegrationmessage.IntegrationTopics(handler.Listening()))
-	if err != nil {
-		return err
-	}
-	if err := consumer.Subscribe(handler); err != nil {
-		return err
-	}
-	pkgintegrationmessage.RunWithLifecycle(lc, consumer, shutdowner, logger)
-	return nil
+func newInputChangeConsumer(cfg InputChangeConfig, bus messagebus.Option, shutdowner fx.Shutdowner, recovery *application.Recovery, logger *slog.Logger) (*messagebus.Consumer, error) {
+	return messagebus.NewConsumer(bus, consumerGroup(cfg.ConsumerGroup, defaultInputChangeGroup), shutdowner, logger, messagehandler.NewFileChangedHandler(recovery))
 }

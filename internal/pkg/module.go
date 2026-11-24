@@ -7,19 +7,14 @@ import (
 	"net/http"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/go-jimu/components/sloghelper"
-	contribkafka "github.com/go-jimu/contrib/message/kafka"
 	goredis "github.com/redis/go-redis/v9"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/fx"
 	"golang.org/x/net/http2"
 
 	"github.com/talgent-work/workbench/internal/pkg/clickhouse"
 	"github.com/talgent-work/workbench/internal/pkg/httpserver"
-	pkgintegrationmessage "github.com/talgent-work/workbench/internal/pkg/integrationmessage"
-	"github.com/talgent-work/workbench/internal/pkg/kafka"
 	"github.com/talgent-work/workbench/internal/pkg/nats"
 	"github.com/talgent-work/workbench/internal/pkg/otelsetup"
 	"github.com/talgent-work/workbench/internal/pkg/redis"
@@ -62,41 +57,6 @@ var RedisModule = fx.Module(
 	"internal.pkg.redis",
 	fx.Provide(redis.NewClient),
 	fx.Invoke(func(*goredis.Client) {}),
-)
-
-var KafkaProducerModule = fx.Module(
-	"internal.pkg.kafka.producer",
-	fx.Provide(kafka.NewProducer),
-	fx.Invoke(func(*kgo.Client) {}),
-)
-
-var KafkaConsumerModule = fx.Module(
-	"internal.pkg.kafka.consumer",
-	fx.Provide(kafka.NewConsumerFactory),
-)
-
-var IntegrationPublisherModule = fx.Module(
-	"internal.pkg.integrationmessage.publisher",
-	fx.Provide(fx.Annotate(pkgintegrationmessage.NewPublisher, fx.As(new(integrationmessage.Publisher)))),
-)
-
-// IntegrationPayloadModule resolves Integration Message payloads for a
-// module that runs its own consumer, such as Agent's credential changes.
-var IntegrationPayloadModule = fx.Module(
-	"internal.pkg.integrationmessage.payload",
-	fx.Provide(pkgintegrationmessage.NewProtoPayloadResolver),
-)
-
-// IntegrationConsumerModule runs the consumer for the process lifetime. List it
-// after the business modules: it must stop before their Domain Event
-// dispatchers close, because handling a message can publish Domain Events.
-var IntegrationConsumerModule = fx.Module(
-	"internal.pkg.integrationmessage.consumer",
-	fx.Provide(pkgintegrationmessage.NewProtoPayloadResolver),
-	fx.Provide(pkgintegrationmessage.NewConsumer),
-	fx.Provide(func(c *contribkafka.Consumer) integrationmessage.Subscriber { return c }),
-	fx.Provide(func(c *contribkafka.Consumer) pkgintegrationmessage.Consumer { return c }),
-	fx.Invoke(pkgintegrationmessage.RunWithLifecycle),
 )
 
 var ClickHouseModule = fx.Module(
