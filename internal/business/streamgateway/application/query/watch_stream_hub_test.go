@@ -266,23 +266,17 @@ func TestAReaderThatFallsBehindLosesOnlyItsOwnFrames(t *testing.T) {
 	defer slow.Close()
 	fast, _ := registry.Acquire(t.Context(), "w1", "fast")
 	defer fast.Close()
-	received := make(chan int)
-	go func() {
-		n := 0
-		for n < liveReaderBuffer+3 {
-			<-fast.data
-			n++
-		}
-		received <- n
-	}()
+	// The fast reader takes each frame before the next is sent, so it keeps
+	// up whatever the scheduler does; only the slow reader falls behind.
 	for i := range liveReaderBuffer + 3 {
 		stream.send("w1", message(string(rune('a'+i%26))))
+		nextData(t, fast)
 	}
 	stream.send("w1", &WorkStatePayload{Frame: &WorkState{State: "starting"}})
 	stream.send("w1", &WorkStatePayload{Frame: &WorkState{State: "working"}})
 
-	if got := <-received; got != liveReaderBuffer+3 {
-		t.Fatalf("fast reader received %d, want every frame", got)
+	if got := len(fast.data); got != 0 {
+		t.Fatalf("fast reader left %d frames queued, want none", got)
 	}
 	if got := len(slow.data); got != liveReaderBuffer {
 		t.Fatalf("slow reader queued %d, want its buffer full", got)
