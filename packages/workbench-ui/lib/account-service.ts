@@ -31,6 +31,17 @@ function isAccountId(value: string | undefined): value is string {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value?.trim() ?? "");
 }
 
+/** Whether a failed session check means signing in again, rather than an
+ * Account or connection that could not answer this time. */
+export function sessionNeedsSignIn(error: unknown): boolean {
+  return !(error instanceof ConnectError) || error.code === Code.Unauthenticated;
+}
+
+// One more try a second later covers the first call after the device wakes,
+// which often fails before the network is back. A rejected session is final.
+const sessionCheckRetries = 1;
+const sessionCheckRetryDelayMs = 1_000;
+
 export function useCurrentUser() {
   return useQuery<CurrentUserView>({
     queryKey: currentUserQueryKey,
@@ -54,7 +65,8 @@ export function useCurrentUser() {
         },
       };
     },
-    retry: false,
+    retry: (failures, error) => failures < sessionCheckRetries && !sessionNeedsSignIn(error),
+    retryDelay: sessionCheckRetryDelayMs,
     refetchOnWindowFocus: "always",
     staleTime: 60_000,
   });
