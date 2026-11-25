@@ -49,8 +49,8 @@ func managedApp(t *testing.T) (*application.Application, *memory, *recordedSeati
 	require.NoError(t, computer.ReportVersions(domain.ReportedVersions{TalgentComputer: "1.0.0"}))
 	m.computers[computer.ID] = *computer
 	seatings := &recordedSeatings{}
-	app := application.NewApplication(application.Dependencies{Computers: m, Desks: desks{m}, Transactions: inline{}, Quota: quota(true), Queries: managedReads{m: m},
-		Cloud: application.Cloud{ID: cloudID, Name: "Cloud", Capacity: oneRun, RunDemand: oneRun}, Seatings: seatings, Now: time.Now})
+	app := application.NewApplication(application.Dependencies{Computers: m, Desks: desks{m}, Transactions: inline{}, CloudCapacity: &quota{room: oneRun}, Queries: managedReads{m: m},
+		Cloud: application.Cloud{ID: cloudID, Name: "Cloud", RunDemand: oneRun}, Seatings: seatings, Now: time.Now})
 	return app, m, seatings, computer.ID
 }
 

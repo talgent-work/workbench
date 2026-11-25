@@ -322,12 +322,9 @@ data:
         # Fixed for good: every Work keeps the Cloud it started on.
         id: "${COMPUTER_CLOUD_ID:01a19bc3-075a-7c57-b42b-7fdf73b611ed}"
         name: "${COMPUTER_CLOUD_NAME:Talgent Cloud}"
-        # The room the platform gives runs: the quota below, in the sandbox
-        # namespace, counts only execution Pods; each admission still checks it.
-        capacity:
-          requests.cpu: "8"
-          requests.memory: "12Gi"
-          pods: "64"
+        # The quota below, in the sandbox namespace, is the Cloud's Capacity and
+        # counts only execution Pods; each admission reads it, so a change applies
+        # from the next start.
         namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
         quota-name: agent-executions
         # Everything the quota charges for one execution Pod, not just the sandbox

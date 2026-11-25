@@ -8,6 +8,8 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -31,13 +33,14 @@ func TestCapacityRejectedCreationLeavesNoWork(t *testing.T) {
 	m := newLifecycleModule(t)
 	definition := seedDefinition(t, m.db)
 	m.start()
-	full := availableQuota()
-	full.Status.Used = full.Status.Hard.DeepCopy()
-	_, err := m.capacity.CoreV1().ResourceQuotas("sandboxes").UpdateStatus(m.ctx, full, metav1.UpdateOptions{})
+	none := availableQuota()
+	none.Spec.Hard[corev1.ResourceRequestsCPU] = resource.MustParse("0")
+	none.Status.Hard = none.Spec.Hard.DeepCopy()
+	_, err := m.capacity.CoreV1().ResourceQuotas("sandboxes").Update(m.ctx, none, metav1.UpdateOptions{})
 	require.NoError(t, err)
 	_, err = m.client.CreateWork(m.control(), subjectCreation(definition.ID, "work-a"))
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
-	_, err = m.capacity.CoreV1().ResourceQuotas("sandboxes").UpdateStatus(m.ctx, availableQuota(), metav1.UpdateOptions{})
+	_, err = m.capacity.CoreV1().ResourceQuotas("sandboxes").Update(m.ctx, availableQuota(), metav1.UpdateOptions{})
 	require.NoError(t, err)
 	absent := m.locate(definition.ID, "work-a")
 	require.False(t, absent.Found)

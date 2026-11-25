@@ -38,9 +38,9 @@ spec:
         cpu: 100m
         memory: 128Mi
 ---
-# The Cloud's execution capacity: Agent checks this budget before requesting
-# an environment. Only sandboxes run in the namespace, so only they count
-# toward it.
+# The Cloud's Capacity: Computer reads it at each admission and seats runs
+# within it. Only sandboxes run in the namespace, so only they count toward
+# it.
 apiVersion: v1
 kind: ResourceQuota
 metadata:

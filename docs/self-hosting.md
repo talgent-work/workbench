@@ -254,7 +254,8 @@ Done when every check passes:
 | `apply-opensandbox.sh`: `All cluster nodes must report Flannel WireGuard ...` | The pod network is not the reference Flannel WireGuard. Confirm the network encrypts node-to-node traffic, then `TALGENT_POD_NETWORK_CHECK=operator`. |
 | `apply-opensandbox.sh`: `runtimeclasses ... not found` | The sandbox RuntimeClass is missing; install it or set `TALGENT_SANDBOX_RUNTIME_CLASS` (§2). |
 | Sandbox Pod `ImagePullBackOff` | `ghcr-pull` is missing in `talgent-sandbox`. |
-| Work stuck starting, quota events in `talgent-sandbox` | ResourceQuota `agent-executions` (8 CPU, 12 GiB requests, 64 Pods in `agent-capacity.yaml`) is exhausted; raise it together with controlplane's `computer.cloud.capacity`. |
+| Cloud starts rejected as full | ResourceQuota `agent-executions` (8 CPU, 12 GiB requests, 64 Pods in `agent-capacity.yaml`) is the Cloud's Capacity and its runs fill it; raise it, and the next start uses it. |
+| Work start rejected, quota events in `talgent-sandbox` | A run's Pod charges the quota more than controlplane's `computer.cloud.demand` states; bring it in step with the sandbox's requests, its egress sidecar and the RuntimeClass overhead. |
 | API `401` `Jwt issuer is not configured` | `ACCOUNT_ISSUER` differs from the issuer `web-auth` validates; redeploy with matching values. |
 | API `401` `Jwks remote fetch is failed` | Envoy cannot reach `controlplane:8080/auth/jwks.json`. |
 | `/login?error=denied` | The person cancelled on GitHub. |

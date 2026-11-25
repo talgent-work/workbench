@@ -164,7 +164,7 @@ func startWorkspaceReading(t *testing.T, ctx context.Context) *workspaceReading 
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }),
 		fx.Decorate(func(workspacereading.StorageViews) workspacereading.StorageViews { return storage }),
-		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, computers, testCloud("4", "4Gi", "64")),
+		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, computers, testCloud()),
 		mysqltest.Provide(t, "execution", db),
 		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return kube }),

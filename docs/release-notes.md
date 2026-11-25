@@ -5,6 +5,15 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that takes the Cloud's Capacity from its quota
+
+ResourceQuota `agent-executions` in the sandbox namespace is now the Cloud's Capacity: controlplane
+reads it at every Cloud admission, so a change applies from the next start, and a quota lowered
+below what running Works hold seats nothing new until enough of them end. `computer.cloud.capacity`
+is gone; a configuration that still sets it is ignored, so change the quota instead
+([configuration](configuration.md#computer)). A rollback to the previous release takes
+`computer.cloud.capacity` again.
+
 ## The release that streams only live frames and keeps one reader's trouble its own
 
 Deploy `dispatcher`, `controlplane` and `streamgateway` of this release together: a Work's live

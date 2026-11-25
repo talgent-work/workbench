@@ -71,7 +71,7 @@ func TestConnectingWithTheSuccessorConfirmsTheRotation(t *testing.T) {
 func TestRemovalRevokesTheCredentialAndVacatesEveryDesk(t *testing.T) {
 	f := newManaged(t)
 	removals := &removals{}
-	f.app = application.NewApplication(application.Dependencies{Computers: f.memory, Desks: desks{f.memory}, Transactions: inline{}, Quota: quota(true), Queries: queries{f.memory},
+	f.app = application.NewApplication(application.Dependencies{Computers: f.memory, Desks: desks{f.memory}, Transactions: inline{}, CloudCapacity: &quota{room: oneRun}, Queries: queries{f.memory},
 		Removals: removals, Now: func() time.Time { return f.now }})
 	ctx := context.Background()
 	laptop := domain.Computer{ID: uuid.NewString(), Kind: domain.KindManaged, OwnerID: "person", Name: "Laptop", Capacity: domain.Room{Desks: 1}, Policy: domain.AdmissionQueue,

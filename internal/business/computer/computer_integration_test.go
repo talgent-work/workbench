@@ -52,8 +52,7 @@ func start(t *testing.T) clients {
 	server := connecttest.NewFronted(t)
 	config := computer.Config{ControlToken: "control", VerificationURI: "https://workbench.test/computers/connect", Cloud: computer.CloudConfig{
 		ID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Name: "Test Cloud", Namespace: "sandboxes", QuotaName: "executions",
-		Capacity: map[string]string{"requests.cpu": "8", "requests.memory": "8Gi", "pods": "8"},
-		Demand:   map[string]string{"requests.cpu": "1", "requests.memory": "1Gi"},
+		Demand: map[string]string{"requests.cpu": "1", "requests.memory": "1Gi"},
 	}}
 	app := fx.New(computer.Module, fx.NopLogger,
 		server.Option(), fx.Supply(slog.Default(), config),
