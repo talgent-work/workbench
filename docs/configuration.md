@@ -237,7 +237,7 @@ heartbeats its ownership in Redis and the others take over the Works of one that
 | `clickhouse.dsn` | `${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}` | service account | Where Work messages are recorded (`talgent_messages`, created at startup) |
 | `kafka.brokers` | `${KAFKA_BROKER:127.0.0.1:9092}` | | |
 | `nats.url` | `${NATS_URL:nats://localhost:4222}` | | Live output fan-out |
-| `ownership.ttl`, `heartbeat`, `scan` | `6s`, `2s`, `3s` | | A replica's liveness lasts `ttl` and is renewed every `heartbeat`; others check every `scan`. `ttl` exceeds two heartbeats. |
+| `ownership.ttl`, `heartbeat`, `scan` | `6s`, `2s`, `3s` | | A replica's liveness lasts `ttl` and is renewed every `heartbeat`; every `scan`, a replica takes over expired peers' streams and writes buffered input its own streams still hold. `ttl` exceeds two heartbeats. |
 | `ownership.snapshot-ttl` | `168h` | | How long snapshots are kept |
 | `agent-feedback.addr`, `token` | `${AGENT_FEEDBACK_ADDR:http://controlplane:8080}`, `${AGENT_FEEDBACK_TOKEN:}` | | Where it reports to Agent |
 | `native-execution.control-token` | `${DISPATCHER_EXECUTION_CONTROL_TOKEN:}` | | Admits Agent's execution commands |

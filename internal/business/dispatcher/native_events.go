@@ -22,7 +22,7 @@ import (
 // state, a turn RESULT is stored before its turn is reported finished, and a
 // settled input leaves the buffer before it is reported. Everything else is
 // handed to asynchronous delivery.
-func (m *NativeExecutions) applyEvent(ctx, startup context.Context, entry *nativeExecution, initializeID string, event nativeprocess.Event) error {
+func (m *NativeExecutions) applyEvent(ctx context.Context, entry *nativeExecution, initializeID string, event nativeprocess.Event) error {
 	if event.Discarded {
 		m.logger.WarnContext(ctx, "discarded invalid native message", "agent_work_id", entry.target.WorkID, "offset", event.Offset)
 	}
@@ -47,7 +47,7 @@ func (m *NativeExecutions) applyEvent(ctx, startup context.Context, entry *nativ
 			return m.exitFailedInitialization(ctx, entry)
 		}
 		if !entry.Ready {
-			return entry.connection.Initialize(startup, initializeID)
+			return entry.connection.Initialize(ctx, initializeID)
 		}
 		if err := m.advanceTurnCancel(ctx, entry); err != nil {
 			return err

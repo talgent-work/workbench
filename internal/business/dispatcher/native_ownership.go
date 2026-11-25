@@ -19,7 +19,7 @@ func (m *NativeExecutions) Start(ctx context.Context) error {
 	if err := m.ownership.Heartbeat(ctx); err != nil {
 		return err
 	}
-	m.alive.Store(sent.UnixNano())
+	m.alive.Store(&sent)
 	released := m.ownership.Released(m.ctx)
 	if _, err := released.Receive(ctx); err != nil {
 		_ = released.Close()
@@ -80,7 +80,7 @@ func (m *NativeExecutions) heartbeat() {
 			return
 		case <-ticker.C:
 		}
-		if time.Since(time.Unix(0, m.alive.Load())) >= m.timing.TTL.Duration()-m.timing.Heartbeat.Duration() {
+		if time.Since(*m.alive.Load()) >= m.timing.TTL.Duration()-m.timing.Heartbeat.Duration() {
 			m.fenceAll()
 		}
 		sent := time.Now()
@@ -91,28 +91,28 @@ func (m *NativeExecutions) heartbeat() {
 			m.logger.Warn("dispatcher liveness refresh failed", "error", err)
 			continue
 		}
-		m.alive.Store(sent.UnixNano())
+		m.alive.Store(&sent)
 	}
 }
 
+// fenceAll ends every reading and every claim in flight. It takes no entry's
+// lock: liveness lapses when Redis is unreachable, which is when readers wait
+// under their locks on Redis calls.
 func (m *NativeExecutions) fenceAll() {
 	m.mu.Lock()
-	entries := make([]*nativeExecution, 0, len(m.connections))
+	defer m.mu.Unlock()
 	for _, entry := range m.connections {
-		entries = append(entries, entry)
-	}
-	m.mu.Unlock()
-	for _, entry := range entries {
-		entry.mu.Lock()
-		if entry.cancel != nil {
-			entry.cancel(errFenced)
-		}
-		entry.mu.Unlock()
+		entry.cancel(errFenced)
 	}
 }
 
 // scan claims the streams of replicas whose liveness expired, and released
-// streams nobody claimed.
+// streams nobody claimed. It also flushes every stream this replica reads,
+// the one follow-up for buffered input no notification brought: a
+// notification published while the subscription reconnects is lost, and a
+// flush whose buffer read failed leaves its input due. Only a scan that
+// reached Redis flushes, so buffered input waits at most a scan once Redis
+// answers.
 func (m *NativeExecutions) scan() {
 	defer m.loops.Done()
 	ticker := time.NewTicker(m.timing.Scan.Duration())
@@ -134,6 +134,7 @@ func (m *NativeExecutions) scan() {
 			m.logger.Warn("dispatcher takeover scan failed", "error", err)
 			continue
 		}
+		m.flushAll()
 		// Streams still recorded as this replica's but no longer read, as after
 		// fencing, are resumed too.
 		for _, work := range owned {
@@ -152,6 +153,18 @@ func (m *NativeExecutions) scan() {
 			}()
 		}
 		claims.Wait()
+	}
+}
+
+func (m *NativeExecutions) flushAll() {
+	m.mu.Lock()
+	works := make([]string, 0, len(m.connections))
+	for work := range m.connections {
+		works = append(works, work)
+	}
+	m.mu.Unlock()
+	for _, work := range works {
+		m.requestFlush(work)
 	}
 }
 
@@ -208,7 +221,7 @@ func (m *NativeExecutions) Shutdown(ctx context.Context) error {
 
 func (m *NativeExecutions) handOver(ctx context.Context, entry *nativeExecution) {
 	entry.mu.Lock()
-	reading := entry.cancel != nil
+	reading := entry.reading
 	if reading {
 		entry.cancel(errHandover)
 	}
