@@ -90,9 +90,10 @@ Sign-in with GitHub, Applications' client credentials grant, and the Identity To
 | `application-secret-overlap` | `24h` | How long a replaced Client Secret keeps matching after its Application Owner rotates it |
 | `session-sliding-lifetime` | `720h` | A session ends after this long unused |
 | `session-absolute-lifetime` | `2160h` | A session ends this long after sign-in; access ≤ sliding ≤ absolute |
+| `session-refresh-replay` | `30s` | How long a just-replaced refresh secret gives back its successor instead of revoking the session, so entries sharing the cookie may refresh at once and a lost refresh response can be retried; at most `access-token-lifetime` |
 | `key-rotation-interval` | `720h` | How often a new signing key is made |
 | `key-overlap` | `10m` | How long a new key is published before it signs |
-| `master-key-path` | `${ACCOUNT_MASTER_KEY_PATH:/etc/talgent/account/master-key}` | Required. A file of 32 base64-encoded bytes that seals the signing keys; base: Secret `account-master-key` |
+| `master-key-path` | `${ACCOUNT_MASTER_KEY_PATH:/etc/talgent/account/master-key}` | Required. A file of 32 base64-encoded bytes that seals the signing keys and refresh replays; base: Secret `account-master-key` |
 | `github.client-id`, `github.client-secret` | `${ACCOUNT_GITHUB_CLIENT_ID:}`, `${ACCOUNT_GITHUB_CLIENT_SECRET:}` | The sign-in OAuth App; base: Secret `account-github-oauth` |
 | `github.redirect-url` | `${ACCOUNT_GITHUB_REDIRECT_URL:http://localhost:3000/auth/github/callback}` | Base: `${WORKBENCH_ORIGIN}/auth/github/callback` |
 | `github.web-base-url`, `github.api-base-url` | `${ACCOUNT_GITHUB_WEB_BASE_URL:https://github.com}`, `${ACCOUNT_GITHUB_API_BASE_URL:https://api.github.com}` | For GitHub Enterprise Server; base fixed to github.com |

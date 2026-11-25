@@ -45,13 +45,44 @@ type SessionLifetimes struct {
 	Sliding time.Duration
 	// Absolute is the hard limit from the sign-in.
 	Absolute time.Duration
+	// Replay is the bounded replay window: how long the last replaced
+	// secret still gives back the secret that replaced it.
+	Replay time.Duration
 }
 
 func (l SessionLifetimes) validate() error {
 	if l.Access <= 0 || l.Sliding < l.Access || l.Absolute < l.Sliding {
 		return fmt.Errorf("%w: lifetimes must satisfy 0 < access <= sliding <= absolute", ErrInvalidLoginSession)
 	}
+	if l.Replay <= 0 || l.Replay > l.Access {
+		return fmt.Errorf("%w: lifetimes must satisfy 0 < replay <= access", ErrInvalidLoginSession)
+	}
 	return nil
+}
+
+// RefreshReplay is the last Refresh of a session, kept for the bounded replay
+// window: the secret it replaced, the secret that replaced it, and when the
+// window ends. Devices that share one refresh cookie present the replaced
+// secret again when they refresh at once, or when a refresh response never
+// reached them; within the window they receive the same replacing secret,
+// so the cookie settles on one value. The zero value replays nothing.
+type RefreshReplay struct {
+	Replaced  RefreshSecretDigest
+	Successor RefreshSecret
+	EndsAt    time.Time
+}
+
+func (r RefreshReplay) replays(presented RefreshSecretDigest, now time.Time) bool {
+	return r.Successor != "" && presented == r.Replaced && now.Before(r.EndsAt)
+}
+
+// Refreshed is what a Refresh gives the device: the refresh secret it keeps
+// and the claims of its new Identity Token. Replayed says the session gave
+// an earlier secret again and changed nothing.
+type Refreshed struct {
+	Secret   RefreshSecret
+	Claims   IdentityClaims
+	Replayed bool
 }
 
 type LoginSessionState int
@@ -69,7 +100,10 @@ type LoginSession struct {
 	// ReplacedSecret is the secret the Refresh of this unit of work replaced;
 	// it joins the session's replaced secrets when the session is saved. It is
 	// not the history, which the collection keeps.
-	ReplacedSecret    RefreshSecretDigest
+	ReplacedSecret RefreshSecretDigest
+	// RefreshReplay holds the replacing secret only within the bounded
+	// replay window; the collection keeps it sealed at rest.
+	RefreshReplay     RefreshReplay
 	ExpiresAt         time.Time
 	AbsoluteExpiresAt time.Time
 	RevokedAt         time.Time
@@ -129,6 +163,12 @@ func (s *LoginSession) Validate() error {
 	if s.ExpiresAt.After(s.AbsoluteExpiresAt) {
 		return fmt.Errorf("%w: sliding expiry passes the absolute expiry", ErrInvalidLoginSession)
 	}
+	if s.RefreshReplay != (RefreshReplay{}) {
+		replay := s.RefreshReplay
+		if !replay.Replaced.valid() || !isOpaqueSecret(string(replay.Successor)) || replay.Successor.Digest() != s.RefreshSecret {
+			return fmt.Errorf("%w: refresh replay must replay the current refresh secret", ErrInvalidLoginSession)
+		}
+	}
 	return nil
 }
 
@@ -181,32 +221,57 @@ type PresentedRefreshSecret struct {
 	Replaced bool
 }
 
-// Refresh replaces the secret once and issues a new Identity Token. A secret
-// this session already replaced is reuse and revokes the session; a secret it
-// never held is rejected without effect.
-func (s *LoginSession) Refresh(presented PresentedRefreshSecret, next RefreshSecret, profile Profile, now time.Time, lifetimes SessionLifetimes) (IdentityClaims, error) {
+// Refresh replaces the secret once, keeps the replay of that Refresh, and
+// issues a new Identity Token. A replaced secret replays or is reuse; a
+// secret this session never held is rejected without effect.
+func (s *LoginSession) Refresh(presented PresentedRefreshSecret, next RefreshSecret, profile Profile, now time.Time, lifetimes SessionLifetimes) (Refreshed, error) {
 	if presented.Digest != s.RefreshSecret {
 		if !presented.Replaced {
-			return IdentityClaims{}, ErrRefreshSecretUnknown
+			return Refreshed{}, ErrRefreshSecretUnknown
 		}
-		s.revoke(now)
-		return IdentityClaims{}, ErrRefreshSecretReused
+		if s.RefreshReplay.replays(presented.Digest, now) {
+			return s.replayRefresh(profile, now, lifetimes)
+		}
+		s.detectReuse(now)
+		return Refreshed{}, ErrRefreshSecretReused
 	}
 	if err := s.issuable(now); err != nil {
-		return IdentityClaims{}, err
+		return Refreshed{}, err
 	}
 	if err := lifetimes.validate(); err != nil {
-		return IdentityClaims{}, err
+		return Refreshed{}, err
 	}
 	now = now.UTC()
 	s.ReplacedSecret = s.RefreshSecret
+	s.RefreshReplay = RefreshReplay{Replaced: s.RefreshSecret, Successor: next, EndsAt: now.Add(lifetimes.Replay)}
 	s.RefreshSecret = next.Digest()
 	s.ExpiresAt = now.Add(lifetimes.Sliding)
 	if s.ExpiresAt.After(s.AbsoluteExpiresAt) {
 		s.ExpiresAt = s.AbsoluteExpiresAt
 	}
 	s.LastSeenAt = now
-	return s.IssueIdentityToken(profile, now, lifetimes)
+	claims, err := s.IssueIdentityToken(profile, now, lifetimes)
+	if err != nil {
+		return Refreshed{}, err
+	}
+	return Refreshed{Secret: next, Claims: claims}, nil
+}
+
+// replayRefresh gives the replacing secret of the last Refresh again with a
+// new Identity Token, and changes nothing: no rotation, no extended expiry.
+// A revoked or expired session replays nothing.
+func (s *LoginSession) replayRefresh(profile Profile, now time.Time, lifetimes SessionLifetimes) (Refreshed, error) {
+	claims, err := s.IssueIdentityToken(profile, now, lifetimes)
+	if err != nil {
+		return Refreshed{}, err
+	}
+	return Refreshed{Secret: s.RefreshReplay.Successor, Claims: claims, Replayed: true}, nil
+}
+
+// detectReuse revokes the session for a replaced secret that no replay
+// covers: two holders now present different secrets of one session.
+func (s *LoginSession) detectReuse(now time.Time) {
+	s.revoke(now)
 }
 
 // Revoke records the logout of the session's own Account. It reports whether
@@ -224,5 +289,6 @@ func (s *LoginSession) revoke(now time.Time) bool {
 		return false
 	}
 	s.RevokedAt = now.UTC()
+	s.RefreshReplay = RefreshReplay{}
 	return true
 }

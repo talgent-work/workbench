@@ -36,7 +36,9 @@ func TestRefreshRotatesAndReuseRevokesTheSession(t *testing.T) {
 	require.NotEqual(t, firstAccess, secondAccess)
 	h.verify(secondAccess)
 
-	// Someone presents the replaced secret: the session is revoked.
+	// Someone presents the replaced secret after the replay window: the
+	// session is revoked.
+	h.clock.Advance(lifetimes.Replay)
 	stolen := h.device()
 	stolen.client.Jar.SetCookies(mustURL(h.server.URL+"/auth/refresh"), []*http.Cookie{{Name: accounthttp.RefreshCookie, Value: firstSecret, Path: "/auth/refresh", Secure: true}})
 	require.Equal(t, http.StatusUnauthorized, stolen.post("/auth/refresh", "application/json").StatusCode)
@@ -52,6 +54,56 @@ func TestRefreshRotatesAndReuseRevokesTheSession(t *testing.T) {
 	never.client.Jar.SetCookies(mustURL(h.server.URL+"/auth/refresh"), []*http.Cookie{{Name: accounthttp.RefreshCookie, Value: strings.Repeat("A", 43), Path: "/auth/refresh", Secure: true}})
 	require.Equal(t, http.StatusUnauthorized, never.post("/auth/refresh", "application/json").StatusCode)
 	require.Equal(t, http.StatusNoContent, other.post("/auth/refresh", "application/json").StatusCode)
+}
+
+// Entries sharing one refresh cookie refresh at once, and a refresh response
+// may never reach its browser: the replaced secret replays its successor
+// within the window, so the cookie settles on one value and the session
+// stays signed in.
+func TestEntriesRefreshingAtOnceStaySignedIn(t *testing.T) {
+	h := newHarness(t)
+	h.github.set("first", githubUser{ID: 1, Login: "octocat", Emails: verifiedEmail("o@example.com")})
+	workbench := h.device()
+	workbench.signIn("first")
+	shared := workbench.cookie(accounthttp.RefreshCookie, "/auth/refresh")
+	entries := []*device{workbench, h.device(), h.device()}
+	for _, entry := range entries[1:] {
+		entry.client.Jar.SetCookies(mustURL(h.server.URL+"/auth/refresh"), []*http.Cookie{{Name: accounthttp.RefreshCookie, Value: shared, Path: "/auth/refresh", Secure: true}})
+	}
+
+	h.clock.Advance(20 * time.Minute)
+	statuses := make([]int, len(entries))
+	var wg sync.WaitGroup
+	for i, entry := range entries {
+		wg.Go(func() { statuses[i] = entry.post("/auth/refresh", "application/json").StatusCode })
+	}
+	wg.Wait()
+	successor := workbench.cookie(accounthttp.RefreshCookie, "/auth/refresh")
+	require.NotEqual(t, shared, successor)
+	for i, entry := range entries {
+		require.Equal(t, http.StatusNoContent, statuses[i])
+		require.Equal(t, successor, entry.cookie(accounthttp.RefreshCookie, "/auth/refresh"), "every entry receives the same successor")
+		h.verify(entry.cookie(accounthttp.AccessCookie, "/"))
+	}
+
+	sealed, err := h.engine.QueryString("SELECT replay_secret, revoked_at FROM login_session")
+	require.NoError(t, err)
+	require.Len(t, sealed, 1)
+	require.Equal(t, "0", sealed[0]["revoked_at"])
+	require.NotContains(t, sealed[0]["replay_secret"], successor, "the successor is sealed at rest")
+
+	// A response that never arrived: the browser retries with the replaced
+	// secret within the window and receives the same successor.
+	lost := h.device()
+	lost.client.Jar.SetCookies(mustURL(h.server.URL+"/auth/refresh"), []*http.Cookie{{Name: accounthttp.RefreshCookie, Value: shared, Path: "/auth/refresh", Secure: true}})
+	h.clock.Advance(lifetimes.Replay - time.Millisecond)
+	require.Equal(t, http.StatusNoContent, lost.post("/auth/refresh", "application/json").StatusCode)
+	require.Equal(t, successor, lost.cookie(accounthttp.RefreshCookie, "/auth/refresh"))
+
+	// The next refresh rotates as usual.
+	h.clock.Advance(20 * time.Minute)
+	require.Equal(t, http.StatusNoContent, workbench.post("/auth/refresh", "application/json").StatusCode)
+	require.NotEqual(t, successor, workbench.cookie(accounthttp.RefreshCookie, "/auth/refresh"))
 }
 
 func TestLogoutEndsOnlyThisDevice(t *testing.T) {

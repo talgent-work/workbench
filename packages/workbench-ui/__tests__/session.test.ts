@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { refreshSession, safeInternalPath, signInHref, signInPagePath, signOut } from "../lib/session";
 
 describe("session", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it("asks Account to refresh once however many calls fail together", async () => {
     let resolve: (value: Response) => void = () => undefined;
@@ -16,12 +19,39 @@ describe("session", () => {
   });
 
   it("tells a rejected session apart from an unreachable Account", async () => {
+    vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 503 })));
-    expect(await refreshSession()).toBe("unavailable");
+    let outcome = refreshSession();
+    await vi.runAllTimersAsync();
+    expect(await outcome).toBe("unavailable");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
-    expect(await refreshSession()).toBe("unavailable");
+    outcome = refreshSession();
+    await vi.runAllTimersAsync();
+    expect(await outcome).toBe("unavailable");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
     expect(await refreshSession()).toBe("rejected");
+  });
+
+  // Account may have rotated the secret although its response was lost; it
+  // gives the same new secret back only for a short window, so the retries
+  // are few and come soon.
+  it("retries an unreachable Account a bounded number of times within seconds", async () => {
+    vi.resetModules();
+    const { refreshSession } = await import("../lib/session");
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+    const outcome = refreshSession();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(await outcome).toBe("unavailable");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValueOnce(new TypeError("offline")).mockResolvedValue(new Response(null, { status: 204 }));
+    const recovered = refreshSession();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await recovered).toBe("refreshed");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   // A device's Login Session ends with a rejected refresh; only signing in

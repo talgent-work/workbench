@@ -14,6 +14,7 @@ func validConfig() Config {
 		ApplicationSecretOverlap: "24h",
 		SessionSlidingLifetime:   "720h",
 		SessionAbsoluteLifetime:  "2160h",
+		SessionRefreshReplay:     "30s",
 		KeyRotationInterval:      "720h",
 		KeyOverlap:               "24h",
 		MasterKeyPath:            "/run/secrets/account-master-key",
@@ -32,4 +33,16 @@ func TestConfigKeepsAnApplicationsTokenShort(t *testing.T) {
 
 	cfg.ApplicationTokenLifetime = "168h"
 	require.Error(t, cfg.Validate())
+}
+
+func TestConfigBoundsTheRefreshReplayByTheAccessLifetime(t *testing.T) {
+	cfg := validConfig()
+	cfg.SessionRefreshReplay = "15m"
+	require.NoError(t, cfg.Validate())
+
+	cfg.SessionRefreshReplay = "16m"
+	require.ErrorContains(t, cfg.Validate(), "session-refresh-replay must not be longer than access-token-lifetime")
+
+	cfg.SessionRefreshReplay = ""
+	require.ErrorContains(t, cfg.Validate(), "session-refresh-replay must be a positive duration")
 }

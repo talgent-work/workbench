@@ -71,7 +71,7 @@ func (c SigningKeyConfig) validate() error {
 type SigningKeys struct {
 	db     *jimuxorm.DB
 	cfg    SigningKeyConfig
-	sealer keySealer
+	sealer sealer
 	now    func() time.Time
 
 	mu       sync.Mutex
@@ -94,7 +94,7 @@ func NewSigningKeys(db *jimuxorm.DB, cfg SigningKeyConfig) (*SigningKeys, error)
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
-	sealer, err := newKeySealer(cfg.MasterKey)
+	sealer, err := newSealer(cfg.MasterKey)
 	if err != nil {
 		return nil, err
 	}

@@ -34,14 +34,15 @@ type RefreshLoginSession struct {
 }
 
 // RefreshLoginSession rotates the device's refresh secret and issues a new
-// token. Reuse of a replaced secret revokes that session.
+// token. The last replaced secret replays its successor within the replay
+// window; any other reuse of a replaced secret revokes that session.
 func (a *Application) RefreshLoginSession(ctx context.Context, cmd RefreshLoginSession) (SignedIn, error) {
 	presented, err := domain.ParseRefreshSecret(cmd.RefreshSecret)
 	if err != nil {
 		return SignedIn{}, err
 	}
 	// A concurrent refresh of the same secret commits first; the reload then
-	// finds the secret replaced and treats this one as reuse.
+	// finds the secret replaced and, within the replay window, replays it.
 	var signedIn SignedIn
 	err = retryOnceOnConflict(func() error {
 		var err error
@@ -78,7 +79,7 @@ func (a *Application) refreshOnce(ctx context.Context, presented domain.RefreshS
 		return SignedIn{}, err
 	}
 	now := a.now()
-	claims, err := session.Refresh(match, next, account.Profile, now, a.lifetimes)
+	refreshed, err := session.Refresh(match, next, account.Profile, now, a.lifetimes)
 	if errors.Is(err, domain.ErrRefreshSecretReused) {
 		if saveErr := a.sessions.Save(ctx, session); saveErr != nil {
 			return SignedIn{}, errors.Join(err, saveErr)
@@ -88,14 +89,17 @@ func (a *Application) refreshOnce(ctx context.Context, presented domain.RefreshS
 	if err != nil {
 		return SignedIn{}, err
 	}
-	if err := a.sessions.Save(ctx, session); err != nil {
-		return SignedIn{}, err
+	// A replay changed nothing, so concurrent replays never conflict.
+	if !refreshed.Replayed {
+		if err := a.sessions.Save(ctx, session); err != nil {
+			return SignedIn{}, err
+		}
 	}
-	token, err := a.tokens.Sign(ctx, claims)
+	token, err := a.tokens.Sign(ctx, refreshed.Claims)
 	if err != nil {
 		return SignedIn{}, err
 	}
-	return assembleSignedIn(token, claims, next, session), nil
+	return assembleSignedIn(token, refreshed.Claims, refreshed.Secret, session), nil
 }
 
 // SignOut revokes the Login Session named by the device's token. Other
