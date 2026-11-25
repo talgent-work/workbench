@@ -234,22 +234,44 @@ func (h *DirectoryHandler) ReplaceContent(ctx context.Context, request *storagep
 	for _, file := range request.GetFiles() {
 		files = append(files, application.ContentFile{Path: domain.ContentPath(file.GetPath()), Content: file.GetContent()})
 	}
-	if err := h.application.ReplaceContent(ctx, namedFromProto(request.GetDirectory()), request.GetSpaceToken(), files); err != nil {
+	expected, err := contentExpectationFromProto(request.GetExpected())
+	if err != nil {
 		return nil, mapError(err)
 	}
-	return &storageprivatev1.ReplaceContentResponse{}, nil
+	revision, err := h.application.ReplaceContent(ctx, namedFromProto(request.GetDirectory()), request.GetSpaceToken(), expected, files)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &storageprivatev1.ReplaceContentResponse{Revision: string(revision)}, nil
+}
+
+// contentExpectationFromProto maps the expected content; unset expects any.
+func contentExpectationFromProto(expected *storageprivatev1.ContentExpectation) (domain.ContentExpectation, error) {
+	switch content := expected.GetContent().(type) {
+	case nil:
+		return domain.AnyContent(), nil
+	case *storageprivatev1.ContentExpectation_None:
+		if !content.None {
+			return domain.ContentExpectation{}, application.ErrInvalidRequest
+		}
+		return domain.NoContent(), nil
+	case *storageprivatev1.ContentExpectation_Revision:
+		return domain.ExpectRevision(domain.ContentRevision(content.Revision))
+	default:
+		return domain.ContentExpectation{}, application.ErrInvalidRequest
+	}
 }
 
 func (h *DirectoryHandler) ReadContent(ctx context.Context, request *storageprivatev1.ReadContentRequest) (*storageprivatev1.ReadContentResponse, error) {
 	if err := h.contentCaller(ctx); err != nil {
 		return nil, err
 	}
-	files, err := h.application.ReadContent(ctx, namedFromProto(request.GetDirectory()), request.GetPaths())
+	content, err := h.application.ReadContent(ctx, namedFromProto(request.GetDirectory()), request.GetPaths())
 	if err != nil {
 		return nil, mapError(err)
 	}
-	response := &storageprivatev1.ReadContentResponse{}
-	for _, file := range files {
+	response := &storageprivatev1.ReadContentResponse{Revision: string(content.Revision)}
+	for _, file := range content.Files {
 		response.Files = append(response.Files, &storageprivatev1.ContentFile{Path: string(file.Path), Content: file.Content})
 	}
 	return response, nil

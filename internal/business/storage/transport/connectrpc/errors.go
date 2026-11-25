@@ -75,8 +75,10 @@ func mapError(err error) error {
 		return refusal(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_BACKEND_NOT_MAPPABLE, err)
 	case errors.Is(err, domain.ErrDirectoryMapped):
 		return refusal(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED, err)
+	case errors.Is(err, domain.ErrContentChanged):
+		return refusal(connect.CodeAborted, storageprivatev1.ErrorReason_ERROR_REASON_CONTENT_CHANGED, err)
 	case errors.Is(err, application.ErrInvalidRequest), errors.Is(err, domain.ErrActorRequired), errors.Is(err, domain.ErrFileWriterRequired),
-		errors.Is(err, domain.ErrInvalidContentPath), errors.Is(err, domain.ErrInvalidMountPoint), errors.Is(err, domain.ErrInvalidWorkspaceLayout),
+		errors.Is(err, domain.ErrInvalidContentPath), errors.Is(err, domain.ErrInvalidContentRevision), errors.Is(err, domain.ErrInvalidMountPoint), errors.Is(err, domain.ErrInvalidWorkspaceLayout),
 		errors.Is(err, domain.ErrInvalidMappedPath):
 		return refusal(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST, err)
 	case errors.Is(err, domain.ErrDirectoryNotOpen):

@@ -50,21 +50,31 @@ func (f *DirectoryFiles) current(id domain.DirectoryID) (string, error) {
 	return path.Base(target), nil
 }
 
-func (f *DirectoryFiles) ReadContent(ctx context.Context, id domain.DirectoryID, paths []domain.ContentPath) ([]application.ContentFile, error) {
+// CurrentContent is the current content's directory name, which serves as
+// its revision: each switch takes a fresh one.
+func (f *DirectoryFiles) CurrentContent(_ context.Context, id domain.DirectoryID) (domain.ContentRevision, error) {
+	content, err := f.current(id)
+	if err != nil {
+		return "", oops.With("operation", "storage.current_content", "directory", f.relative(id)).Wrap(err)
+	}
+	return domain.ContentRevision(content), nil
+}
+
+func (f *DirectoryFiles) ReadContent(ctx context.Context, id domain.DirectoryID, paths []domain.ContentPath) (application.Content, error) {
 	unlock, err := f.lock(ctx, id, unix.LOCK_SH)
 	if err != nil {
-		return nil, err
+		return application.Content{}, err
 	}
 	defer unlock()
 	content, err := f.current(id)
 	if err != nil || content == "" {
-		return nil, err
+		return application.Content{}, err
 	}
 	directory := filepath.Join(f.folder(id), contentsFolder, content)
 	if len(paths) == 0 {
 		paths, err = filesUnder(directory)
 		if err != nil {
-			return nil, oops.With("operation", "storage.read_content", "directory", f.relative(id)).Wrap(err)
+			return application.Content{}, oops.With("operation", "storage.read_content", "directory", f.relative(id)).Wrap(err)
 		}
 	}
 	var files []application.ContentFile
@@ -74,11 +84,11 @@ func (f *DirectoryFiles) ReadContent(ctx context.Context, id domain.DirectoryID,
 			continue
 		}
 		if err != nil {
-			return nil, oops.With("operation", "storage.read_content", "directory", f.relative(id)).Wrap(err)
+			return application.Content{}, oops.With("operation", "storage.read_content", "directory", f.relative(id)).Wrap(err)
 		}
 		files = append(files, application.ContentFile{Path: file, Content: data})
 	}
-	return files, nil
+	return application.Content{Revision: domain.ContentRevision(content), Files: files}, nil
 }
 
 // filesUnder lists the regular files of a content by their relative paths.
@@ -102,51 +112,51 @@ func filesUnder(directory string) ([]domain.ContentPath, error) {
 // switches it to them in one rename and removes every earlier content; its
 // caller holds the Directory's lock, so its replacements run one at a time.
 // Each mapped path is emptied before the switch and shows the new content
-// after it.
-func (f *DirectoryFiles) ReplaceContent(ctx context.Context, id domain.DirectoryID, files []application.ContentFile, mappings []domain.MappedPath) error {
+// after it. The new content's directory name is its revision.
+func (f *DirectoryFiles) ReplaceContent(ctx context.Context, id domain.DirectoryID, files []application.ContentFile, mappings []domain.MappedPath) (domain.ContentRevision, error) {
 	operation := oops.With("operation", "storage.replace_content", "directory", f.relative(id))
 	space := f.folder(id)
 	if _, err := os.Lstat(space); err != nil {
-		return operation.Wrap(err)
+		return "", operation.Wrap(err)
 	}
 	staging := f.areaPath(stagingArea, id)
 	// Any earlier staging was abandoned before it switched in.
 	if err := os.RemoveAll(staging); err != nil {
-		return operation.Wrap(err)
+		return "", operation.Wrap(err)
 	}
 	content := uuid.Must(uuid.NewV7()).String()
 	staged := filepath.Join(staging, content)
 	if err := os.MkdirAll(staged, directoryMode); err != nil {
-		return operation.Wrap(err)
+		return "", operation.Wrap(err)
 	}
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
-			return err
+			return "", err
 		}
 		if err := writeContentFile(staged, file); err != nil {
-			return operation.Wrap(err)
+			return "", operation.Wrap(err)
 		}
 	}
 	if err := os.MkdirAll(filepath.Join(space, contentsFolder), directoryMode); err != nil {
-		return operation.Wrap(err)
+		return "", operation.Wrap(err)
 	}
 	if err := f.clearMapped(mappings); err != nil {
-		return operation.Wrap(err)
+		return "", operation.Wrap(err)
 	}
 	switched := filepath.Join(space, contentsFolder, content)
 	if err := os.Rename(staged, switched); err != nil {
-		return operation.Wrap(err)
+		return "", operation.Wrap(err)
 	}
 	// The link is made aside and renamed over ".current", so a reader finds
 	// either the previous content or this one, never neither.
 	if err := replaceLink(space, currentContent, path.Join(contentsFolder, content)); err != nil {
-		return operation.Wrap(err)
+		return "", operation.Wrap(err)
 	}
 	if err := linkEntries(space, switched); err != nil {
-		return operation.Wrap(err)
+		return "", operation.Wrap(err)
 	}
 	if err := syncDirectory(space); err != nil {
-		return operation.Wrap(err)
+		return "", operation.Wrap(err)
 	}
 	// The mapped paths were emptied before the switch, so aligning them now
 	// links only the current content, never an earlier one.
@@ -157,12 +167,12 @@ func (f *DirectoryFiles) ReplaceContent(ctx context.Context, id domain.Directory
 		}
 	}
 	if err := f.removeEarlier(id, content); err != nil {
-		return err
+		return "", err
 	}
 	if len(behind) > 0 {
-		return errors.Join(append(behind, application.ErrMappedViewBehind)...)
+		return domain.ContentRevision(content), errors.Join(append(behind, application.ErrMappedViewBehind)...)
 	}
-	return nil
+	return domain.ContentRevision(content), nil
 }
 
 func writeContentFile(content string, file application.ContentFile) error {

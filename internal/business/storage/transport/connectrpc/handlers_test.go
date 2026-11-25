@@ -40,21 +40,45 @@ func TestArtifactCommandsTakeTheWorkFromTheAgentPrincipal(t *testing.T) {
 // Each Directory refusal reaches its caller with a reason of its own.
 func TestDirectoryRefusalsCarryTheirReason(t *testing.T) {
 	for err, want := range map[error]storageprivatev1.ErrorReason{
-		domain.ErrInvalidLocator:        storageprivatev1.ErrorReason_ERROR_REASON_INVALID_LOCATOR,
-		domain.ErrDirectoryNotOpen:      storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN,
-		domain.ErrDirectoryNotAllocated: storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED,
-		domain.ErrDirectoryReclaimed:    storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED,
-		domain.ErrPermanentDirectory:    storageprivatev1.ErrorReason_ERROR_REASON_PERMANENT_DIRECTORY,
-		application.ErrNameTaken:        storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN,
-		domain.ErrMappingOutsidePrefix:  storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX,
-		domain.ErrMappingOverlaps:       storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OVERLAPS,
-		domain.ErrGrantedReadWrite:      storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_GRANTED_READ_WRITE,
-		domain.ErrBackendNotMappable:    storageprivatev1.ErrorReason_ERROR_REASON_BACKEND_NOT_MAPPABLE,
-		domain.ErrDirectoryMapped:       storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED,
-		domain.ErrInvalidMappedPath:     storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST,
+		domain.ErrInvalidLocator:         storageprivatev1.ErrorReason_ERROR_REASON_INVALID_LOCATOR,
+		domain.ErrDirectoryNotOpen:       storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN,
+		domain.ErrDirectoryNotAllocated:  storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED,
+		domain.ErrDirectoryReclaimed:     storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED,
+		domain.ErrPermanentDirectory:     storageprivatev1.ErrorReason_ERROR_REASON_PERMANENT_DIRECTORY,
+		application.ErrNameTaken:         storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN,
+		domain.ErrMappingOutsidePrefix:   storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX,
+		domain.ErrMappingOverlaps:        storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OVERLAPS,
+		domain.ErrGrantedReadWrite:       storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_GRANTED_READ_WRITE,
+		domain.ErrBackendNotMappable:     storageprivatev1.ErrorReason_ERROR_REASON_BACKEND_NOT_MAPPABLE,
+		domain.ErrDirectoryMapped:        storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED,
+		domain.ErrInvalidMappedPath:      storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST,
+		domain.ErrContentChanged:         storageprivatev1.ErrorReason_ERROR_REASON_CONTENT_CHANGED,
+		domain.ErrInvalidContentRevision: storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST,
 	} {
 		require.Equal(t, want, ReasonOf(mapError(err)), err.Error())
 	}
+	require.Equal(t, connect.CodeAborted, connect.CodeOf(mapError(domain.ErrContentChanged)), "the caller reads again and retries")
+}
+
+// An unset expectation replaces whichever content is current; a set one
+// names no content or one revision.
+func TestContentExpectationFromTheContract(t *testing.T) {
+	expected, err := contentExpectationFromProto(nil)
+	require.NoError(t, err)
+	require.NoError(t, expected.Admit("any"))
+
+	expected, err = contentExpectationFromProto(&storageprivatev1.ContentExpectation{Content: &storageprivatev1.ContentExpectation_None{None: true}})
+	require.NoError(t, err)
+	require.ErrorIs(t, expected.Admit("r1"), domain.ErrContentChanged)
+
+	expected, err = contentExpectationFromProto(&storageprivatev1.ContentExpectation{Content: &storageprivatev1.ContentExpectation_Revision{Revision: "r1"}})
+	require.NoError(t, err)
+	require.NoError(t, expected.Admit("r1"))
+
+	_, err = contentExpectationFromProto(&storageprivatev1.ContentExpectation{Content: &storageprivatev1.ContentExpectation_None{}})
+	require.ErrorIs(t, err, application.ErrInvalidRequest)
+	_, err = contentExpectationFromProto(&storageprivatev1.ContentExpectation{Content: &storageprivatev1.ContentExpectation_Revision{}})
+	require.ErrorIs(t, err, domain.ErrInvalidContentRevision)
 }
 
 // An Artifact command refuses in the public contract's vocabulary: a reason
