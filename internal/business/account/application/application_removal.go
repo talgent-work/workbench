@@ -32,7 +32,7 @@ type RemoveApplication struct {
 // publication that fails is logged and leaves them to their idle timeout.
 func (a *Application) RemoveApplication(ctx context.Context, cmd RemoveApplication) error {
 	var events []domain.Event
-	// A concurrent grant that records a use commits first; the repeat reloads.
+	// A concurrent change by the owner commits first; the repeat reloads.
 	err := retryOnceOnConflict(func() error {
 		owner, found, err := a.applicationFor(ctx, cmd.Owner, cmd.ApplicationID)
 		if err != nil {

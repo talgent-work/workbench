@@ -47,4 +47,7 @@ type ApplicationQueryRepository interface {
 	// OwnedApplications lists the active Applications owner owns, oldest
 	// first, with the secrets still valid at now.
 	OwnedApplications(ctx context.Context, owner string, now time.Time) ([]OwnedApplication, error)
+	// SecretLastUses is each used Client Secret's last use by its id; a
+	// secret that never obtained a token is absent.
+	SecretLastUses(ctx context.Context, applicationID string) (map[string]time.Time, error)
 }

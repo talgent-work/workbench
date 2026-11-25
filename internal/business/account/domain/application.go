@@ -246,31 +246,30 @@ func (a *Application) record(event Event) {
 }
 
 // IssueIdentityToken states the Application's claims for lifetime, for a
-// presented secret one of its Client Secrets accepts, and records that
-// secret's use (Client credentials, An Application's tokens are short). It
-// issues nothing once removed (Removal is final), and the token is never
-// refreshed (No Application refresh). It reports whether it recorded a use,
-// which only then needs saving.
-func (a *Application) IssueIdentityToken(presented ClientSecretValue, now time.Time, lifetime time.Duration) (IdentityClaims, bool, error) {
+// presented secret one of its Client Secrets accepts, and names that secret
+// (Client credentials, An Application's tokens are short). It issues nothing
+// once removed (Removal is final), and the token is never refreshed (No
+// Application refresh). It changes nothing, so a grant saves no Application.
+func (a *Application) IssueIdentityToken(presented ClientSecretValue, now time.Time, lifetime time.Duration) (IdentityClaims, string, error) {
 	if a.State != ApplicationActive {
-		return IdentityClaims{}, false, ErrClientSecretMismatch
+		return IdentityClaims{}, "", ErrClientSecretMismatch
 	}
 	if lifetime <= 0 {
-		return IdentityClaims{}, false, fmt.Errorf("%w: application token lifetime must be positive", ErrInvalidApplication)
+		return IdentityClaims{}, "", fmt.Errorf("%w: application token lifetime must be positive", ErrInvalidApplication)
 	}
 	digest := presented.Digest()
 	for _, secret := range a.Secrets {
-		if matched, recorded := secret.Match(digest, now); matched {
+		if secret.Match(digest, now) {
 			now = now.UTC()
 			return IdentityClaims{
 				Principal: PrincipalApplication,
 				Subject:   string(a.ID),
 				IssuedAt:  now,
 				ExpiresAt: now.Add(lifetime),
-			}, recorded, nil
+			}, secret.ID, nil
 		}
 	}
-	return IdentityClaims{}, false, ErrClientSecretMismatch
+	return IdentityClaims{}, "", ErrClientSecretMismatch
 }
 
 // ClientSecretValue is the plaintext of a Client Secret: shown to its
@@ -325,8 +324,6 @@ type ClientSecret struct {
 	IssuedAt time.Time
 	// OverlapEndsAt is when an overlapping secret stops matching.
 	OverlapEndsAt time.Time
-	// LastUsedAt is when the secret last obtained a token; zero for never.
-	LastUsedAt time.Time
 }
 
 // IssueClientSecret begins a Client Secret from a fresh secret, keeping only
@@ -401,21 +398,8 @@ func (s *ClientSecret) End() {
 	}
 }
 
-// LastUseResolution is how precisely a Client Secret's last use is kept: a
-// use within it of the recorded one changes nothing, so an Application that
-// fetches tokens in parallel does not write, or contend, on every grant.
-const LastUseResolution = time.Minute
-
 // Match accepts a presented secret equal to the retained digest while the
-// secret is current, or overlapping before its overlap ends, and records its
-// use to LastUseResolution (Match). recorded tells whether LastUsedAt moved.
-func (s *ClientSecret) Match(presented ClientSecretDigest, now time.Time) (matched, recorded bool) {
-	if !s.valid(now) || subtle.ConstantTimeCompare([]byte(presented), []byte(s.SecretDigest)) != 1 {
-		return false, false
-	}
-	if !s.LastUsedAt.IsZero() && now.Sub(s.LastUsedAt) < LastUseResolution {
-		return true, false
-	}
-	s.LastUsedAt = now.UTC()
-	return true, true
+// secret is current, or overlapping before its overlap ends (Match).
+func (s *ClientSecret) Match(presented ClientSecretDigest, now time.Time) bool {
+	return s.valid(now) && subtle.ConstantTimeCompare([]byte(presented), []byte(s.SecretDigest)) == 1
 }

@@ -26,6 +26,7 @@ type Application struct {
 
 	applications             domain.ApplicationRepository
 	applicationQueries       query.ApplicationQueryRepository
+	secretUses               ClientSecretUses
 	applicationTokenLifetime time.Duration
 	secretOverlap            time.Duration
 	publisher                AccountPublisherPort
@@ -48,6 +49,8 @@ type Dependencies struct {
 
 	Applications       domain.ApplicationRepository
 	ApplicationQueries query.ApplicationQueryRepository
+	// SecretUses records each Client Secret's last use.
+	SecretUses ClientSecretUses
 	// ApplicationTokenLifetime bounds an Application's Identity Token, which
 	// is never refreshed (An Application's tokens are short).
 	ApplicationTokenLifetime time.Duration
@@ -89,6 +92,7 @@ func NewApplication(deps Dependencies) *Application {
 
 		applications:             deps.Applications,
 		applicationQueries:       deps.ApplicationQueries,
+		secretUses:               deps.SecretUses,
 		applicationTokenLifetime: deps.ApplicationTokenLifetime,
 		secretOverlap:            deps.SecretOverlap,
 		publisher:                publisher,

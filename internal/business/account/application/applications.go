@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/business/account/application/query"
 	"github.com/talgent-work/workbench/internal/business/account/domain"
@@ -36,7 +37,7 @@ func (a *Application) RegisterApplication(ctx context.Context, cmd RegisterAppli
 	if err := a.applications.Save(ctx, registered); err != nil {
 		return RegisteredApplication{}, err
 	}
-	return RegisteredApplication{Application: assembleOwnedApplication(registered, a.now(), a.secretOverlap), ClientSecret: string(secret)}, nil
+	return RegisteredApplication{Application: assembleOwnedApplication(registered, nil, a.now(), a.secretOverlap), ClientSecret: string(secret)}, nil
 }
 
 // OwnedApplications lists the Applications the person owns.
@@ -66,7 +67,11 @@ func (a *Application) OwnedApplication(ctx context.Context, owner, id string) (q
 	if !found.OwnedBy(person) {
 		return query.OwnedApplication{}, domain.ErrApplicationNotFound
 	}
-	return assembleOwnedApplication(found, a.now(), a.secretOverlap), nil
+	lastUses, err := a.applicationQueries.SecretLastUses(ctx, string(found.ID))
+	if err != nil {
+		return query.OwnedApplication{}, err
+	}
+	return assembleOwnedApplication(found, lastUses, a.now(), a.secretOverlap), nil
 }
 
 // RotateClientSecret names an Application its owner rotates the secret of.
@@ -86,9 +91,9 @@ type RotatedClientSecret struct {
 // replaced one keeps matching for the rotation overlap.
 func (a *Application) RotateClientSecret(ctx context.Context, cmd RotateClientSecret) (RotatedClientSecret, error) {
 	var rotated RotatedClientSecret
-	// A concurrent grant that records a use commits first; the repeat reloads.
+	// A concurrent change by the owner commits first; the repeat reloads.
 	err := retryOnceOnConflict(func() error {
-		owner, found, err := a.applicationFor(ctx, cmd.Owner, cmd.ApplicationID)
+		owner, found, lastUses, err := a.ownedApplicationFor(ctx, cmd.Owner, cmd.ApplicationID)
 		if err != nil {
 			return err
 		}
@@ -100,7 +105,7 @@ func (a *Application) RotateClientSecret(ctx context.Context, cmd RotateClientSe
 		if err := a.applications.Save(ctx, found); err != nil {
 			return err
 		}
-		rotated = RotatedClientSecret{Application: assembleOwnedApplication(found, now, a.secretOverlap), ClientSecret: string(secret)}
+		rotated = RotatedClientSecret{Application: assembleOwnedApplication(found, lastUses, now, a.secretOverlap), ClientSecret: string(secret)}
 		return nil
 	})
 	return rotated, err
@@ -117,7 +122,7 @@ type RevokeClientSecret struct {
 func (a *Application) RevokeClientSecret(ctx context.Context, cmd RevokeClientSecret) (query.OwnedApplication, error) {
 	var revoked query.OwnedApplication
 	err := retryOnceOnConflict(func() error {
-		owner, found, err := a.applicationFor(ctx, cmd.Owner, cmd.ApplicationID)
+		owner, found, lastUses, err := a.ownedApplicationFor(ctx, cmd.Owner, cmd.ApplicationID)
 		if err != nil {
 			return err
 		}
@@ -128,7 +133,7 @@ func (a *Application) RevokeClientSecret(ctx context.Context, cmd RevokeClientSe
 		if err := a.applications.Save(ctx, found); err != nil {
 			return err
 		}
-		revoked = assembleOwnedApplication(found, now, a.secretOverlap)
+		revoked = assembleOwnedApplication(found, lastUses, now, a.secretOverlap)
 		return nil
 	})
 	return revoked, err
@@ -145,7 +150,7 @@ type RenameApplication struct {
 func (a *Application) RenameApplication(ctx context.Context, cmd RenameApplication) (query.OwnedApplication, error) {
 	var renamed query.OwnedApplication
 	err := retryOnceOnConflict(func() error {
-		owner, found, err := a.applicationFor(ctx, cmd.Owner, cmd.ApplicationID)
+		owner, found, lastUses, err := a.ownedApplicationFor(ctx, cmd.Owner, cmd.ApplicationID)
 		if err != nil {
 			return err
 		}
@@ -158,7 +163,7 @@ func (a *Application) RenameApplication(ctx context.Context, cmd RenameApplicati
 				return err
 			}
 		}
-		renamed = assembleOwnedApplication(found, a.now(), a.secretOverlap)
+		renamed = assembleOwnedApplication(found, lastUses, a.now(), a.secretOverlap)
 		return nil
 	})
 	return renamed, err
@@ -182,6 +187,21 @@ func (a *Application) applicationFor(ctx context.Context, caller, id string) (do
 	return person, found, nil
 }
 
+// ownedApplicationFor is applicationFor with its secrets' last uses, read
+// before the change so a failed read writes nothing; the change answers with
+// them, which a concurrent grant may move on by then.
+func (a *Application) ownedApplicationFor(ctx context.Context, caller, id string) (domain.AccountID, *domain.Application, map[string]time.Time, error) {
+	person, found, err := a.applicationFor(ctx, caller, id)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	lastUses, err := a.applicationQueries.SecretLastUses(ctx, string(found.ID))
+	if err != nil {
+		return "", nil, nil, err
+	}
+	return person, found, lastUses, nil
+}
+
 // IssueApplicationIdentityToken is the client credentials grant: an
 // Application's id and one of its Client Secrets.
 type IssueApplicationIdentityToken struct {
@@ -190,9 +210,11 @@ type IssueApplicationIdentityToken struct {
 }
 
 // IssueApplicationIdentityToken issues an Application's Identity Token for a
-// valid Client Secret and records the secret's use. An unknown client, a
-// removed Application and a secret that matches nothing all answer
-// ErrClientSecretMismatch, so a caller learns nothing about which it was.
+// valid Client Secret and records the secret's last use (Last use recorded).
+// An unknown client, a removed Application and a secret that matches nothing
+// all answer ErrClientSecretMismatch, so a caller learns nothing about which
+// it was. The grant changes no Application, so it contends with no other
+// grant and no change by the owner.
 func (a *Application) IssueApplicationIdentityToken(ctx context.Context, cmd IssueApplicationIdentityToken) (IssuedToken, error) {
 	id, err := domain.ParseApplicationID(cmd.ClientID)
 	if err != nil {
@@ -202,19 +224,6 @@ func (a *Application) IssueApplicationIdentityToken(ctx context.Context, cmd Iss
 	if err != nil {
 		return IssuedToken{}, err
 	}
-	var issued IssuedToken
-	// A concurrent grant or change of the same Application commits first; the
-	// repeat reloads it, and a use another grant already recorded within
-	// LastUseResolution needs no second write.
-	err = retryOnceOnConflict(func() error {
-		var err error
-		issued, err = a.issueApplicationTokenOnce(ctx, id, secret)
-		return err
-	})
-	return issued, err
-}
-
-func (a *Application) issueApplicationTokenOnce(ctx context.Context, id domain.ApplicationID, secret domain.ClientSecretValue) (IssuedToken, error) {
 	found, err := a.applications.Get(ctx, id)
 	if errors.Is(err, domain.ErrApplicationNotFound) {
 		return IssuedToken{}, domain.ErrClientSecretMismatch
@@ -222,7 +231,8 @@ func (a *Application) issueApplicationTokenOnce(ctx context.Context, id domain.A
 	if err != nil {
 		return IssuedToken{}, err
 	}
-	claims, recorded, err := found.IssueIdentityToken(secret, a.now(), a.applicationTokenLifetime)
+	now := a.now()
+	claims, secretID, err := found.IssueIdentityToken(secret, now, a.applicationTokenLifetime)
 	if err != nil {
 		return IssuedToken{}, err
 	}
@@ -232,10 +242,8 @@ func (a *Application) issueApplicationTokenOnce(ctx context.Context, id domain.A
 	if err != nil {
 		return IssuedToken{}, err
 	}
-	if recorded {
-		if err := a.applications.Save(ctx, found); err != nil {
-			return IssuedToken{}, err
-		}
+	if err := a.secretUses.RecordLastUse(ctx, string(id), secretID, now, LastUseResolution); err != nil {
+		return IssuedToken{}, err
 	}
 	return IssuedToken{Token: token, ExpiresAt: claims.ExpiresAt}, nil
 }

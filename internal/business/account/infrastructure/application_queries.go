@@ -11,6 +11,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 )
 
+// ownedClientSecretColumns are what an owner reads of a Client Secret: never
+// its digest.
+var ownedClientSecretColumns = []string{"id", "application_id", "hint", "state", "issued_at", "overlap_ends_at", "last_used_at"}
+
 // ApplicationQueries reads Applications by their Application Owner.
 type ApplicationQueries struct {
 	db *jimuxorm.DB
@@ -48,7 +52,7 @@ func (r *ApplicationQueries) OwnedApplications(ctx context.Context, owner string
 	if err != nil {
 		return nil, err
 	}
-	if err := session.Cols(clientSecretColumns...).In("application_id", ids).
+	if err := session.Cols(ownedClientSecretColumns...).In("application_id", ids).
 		Where("deleted_at = 0 AND (state = ? OR (state = ? AND overlap_ends_at > ?))",
 			int(domain.ClientSecretCurrent), int(domain.ClientSecretOverlapping), at).
 		OrderBy("state, issued_at, id").Find(&secrets); err != nil {
@@ -77,4 +81,23 @@ func ownedClientSecretFromDO(row clientSecretDO) query.ClientSecret {
 		ID: row.ID, State: state, Hint: row.Hint, IssuedAt: fromMillis(row.IssuedAt),
 		LastUsedAt: fromMillis(row.LastUsedAt), OverlapEndsAt: fromMillis(row.OverlapEndsAt),
 	}
+}
+
+// SecretLastUses reads the last use of each of the Application's secrets that
+// obtained a token, by the application_id index.
+func (r *ApplicationQueries) SecretLastUses(ctx context.Context, applicationID string) (map[string]time.Time, error) {
+	var rows []clientSecretDO
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Cols("id", "last_used_at").
+		Where("application_id = ? AND deleted_at = 0 AND last_used_at > 0", applicationID).Find(&rows); err != nil {
+		return nil, oops.With("operation", "application.secret_last_uses").With("application_id", applicationID).Wrap(err)
+	}
+	uses := make(map[string]time.Time, len(rows))
+	for _, row := range rows {
+		uses[row.ID] = fromMillis(row.LastUsedAt)
+	}
+	return uses, nil
 }

@@ -26,8 +26,8 @@ func assembleSignedIn(accessToken string, claims domain.IdentityClaims, secret d
 }
 
 // assembleOwnedApplication is an Application as its owner sees it at now:
-// its valid secrets, never their digests.
-func assembleOwnedApplication(entity *domain.Application, now time.Time, overlap time.Duration) query.OwnedApplication {
+// its valid secrets with their last uses, never their digests.
+func assembleOwnedApplication(entity *domain.Application, lastUses map[string]time.Time, now time.Time, overlap time.Duration) query.OwnedApplication {
 	valid := entity.ValidSecrets(now)
 	secrets := make([]query.ClientSecret, 0, len(valid))
 	for _, secret := range valid {
@@ -37,7 +37,7 @@ func assembleOwnedApplication(entity *domain.Application, now time.Time, overlap
 		}
 		secrets = append(secrets, query.ClientSecret{
 			ID: secret.ID, State: state, Hint: secret.Hint, IssuedAt: secret.IssuedAt,
-			LastUsedAt: secret.LastUsedAt, OverlapEndsAt: secret.OverlapEndsAt,
+			LastUsedAt: lastUses[secret.ID], OverlapEndsAt: secret.OverlapEndsAt,
 		})
 	}
 	return query.OwnedApplication{ID: string(entity.ID), Name: entity.Name, RegisteredAt: entity.RegisteredAt, Secrets: secrets, SecretOverlap: overlap, Removed: entity.State == domain.ApplicationRemoved}

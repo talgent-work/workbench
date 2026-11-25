@@ -130,7 +130,6 @@ func clientSecretToDO(application domain.ApplicationID, secret *domain.ClientSec
 		State:         int(secret.State),
 		IssuedAt:      millis(secret.IssuedAt),
 		OverlapEndsAt: millis(secret.OverlapEndsAt),
-		LastUsedAt:    millis(secret.LastUsedAt),
 	}
 }
 
@@ -152,7 +151,6 @@ func applicationFromDO(row *applicationDO, secretRows []clientSecretDO) (*domain
 			State:         domain.ClientSecretState(secret.State),
 			IssuedAt:      fromMillis(secret.IssuedAt),
 			OverlapEndsAt: fromMillis(secret.OverlapEndsAt),
-			LastUsedAt:    fromMillis(secret.LastUsedAt),
 		})
 	}
 	if err := application.Validate(); err != nil {
