@@ -26,7 +26,7 @@ func TestLateEvidenceAndReorderedReplay(t *testing.T) {
 	at := time.Now().Add(-48 * time.Hour).Truncate(time.Minute)
 	resources := "map('talgent.work_caller', 'team:team-late','talgent.agent_work_id','session-late')"
 	attrs := "map('event.name','tool_decision','event.sequence','42','session.id','native-session','tool_name','Agent','tool_use_id','call-late')"
-	insertLog := "INSERT INTO otel_logs (Timestamp, TraceId, SpanId, Body, LogAttributes, ResourceAttributes) SELECT ?, 'trace-late', '', 'claude_code.tool_decision', " + attrs + ", " + resources
+	insertLog := "INSERT INTO native_events (Timestamp, TraceId, SpanId, Body, LogAttributes, ResourceAttributes) SELECT ?, 'trace-late', '', 'claude_code.tool_decision', " + attrs + ", " + resources
 	if err := repo.db.Exec(ctx, insertLog, at.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -52,15 +52,15 @@ func TestLateEvidenceAndReorderedReplay(t *testing.T) {
 	}
 	assertCounts("Unknown agent type")
 	spanAttrs := "map('tool_name','Agent','tool_use_id','call-late','subagent_type','general-purpose')"
-	if err := repo.db.Exec(ctx, "INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes) SELECT ?, 'trace-late', 'span-late', 'claude_code.tool', "+spanAttrs+", "+resources, at); err != nil {
+	if err := repo.db.Exec(ctx, "INSERT INTO native_spans (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes) SELECT ?, 'trace-late', 'span-late', 'claude_code.tool', "+spanAttrs+", "+resources, at); err != nil {
 		t.Fatal(err)
 	}
 	assertCounts("general-purpose")
 	// Replay the same records with reversed map serialization order.
-	if err := repo.db.Exec(ctx, "INSERT INTO otel_logs (Timestamp, TraceId, SpanId, Body, LogAttributes, ResourceAttributes) SELECT Timestamp, TraceId, SpanId, Body, mapFromArrays(arrayReverse(mapKeys(LogAttributes)), arrayReverse(mapValues(LogAttributes))), mapFromArrays(arrayReverse(mapKeys(ResourceAttributes)), arrayReverse(mapValues(ResourceAttributes))) FROM otel_logs"); err != nil {
+	if err := repo.db.Exec(ctx, "INSERT INTO native_events (Timestamp, TraceId, SpanId, Body, LogAttributes, ResourceAttributes) SELECT Timestamp, TraceId, SpanId, Body, mapFromArrays(arrayReverse(mapKeys(LogAttributes)), arrayReverse(mapValues(LogAttributes))), mapFromArrays(arrayReverse(mapKeys(ResourceAttributes)), arrayReverse(mapValues(ResourceAttributes))) FROM native_events"); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.db.Exec(ctx, "INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes) SELECT Timestamp, TraceId, SpanId, SpanName, mapFromArrays(arrayReverse(mapKeys(SpanAttributes)), arrayReverse(mapValues(SpanAttributes))), mapFromArrays(arrayReverse(mapKeys(ResourceAttributes)), arrayReverse(mapValues(ResourceAttributes))) FROM otel_traces"); err != nil {
+	if err := repo.db.Exec(ctx, "INSERT INTO native_spans (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes) SELECT Timestamp, TraceId, SpanId, SpanName, mapFromArrays(arrayReverse(mapKeys(SpanAttributes)), arrayReverse(mapValues(SpanAttributes))), mapFromArrays(arrayReverse(mapKeys(ResourceAttributes)), arrayReverse(mapValues(ResourceAttributes))) FROM native_spans"); err != nil {
 		t.Fatal(err)
 	}
 	assertCounts("general-purpose")
@@ -96,7 +96,7 @@ func TestMetricWindowFiltersEvidenceBeforeBucketing(t *testing.T) {
 	end := start.Add(30 * time.Second)
 	for i, at := range []time.Time{start.Add(-time.Nanosecond), start, end.Add(-time.Nanosecond), end} {
 		attrs := fmt.Sprintf("map('model','fixture','input_tokens','%d','output_tokens','0','cache_read_tokens','0','cache_creation_tokens','0')", (i+1)*10)
-		if err := repo.db.Exec(ctx, "INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes) SELECT fromUnixTimestamp64Nano(?), 'trace-window', ?, 'claude_code.llm_request', "+attrs+", map('talgent.work_caller', 'team:team-window','talgent.agent_work_id','session-window')", at.UnixNano(), fmt.Sprint(i)); err != nil {
+		if err := repo.db.Exec(ctx, "INSERT INTO native_spans (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes) SELECT fromUnixTimestamp64Nano(?), 'trace-window', ?, 'claude_code.llm_request', "+attrs+", map('talgent.work_caller', 'team:team-window','talgent.agent_work_id','session-window')", at.UnixNano(), fmt.Sprint(i)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -133,7 +133,7 @@ func TestSpanIdentityPagination(t *testing.T) {
 	ctx := context.Background()
 	at := time.Now().Add(-time.Minute)
 	for _, trace := range []string{"trace-a", "trace-b"} {
-		if err := repo.db.Exec(ctx, "INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, ResourceAttributes) SELECT ?, ?, 'same-span', 'claude_code.interaction', map('talgent.work_caller', 'team:team-pages','talgent.agent_work_id','session-pages')", at, trace); err != nil {
+		if err := repo.db.Exec(ctx, "INSERT INTO native_spans (Timestamp, TraceId, SpanId, SpanName, ResourceAttributes) SELECT ?, ?, 'same-span', 'claude_code.interaction', map('talgent.work_caller', 'team:team-pages','talgent.agent_work_id','session-pages')", at, trace); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -176,7 +176,7 @@ func TestUnnamedSkillAndNativeContentMarkers(t *testing.T) {
 	}
 	ctx := context.Background()
 	for _, name := range []string{"probe", ""} {
-		err := repo.db.Exec(ctx, `INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes)
+		err := repo.db.Exec(ctx, `INSERT INTO native_spans (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes)
             SELECT now64(9), 'trace-content', ?, 'claude_code.tool',
                 map('tool_name','Skill','tool_use_id',?,'skill_name',?,'tool_input','<REDACTED>','tool_output','preview…','tool_output_truncated','true'),
                 map('talgent.work_caller', 'team:team-content','talgent.agent_work_id','session-content')`, "span-"+name, "call-"+name, name)
@@ -225,7 +225,7 @@ func TestMetricFiltersPreserveClassificationGaps(t *testing.T) {
 		{"healthy", "claude_code.tool", "map('tool_use_id','known-call','tool_name','Read')"},
 		{"model", "claude_code.llm_request", "map('model','fixture','input_tokens','10','output_tokens','5','cache_read_tokens','0','cache_creation_tokens','0')"},
 	} {
-		if err := repo.db.Exec(ctx, `INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes)
+		if err := repo.db.Exec(ctx, `INSERT INTO native_spans (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes)
             SELECT now64(9), 'trace-filter', ?, ?, `+record.attributes+`, map('talgent.work_caller', 'team:team-filter','talgent.agent_work_id','session-filter')`, record.span, record.name); err != nil {
 			t.Fatal(err)
 		}
@@ -259,7 +259,7 @@ func TestMetricFiltersPreserveClassificationGaps(t *testing.T) {
 	}
 
 	t.Run("log-only call", func(t *testing.T) {
-		if err := repo.db.Exec(ctx, `INSERT INTO otel_logs (Timestamp, TraceId, Body, LogAttributes, ResourceAttributes)
+		if err := repo.db.Exec(ctx, `INSERT INTO native_events (Timestamp, TraceId, Body, LogAttributes, ResourceAttributes)
             SELECT now64(9), 'trace-log-filter', 'claude_code.tool_decision',
                 map('event.name','tool_decision','tool_use_id','unknown-call','event.sequence','1'),
                 map('talgent.work_caller', 'team:team-log-filter','talgent.agent_work_id','session-log-filter')`); err != nil {
@@ -273,4 +273,108 @@ func TestMetricFiltersPreserveClassificationGaps(t *testing.T) {
 			t.Fatalf("log-only classification gap hidden: %+v", metrics)
 		}
 	})
+}
+
+// An interaction event is its session, its sequence and its time: a restarted
+// Harness process repeats the sequence at another time, which is another
+// event, while every delivery of one event is that one event, even when its
+// copies fill a page.
+func TestEventIdentityAcrossProcessesAndDeliveries(t *testing.T) {
+	dsn, cleanup := startClickHouse(t)
+	defer cleanup()
+	repo, err := openTestRepository(t, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	caller := query.WorkCaller{Kind: "team", ID: "team-identity"}
+	first := time.Now().Add(-2 * time.Hour).Truncate(time.Millisecond)
+	insert := func(at time.Time, sequence string) {
+		t.Helper()
+		if err := repo.db.Exec(ctx, `INSERT INTO native_events (Timestamp, TraceId, Body, LogAttributes, ResourceAttributes)
+            SELECT ?, 'trace-identity', 'claude_code.skill_activated',
+                map('event.name','skill_activated','session.id','session-identity','event.sequence',?,'skill.name','probe'),
+                map('talgent.work_caller','team:team-identity','talgent.agent_work_id','work-identity')`, at, sequence); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One process, then its restart six hours later repeating sequence 7.
+	insert(first, "7")
+	insert(first.Add(6*time.Hour-time.Minute), "7")
+	// The restart's next event, delivered three times.
+	for range 3 {
+		insert(first.Add(6*time.Hour), "8")
+	}
+
+	var listed []query.NativeEvent
+	opts := query.EventOptions{WorkCaller: caller, Limit: 1}
+	for pages := 0; ; pages++ {
+		if pages == 5 {
+			t.Fatalf("paging did not end: %+v", listed)
+		}
+		page, err := repo.ListEvents(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		listed = append(listed, page.Events...)
+		if page.NextCursor == "" {
+			break
+		}
+		opts.AfterCursor = page.NextCursor
+	}
+	if len(listed) != 3 {
+		t.Fatalf("events = %+v, want the two processes' sequence 7 apart and one delivered event", listed)
+	}
+	if listed[0].ID == listed[1].ID || listed[1].ID == listed[2].ID {
+		t.Fatalf("event identities collide: %q %q %q", listed[0].ID, listed[1].ID, listed[2].ID)
+	}
+	metrics, err := repo.GetByWorkCaller(ctx, query.TraceMetricOptions{WorkCaller: caller, MetricKinds: []string{"skill_activation"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var activations float64
+	for _, bucket := range metrics.Buckets {
+		activations += bucket.Value
+	}
+	if activations != 3 {
+		t.Fatalf("activations = %v, want one per event however often it was delivered", activations)
+	}
+}
+
+// A span's copies at a page boundary neither repeat it on the next page nor
+// leave a trailing empty page.
+func TestSpanCopiesAtAPageBoundary(t *testing.T) {
+	dsn, cleanup := startClickHouse(t)
+	defer cleanup()
+	repo, err := openTestRepository(t, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	at := time.Now().Add(-time.Hour)
+	for _, span := range []struct {
+		id     string
+		second int
+	}{{"span-a", 0}, {"span-b", 1}, {"span-b", 1}, {"span-b", 1}, {"span-c", 2}} {
+		if err := repo.db.Exec(ctx, "INSERT INTO native_spans (Timestamp, TraceId, SpanId, SpanName, ResourceAttributes) SELECT ?, 'trace-copies', ?, 'claude_code.interaction', map('talgent.work_caller', 'team:team-copies','talgent.agent_work_id','work-copies')", at.Add(time.Duration(span.second)*time.Second), span.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opts := query.SpanListOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-copies"}, NewestFirst: true, Limit: 2}
+	first, err := repo.ListByWorkCaller(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.AfterCursor = first.NextCursor
+	second, err := repo.ListByWorkCaller(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, span := range slices.Concat(first.Spans, second.Spans) {
+		got = append(got, span.SpanID)
+	}
+	if first.NextCursor == "" || second.NextCursor != "" || !slices.Equal(got, []string{"span-c", "span-b", "span-a"}) {
+		t.Fatalf("pages = %v, cursors %q then %q", got, first.NextCursor, second.NextCursor)
+	}
 }

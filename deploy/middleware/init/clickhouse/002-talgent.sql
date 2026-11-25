@@ -1,18 +1,116 @@
--- Run after the official Collector creates its native tables. This file is
--- intentionally not mounted into ClickHouse's first-start init directory.
-SELECT throwIf(countIf(database = 'talgent_trace' AND name IN ('otel_traces', 'otel_logs')) != 2,
-    'Start the configured Collector before applying native observability projections') FROM system.tables;
+-- Run before the Collector starts: it writes native evidence into the tables
+-- this file defines and creates none of its own. This file is intentionally
+-- not mounted into ClickHouse's first-start init directory.
 
 -- Native evidence is written by the official Collector (7-day TTL).
 -- Measurement facts contain no input/output body and expire after 30 days.
 -- Service accounts are provisioned by operators outside this schema migration
 -- (see docs/self-hosting.md), and XML-defined users reject SQL GRANT statements.
+CREATE DATABASE IF NOT EXISTS talgent_trace;
 CREATE DATABASE IF NOT EXISTS talgent_messages;
 
-CREATE OR REPLACE FUNCTION talgent_log_evidence_id AS (trace_id, event_time, body, attrs) ->
-    concat('log:', hex(SHA256(concat(trace_id, ':', attrs['session.id'], ':',
-        attrs['event.sequence'], ':', toString(event_time), ':', body, ':',
-        toString(arraySort(x -> x.1, arrayZip(mapKeys(attrs), mapValues(attrs))))))));
+-- An interaction event's identity is the one its Harness wrote: its session,
+-- its sequence, which restarts with each Harness process, and its time.
+-- Every delivery of one event carries all three unchanged.
+CREATE OR REPLACE FUNCTION talgent_event_evidence_id AS (session, sequence, event_time) ->
+    concat('log:', session, ':', sequence, ':', toString(toUnixTimestamp64Nano(event_time)));
+
+-- Native evidence, laid out for its reads: every read names a Work Caller and
+-- pages by time, so a page reads in key order and stops at its limit.
+-- Delivery is at least once (the exporter retries an insert that timed out
+-- after committing). A record's copies share the whole sort key, so they merge
+-- into one and lie next to each other until then. The columns before the Work
+-- attribution are the ones otel-collector-contrib 0.150's clickhouseexporter
+-- inserts. A Collector upgrade that inserts another column fails its writes
+-- until the column is added here.
+CREATE TABLE IF NOT EXISTS talgent_trace.native_spans (
+    Timestamp DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+    TraceId String CODEC(ZSTD(1)),
+    SpanId String CODEC(ZSTD(1)),
+    ParentSpanId String CODEC(ZSTD(1)),
+    TraceState String CODEC(ZSTD(1)),
+    SpanName LowCardinality(String) CODEC(ZSTD(1)),
+    SpanKind LowCardinality(String) CODEC(ZSTD(1)),
+    ServiceName LowCardinality(String) CODEC(ZSTD(1)),
+    ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    ScopeName String CODEC(ZSTD(1)),
+    ScopeVersion String CODEC(ZSTD(1)),
+    SpanAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    Duration UInt64 CODEC(ZSTD(1)),
+    StatusCode LowCardinality(String) CODEC(ZSTD(1)),
+    StatusMessage String CODEC(ZSTD(1)),
+    `Events.Timestamp` Array(DateTime64(9)) CODEC(ZSTD(1)),
+    `Events.Name` Array(LowCardinality(String)) CODEC(ZSTD(1)),
+    `Events.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+    `Links.TraceId` Array(String) CODEC(ZSTD(1)),
+    `Links.SpanId` Array(String) CODEC(ZSTD(1)),
+    `Links.TraceState` Array(String) CODEC(ZSTD(1)),
+    `Links.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+    WorkCaller String MATERIALIZED ResourceAttributes['talgent.work_caller'] CODEC(ZSTD(1)),
+    AgentWorkId String MATERIALIZED ResourceAttributes['talgent.agent_work_id'] CODEC(ZSTD(1)),
+    INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+    INDEX idx_agent_work_id AgentWorkId TYPE bloom_filter(0.001) GRANULARITY 1
+) ENGINE = ReplacingMergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (WorkCaller, Timestamp, TraceId, SpanId)
+TTL toDateTime(Timestamp) + INTERVAL 7 DAY
+SETTINGS ttl_only_drop_parts = 1;
+
+CREATE TABLE IF NOT EXISTS talgent_trace.native_events (
+    Timestamp DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+    TimestampTime DateTime DEFAULT toDateTime(Timestamp),
+    TraceId String CODEC(ZSTD(1)),
+    SpanId String CODEC(ZSTD(1)),
+    TraceFlags UInt8,
+    SeverityText LowCardinality(String) CODEC(ZSTD(1)),
+    SeverityNumber UInt8,
+    ServiceName LowCardinality(String) CODEC(ZSTD(1)),
+    Body String CODEC(ZSTD(1)),
+    ResourceSchemaUrl LowCardinality(String) CODEC(ZSTD(1)),
+    ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    ScopeSchemaUrl LowCardinality(String) CODEC(ZSTD(1)),
+    ScopeName String CODEC(ZSTD(1)),
+    ScopeVersion LowCardinality(String) CODEC(ZSTD(1)),
+    ScopeAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    LogAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    EventName String CODEC(ZSTD(1)),
+    WorkCaller String MATERIALIZED ResourceAttributes['talgent.work_caller'] CODEC(ZSTD(1)),
+    AgentWorkId String MATERIALIZED ResourceAttributes['talgent.agent_work_id'] CODEC(ZSTD(1)),
+    SessionId String MATERIALIZED LogAttributes['session.id'] CODEC(ZSTD(1)),
+    EventSequence String MATERIALIZED LogAttributes['event.sequence'] CODEC(ZSTD(1)),
+    INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+    INDEX idx_agent_work_id AgentWorkId TYPE bloom_filter(0.001) GRANULARITY 1,
+    INDEX idx_call_id LogAttributes['tool_use_id'] TYPE bloom_filter(0.001) GRANULARITY 1
+) ENGINE = ReplacingMergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (WorkCaller, Timestamp, SessionId, EventSequence)
+TTL toDateTime(Timestamp) + INTERVAL 7 DAY
+SETTINGS ttl_only_drop_parts = 1;
+
+-- Earlier releases let the Collector create otel_traces and otel_logs itself.
+-- Move their retained evidence over once, before any view derives from the
+-- new tables, so moved evidence keeps the measurements already derived from
+-- it, then drop them with the Collector's trace-id lookup, which nothing reads.
+-- merge() names the new table too, so the statement holds on a deployment
+-- without the old one. Remove this block once no deployment predates it.
+INSERT INTO talgent_trace.native_spans (Timestamp, TraceId, SpanId, ParentSpanId, TraceState, SpanName, SpanKind, ServiceName,
+    ResourceAttributes, ScopeName, ScopeVersion, SpanAttributes, Duration, StatusCode, StatusMessage,
+    `Events.Timestamp`, `Events.Name`, `Events.Attributes`, `Links.TraceId`, `Links.SpanId`, `Links.TraceState`, `Links.Attributes`)
+SELECT Timestamp, TraceId, SpanId, ParentSpanId, TraceState, SpanName, SpanKind, ServiceName,
+    ResourceAttributes, ScopeName, ScopeVersion, SpanAttributes, Duration, StatusCode, StatusMessage,
+    `Events.Timestamp`, `Events.Name`, `Events.Attributes`, `Links.TraceId`, `Links.SpanId`, `Links.TraceState`, `Links.Attributes`
+FROM merge('talgent_trace', '^(native_spans|otel_traces)$')
+WHERE _table = 'otel_traces' AND Timestamp >= now64(9) - INTERVAL 7 DAY;
+INSERT INTO talgent_trace.native_events (Timestamp, TraceId, SpanId, TraceFlags, SeverityText, SeverityNumber, ServiceName, Body,
+    ResourceSchemaUrl, ResourceAttributes, ScopeSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, LogAttributes, EventName)
+SELECT Timestamp, TraceId, SpanId, TraceFlags, SeverityText, SeverityNumber, ServiceName, Body,
+    ResourceSchemaUrl, ResourceAttributes, ScopeSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, LogAttributes, EventName
+FROM merge('talgent_trace', '^(native_events|otel_logs)$')
+WHERE _table = 'otel_logs' AND Timestamp >= now64(9) - INTERVAL 7 DAY;
+DROP VIEW IF EXISTS talgent_trace.otel_traces_trace_id_ts_mv;
+DROP TABLE IF EXISTS talgent_trace.otel_traces_trace_id_ts;
+DROP TABLE IF EXISTS talgent_trace.otel_traces;
+DROP TABLE IF EXISTS talgent_trace.otel_logs;
 
 CREATE OR REPLACE FUNCTION talgent_call_kind AS (tool, server) ->
     multiIf(tool = 'Skill', 'skill_call', tool IN ('Agent', 'Task'), 'agent_call',
@@ -104,14 +202,14 @@ SELECT
     ['projection_incomplete'] AS gaps,
     toUInt8(0) AS source_priority,
     toUInt64(0) AS projection_version
-FROM talgent_trace.otel_traces
+FROM talgent_trace.native_spans
 WHERE agent_work_id != '';
 
 DROP VIEW IF EXISTS talgent_trace.trace_logs_receipts_mv;
 CREATE MATERIALIZED VIEW talgent_trace.trace_logs_receipts_mv
 TO talgent_trace.trace_work_measurements AS
 SELECT
-    talgent_log_evidence_id(TraceId, Timestamp, Body, LogAttributes) AS evidence_id,
+    talgent_event_evidence_id(LogAttributes['session.id'], LogAttributes['event.sequence'], Timestamp) AS evidence_id,
     evidence_id AS measurement_id,
     Timestamp AS timestamp,
     ResourceAttributes['talgent.work_caller'] AS work_caller,
@@ -127,7 +225,7 @@ SELECT
     ['projection_incomplete'] AS gaps,
     toUInt8(0) AS source_priority,
     toUInt64(0) AS projection_version
-FROM talgent_trace.otel_logs
+FROM talgent_trace.native_events
 WHERE agent_work_id != '';
 
 -- ClickHouse expands SQL UDFs when creating views. Refresh the trigger with
@@ -159,7 +257,7 @@ SELECT
        if(talgent_span_category(SpanName, SpanAttributes) = 'other', 'unmapped_span', '')]) AS gaps,
     toUInt8(2) AS source_priority,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS projection_version
-FROM talgent_trace.otel_traces
+FROM talgent_trace.native_spans
 WHERE agent_work_id != ''
 ;
 
@@ -177,7 +275,7 @@ WITH
         'mcp_server_name', JSONExtractString(LogAttributes['tool_parameters'], 'mcp_server_name'),
         'mcp_tool_name', JSONExtractString(LogAttributes['tool_parameters'], 'mcp_tool_name'))) AS call_attributes
 SELECT
-    talgent_log_evidence_id(TraceId, Timestamp, Body, LogAttributes) AS evidence_id,
+    talgent_event_evidence_id(LogAttributes['session.id'], LogAttributes['event.sequence'], Timestamp) AS evidence_id,
     if(event IN ('tool_decision', 'tool_result') AND LogAttributes['tool_use_id'] != '',
        concat('call:', TraceId, ':', LogAttributes['tool_use_id']), evidence_id) AS measurement_id,
     Timestamp AS timestamp,
@@ -201,7 +299,7 @@ SELECT
        if(event = 'skill_activated' AND LogAttributes['event.sequence'] = '', 'missing_event_identity', '')]) AS gaps,
     toUInt8(1) AS source_priority,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS projection_version
-FROM talgent_trace.otel_logs
+FROM talgent_trace.native_events
 WHERE agent_work_id != ''
 ;
 
@@ -230,3 +328,7 @@ FROM (
 )
 ARRAY JOIN if(empty(fact.8) AND notEmpty(fact.9),
     [('observation_gap', CAST(NULL AS Nullable(Float64)))], fact.8) AS metric;
+
+-- The content-hash event identity of earlier releases, which no view uses now.
+-- Remove this statement once no deployment predates it.
+DROP FUNCTION IF EXISTS talgent_log_evidence_id;

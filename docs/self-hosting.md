@@ -214,9 +214,9 @@ scripts/deploy/apply.sh deploy/kubernetes/workbench
 
 `apply.sh` performs the deploy in order: namespaces, Secrets, the MySQL schema
 (`bootstrap-mysql.sh`), OpenSandbox (`apply-opensandbox.sh`, which first checks the sandbox
-RuntimeClass and the pod network), the environment ConfigMap and the Collector, the ClickHouse
-projections once the Collector has created its tables (`bootstrap-clickhouse.sh`, waiting up to
-`CLICKHOUSE_WAIT_SECONDS`, default 120), then everything rendered; it waits for controlplane.
+RuntimeClass and the pod network), the ClickHouse tables and projections
+(`bootstrap-clickhouse.sh`), the environment ConfigMap and the Collector, which writes into those
+tables, then everything rendered; it waits for controlplane.
 Re-running it is safe: schemas only create what is missing.
 
 - If the schema is already current, skip a step with `TALGENT_SKIP_DB_BOOTSTRAP=1` or

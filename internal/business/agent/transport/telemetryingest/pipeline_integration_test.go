@@ -51,7 +51,7 @@ func TestManagedTelemetryLandsUnderItsRunsAttribution(t *testing.T) {
 	defer db.Close()
 	var work, person, computer, name string
 	require.Eventually(t, func() bool {
-		row := db.QueryRowContext(t.Context(), "SELECT ResourceAttributes['talgent.agent_work_id'], ResourceAttributes['talgent.user_id'], ResourceAttributes['talgent.computer_id'], ResourceAttributes['talgent.computer_name'] FROM otel_traces WHERE SpanName = 'claude_code.llm_request' LIMIT 1")
+		row := db.QueryRowContext(t.Context(), "SELECT ResourceAttributes['talgent.agent_work_id'], ResourceAttributes['talgent.user_id'], ResourceAttributes['talgent.computer_id'], ResourceAttributes['talgent.computer_name'] FROM native_spans WHERE SpanName = 'claude_code.llm_request' LIMIT 1")
 		return row.Scan(&work, &person, &computer, &name) == nil
 	}, 30*time.Second, 250*time.Millisecond)
 	require.Equal(t, []string{"work-a", "person-work-a", "computer-1", "Studio Mac"}, []string{work, person, computer, name})

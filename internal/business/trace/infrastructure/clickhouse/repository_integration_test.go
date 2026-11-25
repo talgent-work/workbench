@@ -67,7 +67,7 @@ func seedOtelTracesSchema(t *testing.T, db *sql.DB) {
 			clickhouseStringMapLiteral(attrs), clickhouseStringMapLiteral(map[string]string{"tool_name": "Read", "tool_use_id": r.spanID})))
 		args = append(args, r.ts, r.traceID, r.spanID, r.name, r.duration)
 	}
-	q := `INSERT INTO otel_traces
+	q := `INSERT INTO native_spans
 			(Timestamp, TraceId, SpanId, ParentSpanId, TraceState,
 			 SpanName, SpanKind, ServiceName,
 			 ResourceAttributes, SpanAttributes,

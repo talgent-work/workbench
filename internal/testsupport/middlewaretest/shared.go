@@ -47,7 +47,7 @@ func ClickHouse(t *testing.T, database string) string {
 	defer conn.Close()
 	tables := []string{"talgent_messages.unified_message"}
 	if database == "talgent_trace" {
-		tables = []string{"talgent_trace.otel_traces", "talgent_trace.otel_traces_trace_id_ts", "talgent_trace.otel_logs", "talgent_trace.trace_work_measurements"}
+		tables = []string{"talgent_trace.native_spans", "talgent_trace.native_events", "talgent_trace.trace_work_measurements"}
 	}
 	for _, table := range tables {
 		require.NoError(t, conn.Exec(context.Background(), "TRUNCATE TABLE "+table))

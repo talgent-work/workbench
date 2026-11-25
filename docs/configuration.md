@@ -285,8 +285,9 @@ Service's port) and gRPC on 4317, and writes to ClickHouse with:
 
 The pipeline keeps traces and service metrics, and of Claude Code's log events only tool
 decisions and results, skill activations and MCP events. It removes a trailing bracketed suffix
-such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
-`otel_metrics_*`) and keeps data for 7 days.
+such as `[1m]` from model names, and keeps data for 7 days. It writes spans and log events into
+`native_spans` and `native_events`, which the ClickHouse migration defines and creates before the
+Collector starts; it creates its own `otel_metrics_*` tables for service metrics.
 
 ## Other components
 
@@ -319,7 +320,7 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
 | `TALGENT_EXECD_IMAGE` | `apply-opensandbox.sh` | Another execd image than the pinned one |
 | `TALGENT_SANDBOX_RUNTIME_CLASS` | `apply-opensandbox.sh` | The VM-isolating RuntimeClass sandboxes run with; default `kata-qemu-runtime-rs`. The script refuses to deploy when it does not exist |
 | `TALGENT_POD_NETWORK_CHECK` | `apply-opensandbox.sh` | How the encrypted pod network is confirmed: `flannel-wireguard` (default) requires every node to report Flannel's WireGuard backend with a public key; `operator` means the operator vouches for their network's encryption and nothing is checked |
-| `CLICKHOUSE_ADDR`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_MIGRATION_USER`, `CLICKHOUSE_MIGRATION_PASSWORD`, `CLICKHOUSE_MIGRATION_SQL`, `CLICKHOUSE_CONTAINER`, `CLICKHOUSE_WAIT_SECONDS` | `bootstrap-clickhouse.sh` | Defaults `127.0.0.1:9000`, `talgent_trace`, `default`, empty, `deploy/middleware/init/clickhouse/002-talgent.sql`, none, 0 (`apply.sh`: 120): how long to wait for the Collector's tables |
+| `CLICKHOUSE_ADDR`, `CLICKHOUSE_MIGRATION_USER`, `CLICKHOUSE_MIGRATION_PASSWORD`, `CLICKHOUSE_MIGRATION_SQL`, `CLICKHOUSE_CONTAINER` | `bootstrap-clickhouse.sh` | Defaults `127.0.0.1:9000`, `default`, empty, `deploy/middleware/init/clickhouse/002-talgent.sql`, none |
 | `KAFKA_BOOTSTRAP_SERVER`, `KAFKA_PARTITIONS`, `KAFKA_REPLICATION_FACTOR`, `KAFKA_CONTAINER` | `bootstrap-kafka.sh` | Defaults `127.0.0.1:9092`, 10, 1, `kafka` |
 | `JUICEFS_CSI_VERSION`, `JUICEFS_CSI_CONTROLLER_REPLICAS`, `JUICEFS_CSI_DASHBOARD_REPLICAS`, `JUICEFS_CSI_INSTALL_CONFIRM` | `scripts/juicefs/install-csi.sh` | Defaults `v0.31.6`, 1, 0; it installs cluster-wide resources and runs only with `JUICEFS_CSI_INSTALL_CONFIRM=cluster-wide` |
 | `JUICEFS_META_URL`, `REDIS_PASSWORD` | `scripts/juicefs/metadata.sh` | The metadata Redis URL without credentials, and its password |

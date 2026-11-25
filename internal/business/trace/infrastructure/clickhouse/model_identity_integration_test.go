@@ -64,7 +64,7 @@ func TestCollectorNormalizesModelIdentity(t *testing.T) {
 		if len(page.Spans) > 0 {
 			span = page.Spans[0]
 		}
-		row := db.QueryRowContext(ctx, "SELECT LogAttributes['model'] FROM otel_logs WHERE ResourceAttributes['talgent.agent_work_id'] = ? LIMIT 1", work)
+		row := db.QueryRowContext(ctx, "SELECT LogAttributes['model'] FROM native_events WHERE ResourceAttributes['talgent.agent_work_id'] = ? LIMIT 1", work)
 		if err := row.Scan(&logModel); err != nil && err != sql.ErrNoRows {
 			t.Fatal(err)
 		}

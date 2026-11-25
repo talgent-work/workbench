@@ -36,6 +36,8 @@ processors:
     send_batch_size: 1024
 
 exporters:
+  # Native evidence goes into the tables deploy/middleware/init/clickhouse/002-talgent.sql
+  # defines, which the migration creates before the Collector starts.
   clickhouse:
     endpoint: ${env:CLICKHOUSE_ENDPOINT}
     username: ${env:CLICKHOUSE_USERNAME}
@@ -45,11 +47,22 @@ exporters:
     # in the measurement table expose the resulting projection gap.
     connection_params:
       materialized_views_ignore_errors: "1"
+    create_schema: false
+    traces_table_name: native_spans
+    logs_table_name: native_events
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+  # Service metrics, such as a service's model use per Project, land in the
+  # exporter's own otel_metrics_* tables, which it creates and keeps 7 days.
+  clickhouse/metrics:
+    endpoint: ${env:CLICKHOUSE_ENDPOINT}
+    username: ${env:CLICKHOUSE_USERNAME}
+    password: ${env:CLICKHOUSE_PASSWORD}
+    database: ${env:CLICKHOUSE_DATABASE}
     create_schema: true
-    traces_table_name: otel_traces
-    logs_table_name: otel_logs
-    # Service metrics, such as a service's model use per Project, land
-    # in the exporter's default otel_metrics_* tables.
     ttl: 168h
     timeout: 10s
     retry_on_failure:
@@ -76,7 +89,7 @@ service:
     metrics:
       receivers: [ otlp ]
       processors: [ memory_limiter, batch ]
-      exporters: [ clickhouse ]
+      exporters: [ clickhouse/metrics ]
   telemetry:
     logs:
       level: info

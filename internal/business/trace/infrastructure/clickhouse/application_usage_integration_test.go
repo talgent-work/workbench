@@ -247,7 +247,7 @@ func TestListSpansByApplicationReadsItsWorks(t *testing.T) {
 	}
 	for index, row := range spans {
 		attrs := clickhouseStringMapLiteral(map[string]string{"talgent.agent_work_id": row.work, "talgent.work_caller": "application:" + row.application, "talgent.application_id": row.application})
-		_, err := db.ExecContext(context.Background(), `INSERT INTO otel_traces
+		_, err := db.ExecContext(context.Background(), `INSERT INTO native_spans
 			(Timestamp, TraceId, SpanId, ParentSpanId, TraceState, SpanName, SpanKind, ServiceName,
 			 ResourceAttributes, SpanAttributes, Duration, StatusCode, StatusMessage)
 			VALUES (?, 'cccccccccccccccccccccccccccccccc', ?, '', '', 'claude_code.interaction', 'Internal', 'claude-code', `+attrs+`, map(), 1000, 'Ok', '')`,
