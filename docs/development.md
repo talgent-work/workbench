@@ -21,7 +21,9 @@ Each test case has a 3-second budget, enforced for Go (`CASE_BUDGET_SECONDS`,
 `scripts/test/case-budget.py`), the web packages (vitest `testTimeout`) and Talgent Computer
 (`node --test-timeout`). A case over it checks its rule at a lowered bound: a shorter interval,
 a smaller size. Tests cover the Workbench's own code; external components such as Claude Code,
-execd, asynq and the databases are trusted to their own tests.
+execd, asynq and the databases are trusted to their own tests. Talgent Computer's rules that run
+real Work processes hold alike on every platform and run on Linux and macOS; on Windows its job
+checks Windows' realization of Work processes for real (`apps/computer/test/windows-host.test.ts`).
 
 Images build with `scripts/deploy/build-and-push-images.sh` (see the
 [self-hosting guide](self-hosting.md#6-deploy)).

@@ -16,7 +16,6 @@ func mapPortalLivePayload(payload query.PortalLivePayload) *streamgatewaypublicv
 			return nil
 		}
 		return &streamgatewaypublicv1.WatchStreamResponse{
-			Replay:  p.Replay,
 			Payload: &streamgatewaypublicv1.WatchStreamResponse_Message{Message: messageToProto(p.Message)},
 		}
 	case *query.WorkStatePayload:
@@ -32,6 +31,10 @@ func mapPortalLivePayload(payload query.PortalLivePayload) *streamgatewaypublicv
 		}
 		return &streamgatewaypublicv1.WatchStreamResponse{
 			Payload: &streamgatewaypublicv1.WatchStreamResponse_Diagnostic{Diagnostic: diagnosticToProto(p.Frame)},
+		}
+	case *query.HeartbeatPayload:
+		return &streamgatewaypublicv1.WatchStreamResponse{
+			Payload: &streamgatewaypublicv1.WatchStreamResponse_Heartbeat{Heartbeat: &streamgatewaypublicv1.HeartbeatFrame{}},
 		}
 	case *query.AccessWithdrawnPayload:
 		return &streamgatewaypublicv1.WatchStreamResponse{

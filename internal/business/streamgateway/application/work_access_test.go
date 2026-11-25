@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 	"github.com/talgent-work/contracts/gen/go/streamgateway/public/v1/streamgatewaypublicv1connect"
-	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	streamrpc "github.com/talgent-work/workbench/internal/business/streamgateway/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -51,15 +50,6 @@ func (r *recordingAccess) deny(reader string) {
 	r.denied[reader] = true
 }
 
-func (f *fakeStream) publishAccess(sessionID string, payload *query.WorkAccessPayload) {
-	f.mu.Lock()
-	sub := f.subs[sessionID]
-	f.mu.Unlock()
-	if sub != nil {
-		sub.ch <- payload
-	}
-}
-
 func watchAs(t *testing.T, client streamgatewaypublicv1connect.StreamGatewayServiceClient, ctx context.Context, reader string, admission string) *watched {
 	t.Helper()
 	request := &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}
@@ -76,12 +66,12 @@ func watchAs(t *testing.T, client streamgatewaypublicv1connect.StreamGatewayServ
 
 func newAccessServer(t *testing.T) (*fakeStream, *recordingAccess, streamgatewaypublicv1connect.StreamGatewayServiceClient) {
 	t.Helper()
-	store := &fakeStore{rows: []*query.Message{unifiedMessage("m1", "w1", time.Unix(1, 0))}}
+	store := &fakeStore{}
 	stream := newFakeStream()
-	access := &recordingAccess{admissions: map[string]query.ReaderAdmission{}, denied: map[string]bool{}}
-	app := application.NewApplication(query.NewWatchStream(store, stream, slogDiscard(t), access), query.NewListMessagesBySessionHandler(store, access), store, access)
-	app.Queries.WatchStream.SetSettleDelay(0)
-	app.Queries.WatchStream.SetReadmissionInterval(20 * time.Millisecond)
+	// Every admitted stream starts from the Work's state, so a reader knows
+	// its stream is listening before anything is published.
+	access := &recordingAccess{admissions: map[string]query.ReaderAdmission{}, denied: map[string]bool{}, starting: &query.WorkState{AgentWorkID: "w1", State: "working"}}
+	app := newAccessApplication(store, stream, slogDiscard(t), access, query.WatchStreamOptions{ReadmissionInterval: 20 * time.Millisecond})
 	mux := http.NewServeMux()
 	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
@@ -89,12 +79,6 @@ func newAccessServer(t *testing.T) (*fakeStream, *recordingAccess, streamgateway
 	mux.Handle(path, handler)
 	srv, httpClient := newH2CTestServer(t, mux)
 	return stream, access, streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
-}
-
-func receiveReplay(t *testing.T, stream *watched) {
-	t.Helper()
-	require.True(t, stream.Receive(), "replay: %v", stream.Err())
-	require.Equal(t, "m1", stream.Msg().GetMessage().GetId())
 }
 
 func requireWithdrawn(t *testing.T, stream *watched) {
@@ -113,8 +97,8 @@ func TestRevokedWorkShareEndsOnlyThatReadersStream(t *testing.T) {
 	defer revoked.Close()
 	kept := watchAs(t, client, ctx, "owner", "")
 	defer kept.Close()
-	receiveReplay(t, revoked)
-	receiveReplay(t, kept)
+	receiveStart(t, revoked)
+	receiveStart(t, kept)
 
 	live.publishAccess("w1", &query.WorkAccessPayload{RevokedReaderID: "reader"})
 	requireWithdrawn(t, revoked)
@@ -132,8 +116,8 @@ func TestMakingAWorkPrivateEndsStreamsOfReadersItNoLongerAdmits(t *testing.T) {
 	defer member.Close()
 	share := watchAs(t, client, ctx, "reader", "")
 	defer share.Close()
-	receiveReplay(t, member)
-	receiveReplay(t, share)
+	receiveStart(t, member)
+	receiveStart(t, share)
 	access.mu.Lock()
 	require.Equal(t, query.ReaderAdmission{WorkCallerKind: "project", WorkCallerID: "project-a"}, access.admissions["member"], "a trusted caller's admission reaches the access decision")
 	access.mu.Unlock()
@@ -153,7 +137,7 @@ func TestStreamEndsWhenReadmissionIsDeniedWithoutAWithdrawalEvent(t *testing.T) 
 	_, access, client := newAccessServer(t)
 	revoked := watchAs(t, client, ctx, "reader", "")
 	defer revoked.Close()
-	receiveReplay(t, revoked)
+	receiveStart(t, revoked)
 
 	access.deny("reader")
 	requireWithdrawn(t, revoked)
@@ -172,14 +156,14 @@ func TestClientCannotSupplyItsOwnReaderAdmission(t *testing.T) {
 	stream, err := watch(client.WatchStream(ctx, request))
 	require.NoError(t, err)
 	defer stream.Close()
-	receiveReplay(t, stream)
+	receiveStart(t, stream)
 	access.mu.Lock()
 	defer access.mu.Unlock()
 	require.Equal(t, query.ReaderAdmission{}, access.admissions["290572ed-90f8-50b8-a98e-9cdbac589df3"], "only a delegated service call carries an admission")
 }
 
 // An admitted reader's stream starts from the Work's current state, SubAgents
-// included, before any replay; a refused reader receives nothing.
+// included; a refused reader receives nothing.
 func TestAnAdmittedStreamStartsFromTheWorksCurrentState(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -198,7 +182,6 @@ func TestAnAdmittedStreamStartsFromTheWorksCurrentState(t *testing.T) {
 	require.Equal(t, "map the code", state.GetSubagents()[0].GetTask())
 	require.Equal(t, "completed", state.GetSubagents()[0].GetStatus())
 	require.Equal(t, "running", state.GetSubagents()[1].GetStatus())
-	receiveReplay(t, stream)
 
 	live.publishWorkState("w1", &query.WorkState{AgentWorkID: "w1", State: "working"})
 	require.True(t, stream.Receive(), "live state: %v", stream.Err())

@@ -31,58 +31,8 @@ func NewClickHouseReader(conn driver.Conn) query.UnifiedMessageReader {
 	return &ClickHouseReader{conn: conn}
 }
 
-func (r *ClickHouseReader) ListReplay(ctx context.Context, sessionID string, cursor query.ReplayCursor) ([]*query.Message, error) {
-	limit := cursor.Limit
-	if limit <= 0 {
-		limit = 500
-	}
-	latestReplay := cursor.Latest && cursor.After.IsZero() && cursor.AfterID == ""
-	after := cursor.After
-	if after.IsZero() {
-		after = epochStart
-	}
-	where := "agent_work_id = {agent_work_id:String} AND timestamp > {after:DateTime64(3, 'UTC')}"
-	params := clickhousego.Parameters{
-		"agent_work_id": sessionID,
-		"after":         after.UTC().Format("2006-01-02 15:04:05.000"),
-	}
-	if cursor.AfterID != "" {
-		where = `agent_work_id = {agent_work_id:String} AND (
-	timestamp > {after:DateTime64(3, 'UTC')}
-	OR (timestamp = {after:DateTime64(3, 'UTC')} AND id > {after_id:String})
-)`
-		params["after_id"] = cursor.AfterID
-	}
-	if latestReplay {
-		where = "agent_work_id = {agent_work_id:String}"
-	}
-	if filters := productFilters(params, cursor.Agent, cursor.Kinds, cursor.TurnIDs, cursor.IncludeUnattributedErrors); len(filters) > 0 {
-		where += " AND " + strings.Join(filters, " AND ")
-	}
-	queryText := replayQueryText(latestReplay, where, limit)
-
-	qctx := clickhousego.Context(ctx, clickhousego.WithParameters(params))
-	rows, err := r.conn.Query(qctx, queryText)
-	if err != nil {
-		return nil, oops.With("agent_work_id", sessionID).Wrap(err)
-	}
-	defer rows.Close()
-	return scanMessages(rows)
-}
-
-func replayQueryText(latestReplay bool, where string, limit int) string {
-	if latestReplay {
-		return fmt.Sprintf(`
-SELECT `+selectColumns+`
-FROM (
-	SELECT `+selectColumns+`
-	FROM `+messageTable+` FINAL
-	WHERE `+where+`
-	ORDER BY timestamp DESC, id DESC
-	LIMIT %d
-)
-ORDER BY timestamp ASC, id ASC`, limit)
-	}
+// forwardQueryText reads where's messages oldest first, up to limit.
+func forwardQueryText(where string, limit int) string {
 	return fmt.Sprintf(`
 SELECT `+selectColumns+`
 FROM `+messageTable+` FINAL
@@ -120,7 +70,7 @@ func (r *ClickHouseReader) ListMessagesBySession(ctx context.Context, q query.Li
 		params["from"] = q.From.Timestamp.UTC().Format("2006-01-02 15:04:05.000")
 		params["from_id"] = q.From.ID
 		filters = append(filters, "(timestamp, id) >= ({from:DateTime64(3, 'UTC')}, {from_id:String})")
-		queryText = replayQueryText(false, "agent_work_id = {agent_work_id:String} AND "+strings.Join(filters, " AND "), limit)
+		queryText = forwardQueryText("agent_work_id = {agent_work_id:String} AND "+strings.Join(filters, " AND "), limit)
 	}
 
 	qctx := clickhousego.Context(ctx, clickhousego.WithParameters(params))
@@ -157,14 +107,6 @@ func NewLazyClickHouseReader(client *pkgclickhouse.LazyConn) query.UnifiedMessag
 	return &LazyClickHouseReader{client: client}
 }
 
-func (r *LazyClickHouseReader) ListReplay(ctx context.Context, sessionID string, cursor query.ReplayCursor) ([]*query.Message, error) {
-	conn, err := r.client.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return NewClickHouseReader(conn).ListReplay(ctx, sessionID, cursor)
-}
-
 func (r *LazyClickHouseReader) ListMessagesBySession(ctx context.Context, q query.ListMessagesBySessionRequest) ([]*query.Message, error) {
 	conn, err := r.client.Conn(ctx)
 	if err != nil {
@@ -172,8 +114,6 @@ func (r *LazyClickHouseReader) ListMessagesBySession(ctx context.Context, q quer
 	}
 	return NewClickHouseReader(conn).ListMessagesBySession(ctx, q)
 }
-
-var epochStart = time.Unix(0, 0).UTC()
 
 var messageJSONUnmarshal = protojson.UnmarshalOptions{DiscardUnknown: true}
 

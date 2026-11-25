@@ -2,201 +2,263 @@ package query
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
+	"time"
 )
 
-// liveChanBuffer caps per-subscriber live buffering before the hub starts
-// dropping payloads for that subscriber. The slow subscriber's Portal
-// connection must reconnect to catch up via replay.
-const liveChanBuffer = 256
+// subscribeTimeout bounds subscribing to a Work's frames. The subscription is
+// shared by every reader of the Work on this process, so it does not end with
+// the request of the reader that happened to start it.
+const subscribeTimeout = 5 * time.Second
 
-// HubRegistry is the process-wide map of agent_work_id -> sessionHub.
-// It is safe for concurrent Acquire/Release calls across goroutines.
+// LiveDropRecorder counts the live frames readers lost because they fell
+// behind, by the kind of frame lost.
+type LiveDropRecorder interface {
+	Dropped(kind string)
+}
+
+// HubRegistry shares one live subscription among the readers of each Work on
+// this process. Its lock covers only its map: subscribing happens outside it,
+// so one Work's slow subscription never delays readers of another Work.
 type HubRegistry struct {
 	mu     sync.Mutex
-	hubs   map[string]*sessionHub
+	hubs   map[string]*hubEntry
 	stream PortalLiveStream
+	drops  LiveDropRecorder
 	logger *slog.Logger
 }
 
-// NewHubRegistry constructs the registry.
-func NewHubRegistry(stream PortalLiveStream, logger *slog.Logger) *HubRegistry {
+// hubEntry is a Work's hub, or the placeholder its first reader holds while
+// subscribing. readers counts the readers holding the entry, under the
+// registry lock; hub and err are set once, before ready closes.
+type hubEntry struct {
+	ready   chan struct{}
+	hub     *workHub
+	err     error
+	readers int
+}
+
+func NewHubRegistry(stream PortalLiveStream, drops LiveDropRecorder, logger *slog.Logger) *HubRegistry {
 	return &HubRegistry{
-		hubs:   map[string]*sessionHub{},
+		hubs:   map[string]*hubEntry{},
 		stream: stream,
+		drops:  drops,
 		logger: logger.With("component", "streamgateway.hub"),
 	}
 }
 
-// Subscription is the handle the registry hands back to a caller.
-// Live returns the receive-only live channel; the caller does not close it.
-type Subscription struct {
-	hub  *sessionHub
-	live chan PortalLivePayload
-}
-
-func (s *Subscription) Live() <-chan PortalLivePayload { return s.live }
-
-// Acquire returns a hub handle plus a Subscription. Callers must pair every
-// Acquire with exactly one Release.
-func (r *HubRegistry) Acquire(ctx context.Context, sessionID string) (*sessionHub, *Subscription, error) {
+// Acquire attaches a reader to the Work's live frames, subscribing only when no
+// reader on this process watches the Work yet. Readers arriving while that
+// subscription is made wait for it under their own context and share its
+// outcome. Every LiveReader it returns must be closed.
+func (r *HubRegistry) Acquire(ctx context.Context, workID, readerID string) (*LiveReader, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if existing, ok := r.hubs[sessionID]; ok {
-		if sub, ok := existing.addSubscriber(); ok {
-			return existing, sub, nil
-		}
-		delete(r.hubs, sessionID)
+	entry, building := r.hubs[workID], false
+	if entry == nil {
+		entry, building = &hubEntry{ready: make(chan struct{})}, true
+		r.hubs[workID] = entry
 	}
+	entry.readers++
+	r.mu.Unlock()
 
-	streamSub, err := r.stream.SubscribeSession(ctx, sessionID)
+	if building {
+		r.build(ctx, workID, entry)
+	}
+	select {
+	case <-entry.ready:
+	case <-ctx.Done():
+		r.release(workID, entry)
+		return nil, ctx.Err()
+	}
+	if entry.err != nil {
+		r.release(workID, entry)
+		return nil, entry.err
+	}
+	reader := newLiveReader(readerID, r.drops, r.logger.With("agent_work_id", workID))
+	entry.hub.attach(reader)
+	reader.release = func() {
+		entry.hub.detach(reader)
+		r.release(workID, entry)
+	}
+	return reader, nil
+}
+
+func (r *HubRegistry) build(ctx context.Context, workID string, entry *hubEntry) {
+	subscribing, cancel := context.WithTimeout(context.WithoutCancel(ctx), subscribeTimeout)
+	defer cancel()
+	hub := &workHub{readers: map[*LiveReader]struct{}{}, done: make(chan struct{})}
+	sub, err := r.stream.Subscribe(subscribing, workID, hub.deliver)
 	if err != nil {
-		return nil, nil, err
+		// Readers that come later subscribe again; those waiting share the failure.
+		r.forget(workID, entry)
+		entry.err = err
+		close(entry.ready)
+		return
 	}
-	var hub *sessionHub
-	hub = newSessionHub(sessionID, streamSub, r.logger, func() {
-		r.mu.Lock()
-		if cur, ok := r.hubs[sessionID]; ok && cur == hub {
-			delete(r.hubs, sessionID)
-		}
-		r.mu.Unlock()
-	})
-	r.hubs[sessionID] = hub
-	hub.startBroadcast()
-	sub, _ := hub.addSubscriber()
-	return hub, sub, nil
-}
-
-// Release removes the subscription from its hub. If no subscribers remain,
-// the hub closes its upstream subscription and evicts itself from the registry.
-func (r *HubRegistry) Release(hub *sessionHub, sub *Subscription) {
-	hub.removeSubscriber(sub)
-}
-
-type sessionHub struct {
-	sessionID string
-	sub       PortalLiveSubscription
-	logger    *slog.Logger
-	onStop    func()
-
-	mu       sync.Mutex
-	subs     map[*Subscription]struct{}
-	refcount int
-	closed   bool
-	stopped  bool
-}
-
-func newSessionHub(sessionID string, sub PortalLiveSubscription, logger *slog.Logger, onStop func()) *sessionHub {
-	return &sessionHub{
-		sessionID: sessionID,
-		sub:       sub,
-		logger:    logger.With("agent_work_id", sessionID),
-		onStop:    onStop,
-		subs:      map[*Subscription]struct{}{},
-	}
-}
-
-func (h *sessionHub) startBroadcast() {
-	go h.broadcastLoop()
-}
-
-func (h *sessionHub) broadcastLoop() {
-	for {
-		payload, err := h.sub.Recv(context.Background())
-		if err != nil {
-			h.stop("upstream_subscription_closed", err)
+	hub.sub = sub
+	entry.hub = hub
+	close(entry.ready)
+	go func() {
+		select {
+		case <-sub.Ended():
+		case <-hub.done:
 			return
 		}
-		h.fanout(payload)
+		// The connection closed for good: later readers subscribe afresh, and
+		// current ones end so their clients reconnect.
+		r.forget(workID, entry)
+		hub.end()
+		r.logger.Warn("live subscription ended", slog.String("agent_work_id", workID), slog.String("cause", "connection_closed"))
+	}()
+}
+
+// release drops one reader's hold on entry; the last one closes its hub.
+func (r *HubRegistry) release(workID string, entry *hubEntry) {
+	r.mu.Lock()
+	entry.readers--
+	last := entry.readers == 0
+	if last && r.hubs[workID] == entry {
+		delete(r.hubs, workID)
+	}
+	r.mu.Unlock()
+	if last && entry.hub != nil {
+		entry.hub.close()
 	}
 }
 
-func (h *sessionHub) fanout(payload PortalLivePayload) {
-	h.mu.Lock()
-	snapshot := make([]*Subscription, 0, len(h.subs))
-	for s := range h.subs {
-		snapshot = append(snapshot, s)
+func (r *HubRegistry) forget(workID string, entry *hubEntry) {
+	r.mu.Lock()
+	if r.hubs[workID] == entry {
+		delete(r.hubs, workID)
 	}
-	h.mu.Unlock()
-	for _, s := range snapshot {
+	r.mu.Unlock()
+}
+
+// workHub fans one Work's live frames out to its readers without waiting for
+// any of them.
+type workHub struct {
+	sub       PortalLiveSubscription
+	mu        sync.Mutex
+	readers   map[*LiveReader]struct{}
+	ended     bool
+	closeOnce sync.Once
+	// done closes when the hub's last reader leaves.
+	done chan struct{}
+}
+
+func (h *workHub) deliver(payload PortalLivePayload) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for reader := range h.readers {
+		reader.offer(payload)
+	}
+}
+
+func (h *workHub) attach(reader *LiveReader) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.ended {
+		reader.end()
+		return
+	}
+	h.readers[reader] = struct{}{}
+}
+
+func (h *workHub) detach(reader *LiveReader) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.readers, reader)
+}
+
+// end ends every current and later reader of a hub whose subscription ended.
+func (h *workHub) end() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.ended = true
+	for reader := range h.readers {
+		reader.end()
+	}
+}
+
+func (h *workHub) close() {
+	h.closeOnce.Do(func() {
+		close(h.done)
+		_ = h.sub.Close()
+	})
+}
+
+// LiveReader is one reader's view of a Work's live frames. Messages and
+// notices queue up to liveReaderBuffer and are dropped beyond it; the Work's
+// state keeps only its latest frame; an access withdrawal never waits behind
+// either.
+type LiveReader struct {
+	id      string
+	drops   LiveDropRecorder
+	logger  *slog.Logger
+	data    chan PortalLivePayload
+	state   chan *WorkStatePayload
+	revoked chan struct{}
+	ended   chan struct{}
+	release func()
+
+	revokeOnce, endOnce, closeOnce, behindOnce sync.Once
+}
+
+// liveReaderBuffer caps the messages and notices waiting for one reader. A
+// reader this far behind loses the newest frames until it catches up: live
+// delivery is best-effort, and its history read covers what it missed.
+const liveReaderBuffer = 256
+
+func newLiveReader(id string, drops LiveDropRecorder, logger *slog.Logger) *LiveReader {
+	return &LiveReader{
+		id: id, drops: drops, logger: logger,
+		data:    make(chan PortalLivePayload, liveReaderBuffer),
+		state:   make(chan *WorkStatePayload, 1),
+		revoked: make(chan struct{}),
+		ended:   make(chan struct{}),
+	}
+}
+
+// offer is called by one hub delivery at a time and never blocks.
+func (r *LiveReader) offer(payload PortalLivePayload) {
+	switch p := payload.(type) {
+	case *WorkAccessPayload:
+		if p.Withdraws(r.id) {
+			r.revokeOnce.Do(func() { close(r.revoked) })
+		}
+	case *WorkStatePayload:
 		select {
-		case s.live <- payload:
+		case r.state <- p:
 		default:
-			attrs := []any{}
-			if msgPayload, ok := payload.(*UnifiedMessagePayload); ok && msgPayload.Message != nil {
-				attrs = append(attrs, slog.String("message_id", msgPayload.Message.ID))
+			select {
+			case <-r.state:
+			default:
 			}
-			h.logger.Warn("dropping live payload for slow subscriber", attrs...)
+			r.state <- p
+		}
+	default:
+		select {
+		case r.data <- payload:
+		default:
+			r.drops.Dropped(frameKind(payload))
+			r.behindOnce.Do(func() { r.logger.Info("live reader fell behind; dropping its newest frames") })
 		}
 	}
 }
 
-func (h *sessionHub) addSubscriber() (*Subscription, bool) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.closed {
-		return nil, false
-	}
-	sub := &Subscription{hub: h, live: make(chan PortalLivePayload, liveChanBuffer)}
-	h.subs[sub] = struct{}{}
-	h.refcount++
-	return sub, true
-}
+func (r *LiveReader) end() { r.endOnce.Do(func() { close(r.ended) }) }
 
-func (h *sessionHub) removeSubscriber(sub *Subscription) {
-	h.mu.Lock()
-	if _, ok := h.subs[sub]; !ok {
-		h.mu.Unlock()
-		return
-	}
-	delete(h.subs, sub)
-	h.refcount--
-	shouldClose := h.refcount == 0 && !h.closed
-	if shouldClose {
-		h.closed = true
-	}
-	h.mu.Unlock()
+// Close detaches the reader; the Work's last reader closes its subscription.
+func (r *LiveReader) Close() { r.closeOnce.Do(r.release) }
 
-	if shouldClose {
-		h.stop("last_subscriber", nil)
-		_ = h.sub.Close()
-	}
-}
-
-func (h *sessionHub) stop(cause string, err error) {
-	h.mu.Lock()
-	if h.stopped {
-		h.mu.Unlock()
-		return
-	}
-	h.stopped = true
-	h.closed = true
-	snapshot := make([]*Subscription, 0, len(h.subs))
-	for sub := range h.subs {
-		snapshot = append(snapshot, sub)
-	}
-	h.mu.Unlock()
-
-	for _, sub := range snapshot {
-		close(sub.live)
-	}
-
-	attrs := []slog.Attr{
-		slog.String("cause", cause),
-		slog.Int("subscriber_count", len(snapshot)),
-	}
-	if err != nil {
-		attrs = append(attrs, slog.Any("error", err))
-	}
-	if errors.Is(err, context.Canceled) || cause == "last_subscriber" {
-		h.logger.LogAttrs(context.Background(), slog.LevelInfo, "session hub live subscription closed", attrs...)
-	} else {
-		h.logger.LogAttrs(context.Background(), slog.LevelWarn, "session hub live subscription closed", attrs...)
-	}
-	if h.onStop != nil {
-		h.onStop()
+func frameKind(payload PortalLivePayload) string {
+	switch payload.(type) {
+	case *UnifiedMessagePayload:
+		return "message"
+	case *DiagnosticPayload:
+		return "diagnostic"
+	default:
+		return "other"
 	}
 }

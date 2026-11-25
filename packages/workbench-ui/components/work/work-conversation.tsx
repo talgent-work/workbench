@@ -166,6 +166,7 @@ export function WorkConversation({ computer, agentWorkId, label, startupTitle, w
   return <section data-testid="agent-stream-panel" className="stream-panel" aria-label="Agent Stream">
     {workStatus}
     {snapshotNotice}
+    {conversation.liveDisconnected && <div className="wi-notices"><Alert status="warning" role="status"><Alert.Indicator /><Alert.Content><Alert.Description>Live updates stopped. Reconnect to keep following this Work.</Alert.Description></Alert.Content><Button size="sm" variant="ghost" onPress={conversation.reconnectLive}>Reconnect</Button></Alert></div>}
     <WorkMessageFlow conversation={conversation} currentTurnId={currentTurnId} waiting={requiredResponse} onOpenTool={openTool} />
     {readOnly ? conversation.error && <div className="wi-notices"><Alert status="danger" role="alert"><Alert.Indicator /><Alert.Content><Alert.Description>Message history could not be loaded.</Alert.Description></Alert.Content><Button size="sm" variant="ghost" onPress={conversation.retry}>Retry</Button></Alert></div> : <div className="wi-dock">
       {currentRequest && <WorkInteraction key={currentRequest.id} workId={agentWorkId} request={currentRequest} disabled={controlsPending} onResponded={refreshControls} />}

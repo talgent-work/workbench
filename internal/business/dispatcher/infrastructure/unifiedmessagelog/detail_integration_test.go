@@ -52,15 +52,13 @@ func TestOriginalDetailsRemainSeparateBoundedAndWorkScoped(t *testing.T) {
 		rows, err := reader.ListMessagesBySession(ctx, sgquery.ListMessagesBySessionRequest{AgentWorkID: "work"})
 		return err == nil && len(rows) == len(frames)
 	}, 5*time.Second, 50*time.Millisecond)
-	for _, cursor := range []sgquery.ReplayCursor{{Latest: true}, {Limit: 500}} {
-		rows, err := reader.ListReplay(ctx, "work", cursor)
+	rows, err := reader.ListMessagesBySession(ctx, sgquery.ListMessagesBySessionRequest{AgentWorkID: "work", Limit: 500})
+	require.NoError(t, err)
+	require.Len(t, rows, len(frames))
+	for _, m := range rows {
+		encoded, err := json.Marshal(m)
 		require.NoError(t, err)
-		require.Len(t, rows, len(frames))
-		for _, m := range rows {
-			encoded, err := json.Marshal(m)
-			require.NoError(t, err)
-			require.Less(t, len(encoded), 1024, "replay/list must never deserialize full detail")
-		}
+		require.Less(t, len(encoded), 1024, "a history page must never deserialize full detail")
 	}
 	for id, original := range map[string]string{"input": input, "output": text} {
 		var recovered strings.Builder

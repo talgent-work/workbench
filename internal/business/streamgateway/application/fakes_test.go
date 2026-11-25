@@ -33,10 +33,6 @@ type fakeStore struct {
 	toolDetailFn func(context.Context, query.ToolDetailRequest) (query.ToolDetail, error)
 	detailFn     func(context.Context, query.MessageDetailRequest) (query.MessageDetail, error)
 	mu           sync.Mutex
-	rows         []*query.Message
-	calls        []query.ReplayCursor
-	listFn       func(context.Context, string, query.ReplayCursor) ([]*query.Message, error)
-
 	messageRows  []*query.Message
 	messageCalls []query.ListMessagesBySessionRequest
 	messageFn    func(context.Context, query.ListMessagesBySessionRequest) ([]*query.Message, error)
@@ -49,26 +45,16 @@ func (f *fakeStore) GetMessageDetail(ctx context.Context, request query.MessageD
 	return query.MessageDetail{}, query.ErrMessageNotFound
 }
 
+// allowWorkRead admits every reader; an admitted stream starts from the
+// Work's running state, so a client knows its stream is listening.
 type allowWorkRead struct{}
 
 func (allowWorkRead) AuthorizeRead(context.Context, string, query.ReaderAdmission, string) error {
 	return nil
 }
 
-func (allowWorkRead) AdmitStreamReader(context.Context, string, query.ReaderAdmission, string) (*query.WorkState, error) {
-	return nil, nil
-}
-
-func (f *fakeStore) ListReplay(ctx context.Context, sessionID string, opts query.ReplayCursor) ([]*query.Message, error) {
-	f.mu.Lock()
-	f.calls = append(f.calls, opts)
-	fn := f.listFn
-	rows := append([]*query.Message(nil), f.rows...)
-	f.mu.Unlock()
-	if fn != nil {
-		return fn(ctx, sessionID, opts)
-	}
-	return rows, nil
+func (allowWorkRead) AdmitStreamReader(_ context.Context, _ string, _ query.ReaderAdmission, work string) (*query.WorkState, error) {
+	return &query.WorkState{AgentWorkID: work, State: "running"}, nil
 }
 
 func (f *fakeStore) ListMessagesBySession(ctx context.Context, request query.ListMessagesBySessionRequest) ([]*query.Message, error) {
@@ -83,111 +69,85 @@ func (f *fakeStore) ListMessagesBySession(ctx context.Context, request query.Lis
 	return rows, nil
 }
 
-func (f *fakeStore) recordedCalls() []query.ReplayCursor {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]query.ReplayCursor(nil), f.calls...)
-}
-
 func (f *fakeStore) recordedMessageCalls() []query.ListMessagesBySessionRequest {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]query.ListMessagesBySessionRequest(nil), f.messageCalls...)
 }
 
+// fakeSubscription is one Work's live subscription in a fakeStream.
 type fakeSubscription struct {
-	ch      chan query.PortalLivePayload
-	closed  chan struct{}
-	onClose func()
+	deliver   func(query.PortalLivePayload)
+	ended     chan struct{}
+	endOnce   sync.Once
+	closeOnce sync.Once
+	onClose   func()
 }
 
-func newFakeSubscription(buf int) *fakeSubscription {
-	return &fakeSubscription{ch: make(chan query.PortalLivePayload, buf), closed: make(chan struct{})}
-}
-
-func (f *fakeSubscription) Recv(ctx context.Context) (query.PortalLivePayload, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-f.closed:
-		return nil, context.Canceled
-	case msg := <-f.ch:
-		return msg, nil
-	}
-}
+func (f *fakeSubscription) Ended() <-chan struct{} { return f.ended }
 
 func (f *fakeSubscription) Close() error {
-	select {
-	case <-f.closed:
-	default:
-		close(f.closed)
-		if f.onClose != nil {
-			f.onClose()
-		}
-	}
+	f.closeOnce.Do(f.onClose)
 	return nil
 }
 
+// fakeStream hands published frames straight to the Work's subscription.
 type fakeStream struct {
-	mu     sync.Mutex
-	subs   map[string]*fakeSubscription
-	subErr error
+	mu         sync.Mutex
+	subs       map[string]*fakeSubscription
+	subscribes int
+	subErr     error
 }
 
 func newFakeStream() *fakeStream {
 	return &fakeStream{subs: make(map[string]*fakeSubscription)}
 }
 
-func (f *fakeStream) SubscribeSession(_ context.Context, sessionID string) (query.PortalLiveSubscription, error) {
+func (f *fakeStream) Subscribe(_ context.Context, workID string, deliver func(query.PortalLivePayload)) (query.PortalLiveSubscription, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.subErr != nil {
 		return nil, f.subErr
 	}
-	sub := newFakeSubscription(16)
-	// Only forget ourselves — a subsequent SubscribeSession may have installed
-	// a different sub under the same sessionID while our owning hub was still
-	// tearing down, and we must not clobber it.
-	sub.onClose = func() { f.forgetSubIfMatch(sessionID, sub) }
-	f.subs[sessionID] = sub
+	f.subscribes++
+	sub := &fakeSubscription{deliver: deliver, ended: make(chan struct{})}
+	sub.onClose = func() { f.forget(workID, sub) }
+	f.subs[workID] = sub
 	return sub, nil
 }
 
-// publish lets tests push a live message into the work's active subscription.
-func (f *fakeStream) publish(sessionID string, msg *query.Message) {
+func (f *fakeStream) send(workID string, payload query.PortalLivePayload) {
 	f.mu.Lock()
-	sub := f.subs[sessionID]
+	sub := f.subs[workID]
 	f.mu.Unlock()
 	if sub != nil {
-		sub.ch <- &query.UnifiedMessagePayload{Message: msg}
+		sub.deliver(payload)
 	}
 }
 
-func (f *fakeStream) publishWorkState(sessionID string, frame *query.WorkState) {
-	f.mu.Lock()
-	sub := f.subs[sessionID]
-	f.mu.Unlock()
-	if sub != nil {
-		sub.ch <- &query.WorkStatePayload{Frame: frame}
-	}
+func (f *fakeStream) publish(workID string, msg *query.Message) {
+	f.send(workID, &query.UnifiedMessagePayload{Message: msg})
 }
 
-func (f *fakeStream) publishDiagnostic(sessionID string, frame *query.Diagnostic) {
-	f.mu.Lock()
-	sub := f.subs[sessionID]
-	f.mu.Unlock()
-	if sub != nil {
-		sub.ch <- &query.DiagnosticPayload{Frame: frame}
-	}
+func (f *fakeStream) publishWorkState(workID string, frame *query.WorkState) {
+	f.send(workID, &query.WorkStatePayload{Frame: frame})
 }
 
-// closeSession simulates the upstream broker subscription ending for a work.
-func (f *fakeStream) closeSession(sessionID string) {
+func (f *fakeStream) publishDiagnostic(workID string, frame *query.Diagnostic) {
+	f.send(workID, &query.DiagnosticPayload{Frame: frame})
+}
+
+func (f *fakeStream) publishAccess(workID string, payload *query.WorkAccessPayload) {
+	f.send(workID, payload)
+}
+
+// endSession ends the Work's subscription as a connection closed for good does.
+func (f *fakeStream) endSession(workID string) {
 	f.mu.Lock()
-	sub := f.subs[sessionID]
+	sub := f.subs[workID]
 	f.mu.Unlock()
 	if sub != nil {
-		_ = sub.Close()
+		sub.endOnce.Do(func() { close(sub.ended) })
 	}
 }
 
@@ -197,14 +157,11 @@ func (f *fakeStream) activeSubs() int {
 	return len(f.subs)
 }
 
-// forgetSubIfMatch removes the subscription entry only if it still points
-// to the given sub. Prevents a closing old sub from clobbering a freshly
-// installed replacement during Acquire-during-eviction races.
-func (f *fakeStream) forgetSubIfMatch(sessionID string, sub *fakeSubscription) {
+func (f *fakeStream) forget(workID string, sub *fakeSubscription) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if cur, ok := f.subs[sessionID]; ok && cur == sub {
-		delete(f.subs, sessionID)
+	if f.subs[workID] == sub {
+		delete(f.subs, workID)
 	}
 }
 
@@ -234,17 +191,6 @@ func slogBuffer(t *testing.T) (*slog.Logger, *lockedBuffer) {
 	t.Helper()
 	var buf lockedBuffer
 	return slog.New(slog.NewJSONHandler(&buf, nil)), &buf
-}
-
-func recvWithTimeout(t *testing.T, sub *query.Subscription) query.PortalLivePayload {
-	t.Helper()
-	select {
-	case msg := <-sub.Live():
-		return msg
-	case <-time.After(500 * time.Millisecond):
-		t.Fatalf("Live() recv timed out")
-		return nil
-	}
 }
 
 func (f *fakeStore) GetToolDetail(ctx context.Context, request query.ToolDetailRequest) (query.ToolDetail, error) {
@@ -294,4 +240,33 @@ func served(app *application.Application) streamgatewaypublicv1connect.StreamGat
 	server := connect.NewServer()
 	streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(server, streamrpc.NewHandler(app))
 	return streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connectinprocess.New(server)))
+}
+
+// discardDrops counts nothing.
+type discardDrops struct{}
+
+func (discardDrops) Dropped(string) {}
+
+// newTestApplication serves stream and reader with every reader admitted.
+func newTestApplication(reader query.UnifiedMessageReader, stream query.PortalLiveStream, logger *slog.Logger, options ...query.WatchStreamOptions) *application.Application {
+	return newAccessApplication(reader, stream, logger, allowWorkRead{}, options...)
+}
+
+func newAccessApplication(reader query.UnifiedMessageReader, stream query.PortalLiveStream, logger *slog.Logger, access query.StreamAccessPort, options ...query.WatchStreamOptions) *application.Application {
+	var opts query.WatchStreamOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	return application.NewApplication(query.NewWatchStream(stream, discardDrops{}, logger, access, opts), query.NewListMessagesBySessionHandler(reader, access), reader, access)
+}
+
+// receiveStart reads the Work state an admitted stream starts with.
+func receiveStart(t *testing.T, stream *watched) {
+	t.Helper()
+	if !stream.Receive() {
+		t.Fatalf("starting state: %v", stream.Err())
+	}
+	if stream.Msg().GetWorkState() == nil {
+		t.Fatalf("first frame = %v, want the starting Work state", stream.Msg())
+	}
 }

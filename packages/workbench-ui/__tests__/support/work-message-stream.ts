@@ -4,23 +4,23 @@ import { ContentBlockType, UnifiedMessageSchema, type UnifiedMessage, type Unifi
 import type { Mock } from "vitest";
 
 // A Work's live message stream for conversation tests: the watch mock yields
-// each message delivered, as live or replayed, until the reader leaves.
+// each message delivered until the reader leaves.
 export function streamFeed(watch: Mock) {
-  let deliver: ((message: UnifiedMessage, replay?: boolean) => void) | undefined;
+  let deliver: ((message: UnifiedMessage) => void) | undefined;
   watch.mockImplementation(async function* (_request: unknown, { signal }: { signal: AbortSignal }) {
     while (!signal.aborted) {
       let abort: () => void = () => {};
-      const event = await new Promise<{ message: UnifiedMessage; replay: boolean } | undefined>(resolve => {
-        deliver = (message, replay = false) => resolve({ message, replay });
+      const message = await new Promise<UnifiedMessage | undefined>(resolve => {
+        deliver = resolve;
         abort = () => resolve(undefined);
         signal.addEventListener("abort", abort, { once: true });
       });
       signal.removeEventListener("abort", abort);
-      if (!event) return;
-      yield { replay: event.replay, payload: { case: "message", value: event.message } };
+      if (!message) return;
+      yield { payload: { case: "message", value: message } };
     }
   });
-  return (message: UnifiedMessage, replay = false) => deliver!(message, replay);
+  return (message: UnifiedMessage) => deliver!(message);
 }
 
 /** A root message of the Work holding one text block. */

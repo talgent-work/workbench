@@ -11,7 +11,7 @@ import { SHIM_ARG } from '../src/execd/shim.ts'
 import { Works } from '../src/execd/works.ts'
 import { Fence, FENCE_AFTER_MS, type FenceOptions } from '../src/fence.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
-import { removeScratch } from './support/platform.ts'
+import { removeScratch, portableProcessRules } from './support/platform.ts'
 
 const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url))
 const MINUTE = 60_000
@@ -101,7 +101,7 @@ function counting(ended: () => void): FenceOptions['processes'] {
 
 const ended = async (id: string) => (await processes.phase('w-1', id))?.kind === 'exited'
 
-test('silence short of the fence, then contact, leaves Work processes running', async () => {
+test('silence short of the fence, then contact, leaves Work processes running', { skip: portableProcessRules }, async () => {
   const id = await running()
   const value = await fence()
   clock += FENCE_AFTER_MS - 1
@@ -113,7 +113,7 @@ test('silence short of the fence, then contact, leaves Work processes running', 
   assert.deepEqual(logs, [])
 })
 
-test('contact right after a sleep past the fence still ends every Work process first', async () => {
+test('contact right after a sleep past the fence still ends every Work process first', { skip: portableProcessRules }, async () => {
   const id = await running()
   const value = await fence()
   // The machine slept: no check ran while the wall clock moved 10 minutes.
@@ -130,7 +130,7 @@ test('contact right after a sleep past the fence still ends every Work process f
   assert.equal(logs.length, 1, 'contact resumed; the fence waits for a new silence')
 })
 
-test('a periodic check past the fence ends every Work process, once per silence', async () => {
+test('a periodic check past the fence ends every Work process, once per silence', { skip: portableProcessRules }, async () => {
   const id = await running()
   let ends = 0
   await fence({ processes: counting(() => { ends += 1 }) })
@@ -143,7 +143,7 @@ test('a periodic check past the fence ends every Work process, once per silence'
   assert.equal(ends, 1)
 })
 
-test('the last contact survives a restart, so a restart while offline fences on time', async () => {
+test('the last contact survives a restart, so a restart while offline fences on time', { skip: portableProcessRules }, async () => {
   const id = await running()
   const first = await fence()
   clock += MINUTE
@@ -159,7 +159,7 @@ test('the last contact survives a restart, so a restart while offline fences on 
   assert.match(logs[0], /^fenced: ended 1 Work processes after 270s/)
 })
 
-test('a last contact recorded in the future counts from now', async () => {
+test('a last contact recorded in the future counts from now', { skip: portableProcessRules }, async () => {
   const value = await fence()
   await value.heard()
   await value.stop()
@@ -171,7 +171,7 @@ test('a last contact recorded in the future counts from now', async () => {
   assert.equal(ends, 0)
 })
 
-test('a failing end is retried for the processes it fenced only, not one started after contact resumed', async () => {
+test('a failing end is retried for the processes it fenced only, not one started after contact resumed', { skip: portableProcessRules }, async () => {
   const fenced = await running()
   let attempts = 0
   const value = await fence({
@@ -197,7 +197,7 @@ test('a failing end is retried for the processes it fenced only, not one started
   assert.equal((await processes.phase('w-1', later))?.kind, 'running', 'the retry ends only what the fence listed')
 })
 
-test('a start the contact that fires the fence asks for waits for the fence and survives it', async () => {
+test('a start the contact that fires the fence asks for waits for the fence and survives it', { skip: portableProcessRules }, async () => {
   const fenced = await running()
   let listed: RunningProcess[] = []
   const value = await fence({
@@ -218,7 +218,7 @@ test('a start the contact that fires the fence asks for waits for the fence and 
   assert.equal((await processes.phase('w-1', id))?.kind, 'running')
 })
 
-test('end ends the listed runs that still run and leaves the rest', async () => {
+test('end ends the listed runs that still run and leaves the rest', { skip: portableProcessRules }, async () => {
   const put = await service.request({ workId: 'w-2', method: 'PUT', path: '/', token: '', body: { access_token: 'tok' } })
   assert.equal(put.status, 200)
   const first = await running()
@@ -234,7 +234,7 @@ test('end ends the listed runs that still run and leaves the rest', async () => 
   assert.deepEqual(await new ProcessTable({ stateRoot: join(dir, 'nothing'), shim: [] }).running(), [])
 })
 
-test('what running runs use is what each recorded at its start, until it ends', async () => {
+test('what running runs use is what each recorded at its start, until it ends', { skip: portableProcessRules }, async () => {
   assert.deepEqual(await processes.inUse(), new Set())
   const id = await running()
   // A later Talgent Computer, giving its runs another Claude Code.

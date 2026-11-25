@@ -12,7 +12,7 @@ import { Works } from '../src/execd/works.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
 import { LocalProxy } from '../src/proxy/server.ts'
 import { send, Upstream } from './support/upstream.ts'
-import { removeScratch } from './support/platform.ts'
+import { removeScratch, portableProcessRules } from './support/platform.ts'
 
 // Talgent Computer black-box tests of a Work's Provider Connectors: the
 // platform delivers each one's short-lived target credential through the
@@ -98,7 +98,7 @@ async function runEnv(): Promise<Record<string, string>> {
   return Object.fromEntries(stdout().split('\n').filter((line) => line.indexOf('=') > 0).map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]))
 }
 
-test('a Provider Connector\'s proxy address forwards to its own address with its target credential alone', async () => {
+test('a Provider Connector\'s proxy address forwards to its own address with its target credential alone', { skip: portableProcessRules }, async () => {
   assert.deepEqual(await deliver(credentialsBody(delivered())), { status: 204 })
   const env = await runEnv()
   const address = `${env.TALGENT_PROXY_URL}/connectors/${CONNECTOR}`
@@ -134,7 +134,7 @@ test('a Provider Connector\'s proxy address forwards to its own address with its
   }
 })
 
-test('a Connector address takes only a run token of its Work, and an undelivered Connector is unavailable alone', async () => {
+test('a Connector address takes only a run token of its Work, and an undelivered Connector is unavailable alone', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody([delivered()[1]]))
   const env = await runEnv()
   const run = { authorization: `Bearer ${env.TALGENT_PROXY_TOKEN}` }
@@ -147,7 +147,7 @@ test('a Connector address takes only a run token of its Work, and an undelivered
   assert.equal((await send(`${env.TALGENT_PROXY_URL}/mcp`, { method: 'POST', headers: run, body: '{}' })).status, 200, 'and so does the Talgent Connector')
 })
 
-test('a redelivery replaces a Connector\'s target credential, and one without it leaves the Connector unavailable', async () => {
+test('a redelivery replaces a Connector\'s target credential, and one without it leaves the Connector unavailable', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody(delivered()))
   const env = await runEnv()
   const run = { authorization: `Bearer ${env.TALGENT_PROXY_TOKEN}` }
@@ -159,7 +159,7 @@ test('a redelivery replaces a Connector\'s target credential, and one without it
   assert.equal((await send(address, { headers: run })).status, 503)
 })
 
-test('a delivery with an invalid Connector is refused without naming its credential', async () => {
+test('a delivery with an invalid Connector is refused without naming its credential', { skip: portableProcessRules }, async () => {
   const connector = delivered()[0]
   for (const connectors of [
     'x',

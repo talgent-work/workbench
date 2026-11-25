@@ -3,7 +3,6 @@ package connectrpc
 import (
 	"context"
 	"errors"
-	"time"
 
 	"connectrpc.com/connect/v2"
 	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
@@ -24,17 +23,13 @@ func NewHandler(app *application.Application) *Handler { return &Handler{app: ap
 func (h *Handler) WatchStream(ctx context.Context, req *streamgatewaypublicv1.WatchStreamRequest, srv streamgatewaypublicv1connect.StreamGatewayServiceWatchStreamServerStream) error {
 	info, _ := connect.CallInfoForServerContext(ctx)
 	reader := streamReader(ctx)
-	after := time.Time{}
-	if ts := req.GetAfterTimestamp(); ts != nil {
-		after = ts.AsTime()
-	}
 	var kinds []string
 	for _, kind := range req.GetKinds() {
 		kinds = append(kinds, kind.String())
 	}
 	err := h.app.Queries.WatchStream.Run(ctx, query.WatchStreamRequest{
 		ReaderID: reader, Admission: readerAdmission(info.RequestHeader()), IncludeUnattributedErrors: req.GetIncludeUnattributedErrors(),
-		AgentWorkID: req.GetAgentWorkId(), After: after, AfterID: req.GetAfterId(), Agent: req.Agent, Kinds: kinds, TurnIDs: req.GetTurnIds(),
+		AgentWorkID: req.GetAgentWorkId(), Agent: req.Agent, Kinds: kinds, TurnIDs: req.GetTurnIds(),
 	}, func(payload query.PortalLivePayload) error {
 		response := mapPortalLivePayload(payload)
 		if response == nil {
@@ -127,12 +122,14 @@ func mapError(err error) error {
 		return nil
 	}
 	switch {
-	case errors.Is(err, query.ErrSessionIDRequired), errors.Is(err, query.ErrInvalidHistoryCursor), errors.Is(err, query.ErrInvalidDetailRequest):
+	case errors.Is(err, query.ErrSessionIDRequired), errors.Is(err, query.ErrInvalidWorkID), errors.Is(err, query.ErrInvalidHistoryCursor), errors.Is(err, query.ErrInvalidDetailRequest):
 		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, query.ErrWorkAccessDenied):
 		return connect.NewError(connect.CodePermissionDenied, err.Error()).WithCause(err)
 	case errors.Is(err, query.ErrMessageNotFound):
 		return connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
+	case errors.Is(err, query.ErrStreamLimitReached):
+		return connect.NewError(connect.CodeResourceExhausted, err.Error()).WithCause(err)
 	case errors.Is(err, query.ErrLiveUnavailable), errors.Is(err, query.ErrWorkAccessUnavailable):
 		return connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
 	default:

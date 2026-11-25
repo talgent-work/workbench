@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
+	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 )
 
 var diagnosticProtoJSON = protojson.MarshalOptions{UseProtoNames: true}
@@ -56,5 +57,5 @@ func (p *DiagnosticNATSPublisher) PublishDiagnostic(_ context.Context, diagnosti
 }
 
 func diagnosticSubject(workID string) string {
-	return "session." + workID + ".diagnostic"
+	return pkgnats.WorkSubject(workID, pkgnats.WorkDiagnosticFrames)
 }

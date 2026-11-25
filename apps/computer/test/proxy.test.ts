@@ -14,7 +14,7 @@ import { Works } from '../src/execd/works.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
 import { LocalProxy } from '../src/proxy/server.ts'
 import { send, Upstream } from './support/upstream.ts'
-import { posixModes, removeScratch } from './support/platform.ts'
+import { posixModes, removeScratch, portableProcessRules } from './support/platform.ts'
 
 const IDENTITY_TOKEN = 'agent-identity-token'
 
@@ -134,7 +134,7 @@ async function filesUnder(root: string): Promise<string[]> {
   return files
 }
 
-test('credentials are validated, kept 0600 outside every Work root, and DELETE forgets them', async () => {
+test('credentials are validated, kept 0600 outside every Work root, and DELETE forgets them', { skip: portableProcessRules }, async () => {
   assert.deepEqual(await deliver(credentialsBody()), { status: 204 })
   const file = join(dir, 'state', 'credentials', 'w-1.json')
   if (posixModes) {
@@ -167,7 +167,7 @@ test('credentials are validated, kept 0600 outside every Work root, and DELETE f
   await assert.rejects(stat(file), { code: 'ENOENT' })
 })
 
-test('a run reaches the model only through the proxy; neither its environment nor any file holds the key or Identity Token', async () => {
+test('a run reaches the model only through the proxy; neither its environment nor any file holds the key or Identity Token', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody())
   const { id, env } = await runEnv()
   const token = env.TALGENT_PROXY_TOKEN
@@ -190,14 +190,14 @@ test('a run reaches the model only through the proxy; neither its environment no
   assert.ok(!record.includes(token), 'only the token hash is kept')
 })
 
-test('a Work the platform serves the entry to calls it through the proxy with its run token', async () => {
+test('a Work the platform serves the entry to calls it through the proxy with its run token', { skip: portableProcessRules }, async () => {
   assert.equal((await service.request({ workId: 'w-api', method: 'PUT', path: '/', token: '', body: { access_token: 'tok', platform_api: true } })).status, 200)
   const { env } = await runEnv('w-api')
   assert.equal(env.TALGENT_API_ADDRESS, `${proxy.origin()}/w/w-api/api/${env.TALGENT_PROXY_TOKEN}`)
   assert.equal((await runEnv('w-1')).env.TALGENT_API_ADDRESS, undefined, 'a Work without it reaches the platform otherwise')
 })
 
-test("a run's telemetry goes to the platform with its Work's token, never where the machine points its own", async () => {
+test("a run's telemetry goes to the platform with its Work's token, never where the machine points its own", { skip: portableProcessRules }, async () => {
   const telemetry = { endpoint: 'https://workbench.example/computer/v1/otel', token: 'TELEMETRYTOKEN234567' }
   const opened = await service.request({ workId: 'w-1', method: 'PUT', path: '/', token: '', body: { access_token: 'tok', model_proxy: true, environment: { CLAUDE_CODE_ENABLE_TELEMETRY: '1' }, telemetry } })
   assert.equal(opened.status, 200)
@@ -220,7 +220,7 @@ test("a run's telemetry goes to the platform with its Work's token, never where 
   assert.equal(other.OTEL_EXPORTER_OTLP_ENDPOINT, 'https://mine.example', 'a Work the platform named no telemetry for keeps the machine environment')
 })
 
-test('a Work on the machine login gets the proxy but keeps its own Anthropic settings and no model route', async () => {
+test('a Work on the machine login gets the proxy but keeps its own Anthropic settings and no model route', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody(), 'w-login')
   const { env } = await runEnv('w-login')
   assert.equal(env.TALGENT_PROXY_URL, `${proxy.origin()}/w/w-login`)
@@ -235,7 +235,7 @@ test('a Work on the machine login gets the proxy but keeps its own Anthropic set
   assert.equal((await send(`${proxy.origin()}/w/w-login/mcp`, { method: 'POST', headers: auth, body: '{}' })).status, 200)
 })
 
-test('a Model Configuration Work run before delivery reaches only the proxy, which waits for the key', async () => {
+test('a Model Configuration Work run before delivery reaches only the proxy, which waits for the key', { skip: portableProcessRules }, async () => {
   const { env } = await runEnv()
   assert.equal(env.ANTHROPIC_BASE_URL, `${proxy.origin()}/w/w-1/model`)
   assert.equal(env.ANTHROPIC_AUTH_TOKEN, env.TALGENT_PROXY_TOKEN)
@@ -253,7 +253,7 @@ test('a Model Configuration Work run before delivery reaches only the proxy, whi
   assert.equal((await call()).status, 503, 'withdrawn')
 })
 
-test('the key is injected only on POST of the two messages paths; the client credentials never pass', async () => {
+test('the key is injected only on POST of the two messages paths; the client credentials never pass', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody())
   const { env } = await runEnv()
   const token = env.TALGENT_PROXY_TOKEN
@@ -290,7 +290,7 @@ test('the key is injected only on POST of the two messages paths; the client cre
   }
 })
 
-test('a streamed model response reaches the process as it arrives', async () => {
+test('a streamed model response reaches the process as it arrives', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody())
   const { env } = await runEnv()
   upstream.hold()
@@ -317,7 +317,7 @@ test('a streamed model response reaches the process as it arrives', async () => 
   assert.equal(await first.rest, 'event: message_stop\ndata: {}\n\n')
 })
 
-test('MCP requests go to the Talgent MCP endpoint with the Work\'s Identity Token and Space Token alone', async () => {
+test('MCP requests go to the Talgent MCP endpoint with the Work\'s Identity Token and Space Token alone', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody())
   const { env } = await runEnv()
   const headers = { authorization: `Bearer ${env.TALGENT_PROXY_TOKEN}`, 'x-talgent-work-id': 'forged', 'content-type': 'application/json' }
@@ -337,7 +337,7 @@ test('MCP requests go to the Talgent MCP endpoint with the Work\'s Identity Toke
   assert.equal(upstream.last().headers['x-talgent-space-token'], undefined)
 })
 
-test('only the token of a running run of the Work is accepted', async () => {
+test('only the token of a running run of the Work is accepted', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody())
   await deliver(credentialsBody(), 'w-2')
   const { id, env } = await runEnv()
@@ -360,7 +360,7 @@ test('only the token of a running run of the Work is accepted', async () => {
   assert.equal(await restarted.proxyTokenValid('w-1', token), false)
 })
 
-test('a run token ends with its run', async () => {
+test('a run token ends with its run', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody())
   const { id, env, ended } = await runEnv('w-1', 'read line')
   const token = env.TALGENT_PROXY_TOKEN
@@ -376,7 +376,7 @@ test('a run token ends with its run', async () => {
   assert.equal((await mcp()).status, 401, 'the exited run')
 })
 
-test('a path cannot leave the base path of either upstream', async () => {
+test('a path cannot leave the base path of either upstream', { skip: portableProcessRules }, async () => {
   await deliver(credentialsBody())
   const { env } = await runEnv()
   const headers = { authorization: `Bearer ${env.TALGENT_PROXY_TOKEN}` }
@@ -391,7 +391,7 @@ test('a path cannot leave the base path of either upstream', async () => {
   assert.equal(upstream.seen.length, 0, 'nothing reached the upstream')
 })
 
-test('undelivered credentials answer 503, unknown routes 404 and an unreachable upstream 502 without secrets', async () => {
+test('undelivered credentials answer 503, unknown routes 404 and an unreachable upstream 502 without secrets', { skip: portableProcessRules }, async () => {
   const { env } = await runEnv()
   const auth = { authorization: `Bearer ${env.TALGENT_PROXY_TOKEN}` }
   const undelivered = await send(`${proxy.origin()}/w/w-1/model/v1/messages`, { method: 'POST', headers: auth, body: '{}' })
@@ -415,7 +415,7 @@ test('undelivered credentials answer 503, unknown routes 404 and an unreachable 
   assert.ok(logs.every((line) => !line.includes(KEY) && !line.includes(IDENTITY_TOKEN)))
 })
 
-test('the proxy keeps its port across restarts and moves when it is taken', async () => {
+test('the proxy keeps its port across restarts and moves when it is taken', { skip: portableProcessRules }, async () => {
   const port = new URL(proxy.origin()).port
   await proxy.close()
   const credentials = new CredentialStore({ dir: join(dir, 'state', 'credentials') })

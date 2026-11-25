@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/workbench/internal/business/streamgateway"
@@ -18,7 +20,8 @@ import (
 func TestModuleAssembles(t *testing.T) {
 	err := fx.ValidateApp(
 		fx.NopLogger,
-		fx.Supply(slog.Default(), http.DefaultClient, streamgateway.AgentConfig{}),
+		fx.Supply(slog.Default(), http.DefaultClient, streamgateway.AgentConfig{}, streamgateway.LiveConfig{}),
+		fx.Provide(func() metric.MeterProvider { return noop.NewMeterProvider() }),
 		fx.Provide(func() connectrpc.Server { return connecttest.NewServer() }),
 		fx.Provide(func() *pkgclickhouse.LazyConn { return nil }, func() *pkgnats.LazyConn { return nil }),
 		streamgateway.Module,

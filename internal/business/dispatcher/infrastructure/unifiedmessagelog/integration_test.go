@@ -69,20 +69,6 @@ func TestWorkHistoryIsIsolatedAndRepeatedWritesAreReadOnce(t *testing.T) {
 		for i, message := range history {
 			require.Equal(t, sginfra.MessageFromProto(originals[workID][i]), message, "payload and attribution must survive the Work-scoped log")
 		}
-		first, err := reader.ListReplay(ctx, workID, sgquery.ReplayCursor{Limit: 1})
-		require.NoError(t, err)
-		require.Len(t, first, 1)
-		require.Equal(t, "message-1", first[0].ID)
-		next, err := reader.ListReplay(ctx, workID, sgquery.ReplayCursor{After: now, AfterID: first[0].ID, Limit: 1})
-		require.NoError(t, err)
-		require.Len(t, next, 1)
-		require.Equal(t, "message-2", next[0].ID)
-		require.Equal(t, workID, next[0].AgentWorkID)
-		latest, err := reader.ListReplay(ctx, workID, sgquery.ReplayCursor{Latest: true, Limit: 1})
-		require.NoError(t, err)
-		require.Len(t, latest, 1)
-		require.Equal(t, workID, latest[0].AgentWorkID)
-		require.Equal(t, "message-2", latest[0].ID)
 	}
 }
 
@@ -215,16 +201,6 @@ func TestResultHistoryFiltersBeforePagingPastToolTraffic(t *testing.T) {
 	require.Len(t, page.Messages, 1)
 	require.Equal(t, "result-a", page.Messages[0].ID)
 	require.False(t, page.HasMore)
-	reader := sglog.NewClickHouseReader(conn)
-	replay, err := reader.ListReplay(ctx, "session", sgquery.ReplayCursor{Latest: true, Limit: 2, Agent: &root, Kinds: request.Kinds, TurnIDs: request.TurnIDs})
-	require.NoError(t, err)
-	require.Len(t, replay, 2)
-	require.Equal(t, "result-b", replay[0].ID)
-	require.Equal(t, "result-c", replay[1].ID)
-	replay, err = reader.ListReplay(ctx, "session", sgquery.ReplayCursor{After: ts, AfterID: "result-b", Limit: 2, Agent: &root, Kinds: request.Kinds, TurnIDs: request.TurnIDs})
-	require.NoError(t, err)
-	require.Len(t, replay, 1)
-	require.Equal(t, "result-c", replay[0].ID)
 
 	// Error inclusion relaxes only Agent attribution. It applies before paging,
 	// and never pulls child errors or unknown Results into the root stream.
@@ -242,11 +218,6 @@ func TestResultHistoryFiltersBeforePagingPastToolTraffic(t *testing.T) {
 	require.Len(t, page.Messages, 1)
 	require.Equal(t, "root-error", page.Messages[0].ID)
 	require.False(t, page.HasMore)
-	replay, err = reader.ListReplay(ctx, "session", sgquery.ReplayCursor{After: ts.Add(2 * time.Hour), AfterID: "root-error", Limit: 2, Agent: &root, Kinds: request.Kinds, IncludeUnattributedErrors: true})
-	require.NoError(t, err)
-	require.Len(t, replay, 1)
-	require.Equal(t, "unknown-error", replay[0].ID)
-	require.Nil(t, replay[0].Agent)
 	request.Before, request.IncludeUnattributedErrors = nil, false
 	page, err = handler.Handle(ctx, request)
 	require.NoError(t, err)

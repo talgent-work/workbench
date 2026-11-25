@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
-	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
@@ -46,7 +45,7 @@ func TestMessageReadsShareWorkAuthorizationAndBoundDetails(t *testing.T) {
 			return query.MessageDetail{Format: 1}, nil
 		}
 	}}
-	app := application.NewApplication(query.NewWatchStream(store, newFakeStream(), slogDiscard(t), access), query.NewListMessagesBySessionHandler(store, access), store, access)
+	app := newAccessApplication(store, newFakeStream(), slogDiscard(t), access)
 	handler := served(app)
 	_, err := handler.GetMessageDetail(ctx, &streamgatewaypublicv1.GetMessageDetailRequest{AgentWorkId: "work", MessageId: "empty"})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
@@ -56,7 +55,6 @@ func TestMessageReadsShareWorkAuthorizationAndBoundDetails(t *testing.T) {
 	require.ErrorIs(t, err, query.ErrWorkAccessDenied)
 	require.Empty(t, requests)
 	require.Empty(t, store.recordedMessageCalls())
-	require.Empty(t, store.recordedCalls())
 
 	_, err = handler.GetToolDetail(ctx, &streamgatewaypublicv1.GetToolDetailRequest{AgentWorkId: "work", ToolCallId: "tool"})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
@@ -111,7 +109,7 @@ func TestToolPreviewMatchesTheCalledTool(t *testing.T) {
 				Hunks: []query.PatchHunk{{OldStart: 1, Lines: []string{"+x"}}}},
 		}, nil
 	}}
-	app := application.NewApplication(query.NewWatchStream(store, newFakeStream(), slogDiscard(t), access), query.NewListMessagesBySessionHandler(store, access), store, access)
+	app := newAccessApplication(store, newFakeStream(), slogDiscard(t), access)
 	handler := served(app)
 
 	tool, err := handler.GetToolDetail(ctx, &streamgatewaypublicv1.GetToolDetailRequest{AgentWorkId: "work", ToolCallId: "tool"})
