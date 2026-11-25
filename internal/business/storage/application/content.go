@@ -32,7 +32,9 @@ func (a *Application) ReplaceContent(ctx context.Context, named Named, token str
 	if err != nil {
 		return "", err
 	}
-	if err := directory.AdmitContentReplacement(token); err != nil {
+	// The expectation is judged under the lock, where the current content
+	// holds still; this early admission refuses a wrong token without it.
+	if err := directory.AdmitContentReplacement(token, domain.AnyContent(), ""); err != nil {
 		return "", err
 	}
 	backend, err := a.backends.of(directory)
@@ -41,16 +43,13 @@ func (a *Application) ReplaceContent(ctx context.Context, named Named, token str
 	}
 	var revision domain.ContentRevision
 	err = a.mappedChange(ctx, backend, id, func(directory *domain.Directory) error {
-		// Admitted again under the lock: a reclamation may have come between.
-		if err := directory.AdmitContentReplacement(token); err != nil {
-			return err
-		}
-		// The lock keeps the current content until the switch.
+		// Admitted again under the lock, which keeps the current content
+		// until the switch; a reclamation may have come between.
 		current, err := backend.CurrentContent(ctx, id)
 		if err != nil {
 			return err
 		}
-		if err := expected.Admit(current); err != nil {
+		if err := directory.AdmitContentReplacement(token, expected, current); err != nil {
 			return err
 		}
 		switched, err := backend.ReplaceContent(ctx, id, files, directory.Mappings)

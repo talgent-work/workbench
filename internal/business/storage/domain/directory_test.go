@@ -86,7 +86,7 @@ func TestADirectoryIsMountedAndWrittenOnlyOnceAllocated(t *testing.T) {
 	_, err := d.GrantMount(false, nil)
 	require.ErrorIs(t, err, ErrDirectoryNotAllocated, "nothing is mounted before its space exists")
 	require.ErrorIs(t, d.AdmitFileWrite(d.SpaceToken, writer), ErrDirectoryNotAllocated)
-	require.ErrorIs(t, d.AdmitContentReplacement(d.SpaceToken), ErrDirectoryNotAllocated)
+	require.ErrorIs(t, d.AdmitContentReplacement(d.SpaceToken, AnyContent(), ""), ErrDirectoryNotAllocated)
 
 	require.NoError(t, d.RecordAllocation())
 	require.Equal(t, DirectoryAllocated, d.State)
@@ -102,7 +102,8 @@ func TestADirectoryIsMountedAndWrittenOnlyOnceAllocated(t *testing.T) {
 		require.ErrorIs(t, err, ErrInvalidMountPoint, point)
 	}
 	require.NoError(t, d.AdmitFileWrite(d.SpaceToken, writer))
-	require.NoError(t, d.AdmitContentReplacement(d.SpaceToken))
+	require.NoError(t, d.AdmitContentReplacement(d.SpaceToken, AnyContent(), "r1"))
+	require.ErrorIs(t, d.AdmitContentReplacement(d.SpaceToken, NoContent(), "r1"), ErrContentChanged, "a replacement switches only over the content it expects")
 }
 
 func TestAWriteNeedsTheSpaceTokenAndItsWriter(t *testing.T) {
@@ -112,7 +113,7 @@ func TestAWriteNeedsTheSpaceTokenAndItsWriter(t *testing.T) {
 	require.ErrorIs(t, d.AdmitFileWrite("", writer), ErrSpaceTokenRejected)
 	require.ErrorIs(t, d.AdmitFileWrite("guess", writer), ErrSpaceTokenRejected)
 	require.ErrorIs(t, d.AdmitFileWrite(d.SpaceToken, FileWriter{}), ErrFileWriterRequired)
-	require.ErrorIs(t, d.AdmitContentReplacement("guess"), ErrSpaceTokenRejected)
+	require.ErrorIs(t, d.AdmitContentReplacement("guess", AnyContent(), ""), ErrSpaceTokenRejected)
 }
 
 func TestOnlyAWorkDirectoryIsReclaimedAndReclamationIsFinal(t *testing.T) {
