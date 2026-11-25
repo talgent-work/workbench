@@ -249,9 +249,13 @@ Serves Work message streams to browsers.
 | Key | Default | Base | Meaning |
 |---|---|---|---|
 | `http.addr` | `${STREAMGATEWAY_HTTP_ADDR::8084}` | `:8084` | Listen address |
-| `clickhouse.dsn` | `${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}` | service account | Recorded messages, for replay |
-| `nats.url` | `${NATS_URL:nats://localhost:4222}` | | Live messages |
+| `clickhouse.dsn` | `${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}` | service account | Recorded messages, for history |
+| `nats.url` | `${NATS_URL:nats://localhost:4222}` | | Live frames |
 | `agent.address`, `agent.control-token` | `${STREAMGATEWAY_AGENT_ADDR:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | `http://controlplane:8080` | Agent's Work access, which admits each reader |
+| `live.max-streams`, `live.max-streams-per-reader` | `5000`, `64` | | Open streams one replica serves, in all and per reader; a stream beyond them is refused as `ResourceExhausted` |
+| `live.opens-per-second`, `live.open-burst` | `50`, `200` | | How fast one replica opens new streams |
+| `live.heartbeat-interval` | `30s` | | The longest a stream stays silent; below every proxy's idle timeout |
+| `live.readmission-interval` | `1m` | | How often an open stream asks Agent again whether its reader is admitted, jittered by a fifth |
 
 ## computer-gateway
 

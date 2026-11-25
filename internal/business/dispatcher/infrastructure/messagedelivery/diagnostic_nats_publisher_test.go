@@ -46,8 +46,8 @@ func TestDiagnosticNATSPublisher_PublishesProtoJSONToDiagnosticSubject(t *testin
 	case <-time.After(time.Second):
 		t.Fatal("diagnostic was not published")
 	}
-	if raw.Subject != "session.work-1.diagnostic" {
-		t.Fatalf("subject = %q, want session.work-1.diagnostic", raw.Subject)
+	if raw.Subject != "work.work-1.diagnostic" {
+		t.Fatalf("subject = %q, want work.work-1.diagnostic", raw.Subject)
 	}
 	if !strings.Contains(string(raw.Data), `"agent_work_id"`) {
 		t.Fatalf("payload JSON = %s, want proto field name agent_work_id", string(raw.Data))

@@ -61,13 +61,12 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 	reader := sgmessagelog.NewClickHouseReader(conn)
 
 	// Use the production Dispatcher publisher and StreamGateway subscriber.
-	lazyConn := pkgnats.NewLazyConn(fxtest.NewLifecycle(t), pkgnats.Config{URL: natsURL})
+	lazyConn := pkgnats.NewLazyConn(fxtest.NewLifecycle(t), pkgnats.Config{URL: natsURL}, slogDiscard(t))
 	defer lazyConn.Close()
 	stream := sginfra.NewPortalLiveStreamNATS(lazyConn, slogDiscard(t))
 
 	// Application wired to the real read-side durable-log adapter + stream.
 	app := newTestApplication(reader, stream, slogDiscard(t))
-	app.Queries.WatchStream.SetSettleDelay(0) // we pre-poll visibility below, so no settle delay needed.
 
 	mux := http.NewServeMux()
 	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
@@ -96,7 +95,7 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 		t.Helper()
 		require.Eventually(t, func() bool {
 			for _, sessionID := range sessions {
-				rows, err := reader.ListReplay(ctx, sessionID, query.ReplayCursor{Limit: 10})
+				rows, err := reader.ListMessagesBySession(ctx, query.ListMessagesBySessionRequest{AgentWorkID: sessionID, Limit: 10})
 				if err != nil || len(rows) != count {
 					return false
 				}
@@ -108,23 +107,23 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 	rpcCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	streams := make(map[string]*watched)
-	receive := func(sessionID string, expected *dispatcherpublicv1.UnifiedMessage, replay bool) {
+	receive := func(sessionID string, expected *dispatcherpublicv1.UnifiedMessage) {
 		t.Helper()
 		sub := streams[sessionID]
 		require.True(t, sub.Receive(), "receive %s for %s: %v", expected.Id, sessionID, sub.Err())
-		require.Equal(t, replay, sub.Msg().Replay, "only stored replay is marked historical")
 		require.True(t, proto.Equal(expected, sub.Msg().GetMessage()), "message payload and Session attribution: got %v, want %v", sub.Msg().GetMessage(), expected)
 	}
+	// A stream carries no stored history: it starts from the Work's state and
+	// then only what is published live.
 	for _, sessionID := range sessions {
 		sub, err := watch(client.WatchStream(rpcCtx, &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: sessionID}))
 		require.NoError(t, err)
 		defer sub.Close()
 		streams[sessionID] = sub
-		receive(sessionID, messages[sessionID][0], true)
+		receiveStart(t, sub)
 	}
 	// State and diagnostic adapters preserve optional fields and full attribution
-	// across both real publisher formats and the public RPC. These frames must not
-	// advance the UnifiedMessage replay cursor or be suppressed by local ID reuse.
+	// across both real publisher formats and the public RPC.
 	statePublisher, err := agentinfra.NewLiveStreamPublisher(lazyConn, agentrpc.WorkStateFrame)
 	require.NoError(t, err)
 	diagnosticPublisher := messagedelivery.NewDiagnosticNATSPublisher(lazyConn)
@@ -149,29 +148,19 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 		require.True(t, streams[sessionID].Receive(), "diagnostic: %v", streams[sessionID].Err())
 		require.True(t, proto.Equal(&streamgatewaypublicv1.StreamDiagnosticFrame{AgentWorkId: sessionID, Severity: diagnostic.Severity, Reason: diagnostic.Reason, Message: diagnostic.Message, OccurredAt: timestamppb.New(diagnostic.OccurredAt)}, streams[sessionID].Msg().GetDiagnostic()), "diagnostic payload and Session attribution")
 	}
-	// Identical local IDs must not collide in Hub fanout or per-subscriber deduplication.
+	// Identical local IDs of different Sessions never cross between their streams.
 	for _, sessionID := range sessions {
 		live := messages[sessionID][1]
 		require.NoError(t, writer.Append(ctx, live))
 		require.NoError(t, publisher.PublishLive(ctx, live))
 	}
 	for _, sessionID := range sessions {
-		receive(sessionID, messages[sessionID][1], false)
-		require.NoError(t, streams[sessionID].Close())
+		receive(sessionID, messages[sessionID][1])
 		require.NoError(t, writer.Append(ctx, messages[sessionID][2]))
 	}
 	waitForHistory(3)
-	// A reconnect replays the persisted message after its own cursor, even though
-	// both Sessions have the same timestamp and local IDs.
+	// What a reader missed live, it reads from history.
 	for _, sessionID := range sessions {
-		live := messages[sessionID][1]
-		sub, err := watch(client.WatchStream(rpcCtx, &streamgatewaypublicv1.WatchStreamRequest{
-			AgentWorkId: sessionID, AfterTimestamp: live.Timestamp, AfterId: live.Id,
-		}))
-		require.NoError(t, err)
-		defer sub.Close()
-		streams[sessionID] = sub
-		receive(sessionID, messages[sessionID][2], true)
 		history, err := client.ListMessagesBySession(rpcCtx, &streamgatewaypublicv1.ListMessagesBySessionRequest{
 			AgentWorkId: sessionID, Limit: 2, TurnIds: []string{"turn-" + sessionID},
 		})
@@ -205,7 +194,7 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 		}
 		require.NoError(t, writer.Append(ctx, produced))
 		require.NoError(t, publisher.PublishLive(ctx, produced))
-		receive(workID, message, false)
+		receive(workID, message)
 	}
 	var history *streamgatewaypublicv1.ListMessagesBySessionResponse
 	require.Eventually(t, func() bool {

@@ -7,16 +7,25 @@ import (
 	"time"
 )
 
-// PortalLiveStream is Streamgateway's single live query port for Portal frames.
+// PortalLiveStream subscribes to a Work's live frames. Live delivery is
+// best-effort: frames may be lost, repeated or reordered.
 type PortalLiveStream interface {
-	SubscribeSession(ctx context.Context, sessionID string) (PortalLiveSubscription, error)
+	// Subscribe hands each of the Work's live frames to deliver until the
+	// subscription closes or ends. deliver must not block, and it may be called
+	// from more than one goroutine. ctx bounds only the subscribing itself.
+	Subscribe(ctx context.Context, workID string, deliver func(PortalLivePayload)) (PortalLiveSubscription, error)
 }
 
-// PortalLiveSubscription is a per-Session live stream handle.
+// PortalLiveSubscription is one Work's live subscription.
 type PortalLiveSubscription interface {
-	Recv(ctx context.Context) (PortalLivePayload, error)
+	// Ended is closed once the subscription ends on its own, when its
+	// connection is closed for good.
+	Ended() <-chan struct{}
 	Close() error
 }
+
+// ErrInvalidWorkID rejects a Work identity that cannot name one Work's frames.
+var ErrInvalidWorkID = errors.New("invalid agent_work_id")
 
 // PortalLivePayload is a live frame Streamgateway can forward to Portal.
 type PortalLivePayload interface {
@@ -25,7 +34,6 @@ type PortalLivePayload interface {
 
 type UnifiedMessagePayload struct {
 	Message *Message
-	Replay  bool
 }
 
 func (*UnifiedMessagePayload) isPortalLivePayload() {}
@@ -41,6 +49,11 @@ type DiagnosticPayload struct {
 }
 
 func (*DiagnosticPayload) isPortalLivePayload() {}
+
+// HeartbeatPayload tells a quiet stream's reader that the stream is alive.
+type HeartbeatPayload struct{}
+
+func (*HeartbeatPayload) isPortalLivePayload() {}
 
 // ErrWorkAccessWithdrawn ends a stream whose reader lost access to the Work.
 var ErrWorkAccessWithdrawn = errors.New("work access withdrawn")

@@ -23,6 +23,10 @@ type AgentConfig struct {
 	ControlToken string `json:"control-token" yaml:"control-token" toml:"control-token"`
 }
 
+// LiveConfig bounds the live streams one process serves; a zero field takes
+// its default.
+type LiveConfig = query.WatchStreamOptions
+
 // Module assembles streamgateway. Runtime modules in cmd/streamgateway provide
 // ClickHouse, NATS, logging, and HTTP dependencies.
 var Module = fx.Module(
@@ -38,6 +42,10 @@ var Module = fx.Module(
 	fx.Provide(fx.Annotate(
 		infrastructure.NewPortalLiveStreamNATS,
 		fx.As(new(query.PortalLiveStream)),
+	)),
+	fx.Provide(fx.Annotate(
+		infrastructure.NewLiveDropCounter,
+		fx.As(new(query.LiveDropRecorder)),
 	)),
 	fx.Provide(query.NewWatchStream, query.NewListMessagesBySessionHandler, application.NewApplication),
 	fx.Invoke(func(app *application.Application, server connectrpc.Server) {

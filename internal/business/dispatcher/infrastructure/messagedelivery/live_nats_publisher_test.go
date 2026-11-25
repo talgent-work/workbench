@@ -173,8 +173,8 @@ func TestLiveNATSPublisher_ExecutionAttribution(t *testing.T) {
 	nc := mustTestNATSConn(t, srv)
 	publisher := NewLiveNATSPublisher(&staticConnector{nc: nc})
 	for _, test := range []struct{ name, session, subject string }{
-		{"first session", "session-1", "session.session-1"},
-		{"second session", "session-2", "session.session-2"},
+		{"first session", "session-1", "work.session-1.message"},
+		{"second session", "session-2", "work.session-2.message"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			received := make(chan *natsgo.Msg, 2)

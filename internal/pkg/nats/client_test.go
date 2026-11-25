@@ -1,158 +1,94 @@
 package nats
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"reflect"
+	"io"
+	"log/slog"
+	"net"
 	"testing"
-	"time"
-	"unsafe"
 
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 
-	natsgo "github.com/nats-io/nats.go"
 	"go.uber.org/fx/fxtest"
 )
 
-// Eager NATS wiring must own the shared connection and release it on fx stop.
-func TestNewConnConnectsAndClosesOnStop(t *testing.T) {
-	srv := runTestServer(t)
-	lc := fxtest.NewLifecycle(t)
+// A service starts while the broker is unreachable: the first use returns a
+// connection the client library keeps trying, not an error.
+func TestConnDoesNotWaitForAnUnreachableBroker(t *testing.T) {
+	client := NewLazyConn(fxtest.NewLifecycle(t), Config{URL: unusedURL(t)}, discardLogger())
+	t.Cleanup(func() { _ = client.Close() })
 
-	nc, err := NewConn(lc, Config{URL: srv})
+	nc, err := client.Conn()
 	if err != nil {
-		t.Fatalf("NewConn error = %v", err)
+		t.Fatalf("Conn error = %v, want a reconnecting connection", err)
 	}
-
-	lc.RequireStart()
-	if got := nc.Status(); got != natsgo.CONNECTED {
-		t.Fatalf("Status before stop = %v, want %v", got, natsgo.CONNECTED)
+	if nc.IsConnected() {
+		t.Fatal("connection to an unused port reports connected")
 	}
-
-	lc.RequireStop()
-	if got := nc.Status(); got != natsgo.CLOSED {
-		t.Fatalf("Status after stop = %v, want %v", got, natsgo.CLOSED)
+	again, err := client.Conn()
+	if err != nil || again != nc {
+		t.Fatalf("second Conn = %p, %v; want the same reconnecting connection", again, err)
 	}
 }
 
-// Lazy NATS wiring must not block service startup when the broker is unavailable.
-func TestNewLazyConnDefersDialUntilFirstUse(t *testing.T) {
+// Stopping the process closes the shared connection, and nothing dials again.
+func TestCloseOnStopEndsTheConnection(t *testing.T) {
 	lc := fxtest.NewLifecycle(t)
-	client := NewLazyConn(lc, Config{URL: unusedURL(t)})
-
-	lc.RequireStart()
-	if _, err := client.Conn(); err == nil {
-		t.Fatal("Conn error = nil, want connection error")
-	}
-}
-
-// Lazy NATS wiring must still release an opened connection during fx shutdown.
-func TestNewLazyConnClosesCurrentConnectionOnStop(t *testing.T) {
-	srv := runTestServer(t)
-	lc := fxtest.NewLifecycle(t)
-	client := NewLazyConn(lc, Config{URL: srv})
+	client := NewLazyConn(lc, Config{URL: middlewaretest.NATS(t)}, discardLogger())
 
 	nc, err := client.Conn()
 	if err != nil {
 		t.Fatalf("Conn error = %v", err)
 	}
-	if got := nc.Status(); got != natsgo.CONNECTED {
-		t.Fatalf("Status before stop = %v, want %v", got, natsgo.CONNECTED)
-	}
-
 	lc.RequireStart()
 	lc.RequireStop()
-	if got := nc.Status(); got != natsgo.CLOSED {
-		t.Fatalf("Status after stop = %v, want %v", got, natsgo.CLOSED)
+	if !nc.IsClosed() {
+		t.Fatalf("Status after stop = %v, want closed", nc.Status())
+	}
+	if _, err := client.Conn(); err == nil {
+		t.Fatal("Conn after stop error = nil, want the connection to stay closed")
 	}
 }
 
-// Lazy NATS live publishers must recover after a broker-side stale handle by
-// replacing a closed connection on the next publish attempt.
-func TestNewLazyConnRedialsAfterClosedConnection(t *testing.T) {
-	srv := runTestServer(t)
-	lc := fxtest.NewLifecycle(t)
-	client := NewLazyConn(lc, Config{URL: srv})
+// A lost connection is the client library's to restore, so its subscriptions
+// survive; only a connection closed for good is replaced.
+func TestConnReplacesOnlyAClosedConnection(t *testing.T) {
+	client := NewLazyConn(fxtest.NewLifecycle(t), Config{URL: middlewaretest.NATS(t)}, discardLogger())
+	t.Cleanup(func() { _ = client.Close() })
 
 	first, err := client.Conn()
 	if err != nil {
 		t.Fatalf("first Conn error = %v", err)
+	}
+	if again, _ := client.Conn(); again != first {
+		t.Fatal("Conn replaced an open connection")
 	}
 	first.Close()
-	if got := first.Status(); got != natsgo.CLOSED {
-		t.Fatalf("first status = %v, want %v", got, natsgo.CLOSED)
-	}
 
 	second, err := client.Conn()
 	if err != nil {
 		t.Fatalf("second Conn error = %v", err)
 	}
 	if second == first {
-		t.Fatal("second Conn returned the prior closed connection")
+		t.Fatal("Conn returned the closed connection")
 	}
-	if got := second.Status(); got != natsgo.CONNECTED {
-		t.Fatalf("second status = %v, want %v", got, natsgo.CONNECTED)
-	}
-}
-
-// Lazy NATS live publishers must also recover from a broker-side disconnect by
-// replacing the disconnected connection on the next publish attempt.
-func TestNewLazyConnRedialsAfterDisconnectedConnection(t *testing.T) {
-	srv := runTestServer(t)
-	lc := fxtest.NewLifecycle(t)
-	client := NewLazyConn(lc, Config{URL: srv})
-
-	first, err := client.Conn()
-	if err != nil {
-		t.Fatalf("first Conn error = %v", err)
-	}
-	forceNATSStatus(t, first, natsgo.DISCONNECTED)
-	if got := first.Status(); got != natsgo.DISCONNECTED {
-		t.Fatalf("first status = %v, want %v", got, natsgo.DISCONNECTED)
-	}
-
-	second, err := client.Conn()
-	if err != nil {
-		t.Fatalf("second Conn error = %v", err)
-	}
-	if second == first {
-		t.Fatal("second Conn returned the prior disconnected connection")
-	}
-	if got := second.Status(); got != natsgo.CONNECTED {
-		t.Fatalf("second status = %v, want %v", got, natsgo.CONNECTED)
+	if err := second.Flush(); err != nil {
+		t.Fatalf("replacement connection does not reach the broker: %v", err)
 	}
 }
 
-func runTestServer(t *testing.T) string { return middlewaretest.NATS(t) }
+func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
-func forceNATSStatus(t *testing.T, nc *natsgo.Conn, status natsgo.Status) {
-	t.Helper()
-
-	field := reflect.ValueOf(nc).Elem().FieldByName("status")
-	if !field.IsValid() {
-		t.Fatal("nats.Conn status field not found")
-	}
-	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(status))
-}
-
+// unusedURL names a local port nothing listens on.
 func unusedURL(t *testing.T) string {
 	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	for port := 42000; port < 42100; port++ {
-		url := fmt.Sprintf("nats://127.0.0.1:%d", port)
-		if _, err := natsgo.Connect(url, natsgo.NoReconnect(), natsgo.Timeout(10*time.Millisecond)); errors.Is(err, natsgo.ErrTimeout) || err != nil {
-			return url
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatal("no unused nats URL found")
-		default:
-		}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve a port: %v", err)
 	}
-	t.Fatal("no unused nats URL found")
-	return ""
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("release the port: %v", err)
+	}
+	return fmt.Sprintf("nats://%s", address)
 }

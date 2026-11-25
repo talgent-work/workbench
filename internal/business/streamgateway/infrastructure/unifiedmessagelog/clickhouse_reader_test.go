@@ -41,22 +41,6 @@ func TestSelectColumnsOmitTheDetailBody(t *testing.T) {
 	}
 }
 
-// Initial WatchStream hydration should read the tail of durable history while
-// preserving chronological display order for Portal.
-func TestReplayQueryLatestReadsTailThenRestoresChronologicalOrder(t *testing.T) {
-	queryText := replayQueryText(true, "agent_work_id = {agent_work_id:String}", 50)
-	for _, want := range []string{
-		"FROM (",
-		"ORDER BY timestamp DESC, id DESC",
-		"LIMIT 50",
-		")\nORDER BY timestamp ASC, id ASC",
-	} {
-		if !strings.Contains(queryText, want) {
-			t.Fatalf("latest replay query missing %q:\n%s", want, queryText)
-		}
-	}
-}
-
 // Archive ingest asks for recent Work history by agent_work_id only; the reader must
 // read the tail of the transcript and restore chronological order for the LLM.
 func TestListMessagesBySessionQueryWithoutFiltersReadsRecentHistory(t *testing.T) {

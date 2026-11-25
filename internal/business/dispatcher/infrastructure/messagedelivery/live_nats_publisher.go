@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
+	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 )
 
 var liveMessageProtoJSON = protojson.MarshalOptions{UseProtoNames: true}
@@ -47,5 +48,5 @@ func (p *LiveNATSPublisher) PublishLive(_ context.Context, msg *dispatcherpublic
 }
 
 func liveMessageSubject(workID string) string {
-	return "session." + workID
+	return pkgnats.WorkSubject(workID, pkgnats.WorkMessageFrames)
 }

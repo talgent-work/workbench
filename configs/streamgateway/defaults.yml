@@ -14,3 +14,11 @@ nats:
 agent:
   address: "${STREAMGATEWAY_AGENT_ADDR:http://127.0.0.1:8080}"
   control-token: "${AGENT_CONTROL_TOKEN:}"
+
+live:
+  max-streams: 5000
+  max-streams-per-reader: 64
+  opens-per-second: 50
+  open-burst: 200
+  heartbeat-interval: "30s"
+  readmission-interval: "1m"

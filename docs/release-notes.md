@@ -5,6 +5,18 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that streams only live frames and keeps one reader's trouble its own
+
+Deploy `dispatcher`, `controlplane` and `streamgateway` of this release together: a Work's live
+frames move to the NATS subjects `work.<id>.message`, `.state`, `.access` and `.diagnostic`, so
+until all three run this release, readers miss live updates. `WatchStream` no longer replays
+stored history; a product that reads it takes history from `ListMessagesBySession` and merges the
+two by message ID ([contracts](https://github.com/talgent-work/contracts) v0.10.0). The
+`streamgateway` serves at most `live.*` streams ([configuration](configuration.md#streamgateway))
+and reports `streamgateway.live.frames.dropped` to the collector named by
+`OTEL_EXPORTER_OTLP_ENDPOINT`. A rollback deploys the three services of the previous release
+together.
+
 ## The release that keeps entries sharing one sign-in signed in when they refresh at once
 
 Before deploying, apply

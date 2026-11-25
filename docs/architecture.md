@@ -9,7 +9,7 @@ each part lives in this repository. For what the product does, see the [README](
  browser ─────HTTPS──▶ Envoy Gateway ──▶ workbench-web       pages
  Application ─HTTPS──▶  (JWT check)  ├──▶ controlplane       Account, Marketplace, Agent,
                                      │                       Storage, Computer, Trace
-                                     ├──▶ streamgateway      live and replayed Work messages
+                                     ├──▶ streamgateway      Work message history and live frames
                                      └──▶ computer-gateway   Talgent Computer connections
  Talgent Computer ──WebSocket───────────▶ computer-gateway
 
@@ -22,7 +22,7 @@ each part lives in this repository. For what the product does, see the [README](
 |---|---|
 | `controlplane` | Account (GitHub sign-in, session tokens, Applications and their client credentials grant, and the keys the gateway checks every token with), Marketplace (catalogs, Plugins, Connectors, Provider authorization), Agent (Works, their lifecycle and execution), Storage (File Spaces, workspaces and HOMEs, previews), Computer (Cloud capacity, Managed Computers), Trace (Usage queries) |
 | `dispatcher` | Connects to each running Work's execd, drives native Claude Code, folds its output stream and records it; replicas hand Works over and take them over |
-| `streamgateway` | Serves each Work's message stream to browsers, replayed and live |
+| `streamgateway` | Serves each Work's message history and, best-effort, its live frames to browsers |
 | `computer-gateway` | Holds each Managed Computer's outbound connection and relays execution calls over it ([protocol](computer-protocol.md)) |
 | `workbench-web` | The web app |
 

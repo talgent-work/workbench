@@ -14,6 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
+	"github.com/talgent-work/workbench/internal/pkg/telemetry"
 )
 
 // Option is the top-level configuration tree for the streamgateway service.
@@ -26,6 +27,7 @@ type Option struct {
 	ClickHouse pkgclickhouse.Config      `json:"clickhouse" toml:"clickhouse" yaml:"clickhouse"`
 	NATS       pkgnats.Config            `json:"nats" toml:"nats" yaml:"nats"`
 	Agent      streamgateway.AgentConfig `json:"agent" toml:"agent" yaml:"agent"`
+	Live       streamgateway.LiveConfig  `json:"live" toml:"live" yaml:"live"`
 }
 
 func main() {
@@ -39,6 +41,7 @@ func main() {
 		lifecyclelog.Option,
 		fx.Supply(opt),
 		internalpkg.LoggerModule,
+		telemetry.Module("streamgateway"),
 		connectrpc.Module,
 		internalpkg.LazyClickHouseModule,
 		internalpkg.NATSLazyModule,

@@ -34,7 +34,7 @@ func NewLiveStreamPublisher(conn *pkgnats.LazyConn, workState func(query.WorkVie
 
 func (p *LiveStreamPublisher) PublishWorkState(_ context.Context, state query.WorkView) error {
 	frame := p.workState(state)
-	return p.publish("session_state."+frame.GetAgentWorkId(), frame)
+	return p.publish(pkgnats.WorkSubject(frame.GetAgentWorkId(), pkgnats.WorkStateFrames), frame)
 }
 
 func (p *LiveStreamPublisher) PublishWorkAccessWithdrawal(_ context.Context, withdrawal eventhandler.WorkAccessWithdrawal) error {
@@ -44,7 +44,7 @@ func (p *LiveStreamPublisher) PublishWorkAccessWithdrawal(_ context.Context, wit
 	} else {
 		frame.Change = &streamgatewaypublicv1.WorkAccessFrame_RevokedReaderId{RevokedReaderId: withdrawal.RevokedReaderID}
 	}
-	return p.publish("session_access."+withdrawal.WorkID, frame)
+	return p.publish(pkgnats.WorkSubject(withdrawal.WorkID, pkgnats.WorkAccessFrames), frame)
 }
 
 func (p *LiveStreamPublisher) publish(subject string, frame proto.Message) error {
