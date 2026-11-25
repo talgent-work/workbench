@@ -86,6 +86,13 @@ type ContentFile struct {
 	Content []byte
 }
 
+// Content is files read from a Directory's current content, with that
+// content's revision; before the first replacement it has neither.
+type Content struct {
+	Revision domain.ContentRevision
+	Files    []ContentFile
+}
+
 // WorkspaceEntryKind is what a workspace entry is.
 type WorkspaceEntryKind string
 
@@ -174,13 +181,19 @@ type DirectoryBackendPort interface {
 	// Inspect finds the content structure Preview Policy judges, with the
 	// facts of the same content.
 	Inspect(ctx context.Context, position domain.FilePosition) (StoredFile, domain.ContentStructure, error)
+	// CurrentContent is the revision of the Directory's current content,
+	// empty before the first replacement. The caller holds the Directory's
+	// lock.
+	CurrentContent(ctx context.Context, directory domain.DirectoryID) (domain.ContentRevision, error)
 	// ReplaceContent stages the files as the Directory's whole new content,
 	// switches it in in one atomic step and removes every earlier content
-	// before returning. The caller holds the Directory's lock.
-	ReplaceContent(ctx context.Context, directory domain.DirectoryID, files []ContentFile, mappings []domain.MappedPath) error
+	// before returning the new content's revision; with ErrMappedViewBehind
+	// the content is switched in too. The caller holds the Directory's lock.
+	ReplaceContent(ctx context.Context, directory domain.DirectoryID, files []ContentFile, mappings []domain.MappedPath) (domain.ContentRevision, error)
 	// ReadContent reads the given files of the current content, every file
-	// when none is given; a path the content lacks is left out.
-	ReadContent(ctx context.Context, directory domain.DirectoryID, paths []domain.ContentPath) ([]ContentFile, error)
+	// when none is given, with its revision; a path the content lacks is
+	// left out.
+	ReadContent(ctx context.Context, directory domain.DirectoryID, paths []domain.ContentPath) (Content, error)
 	// ListEntries lists the first limit entries of a directory inside the
 	// Directory, "." for its root, as a sandbox mounting it sees them: a
 	// Directory replaced as a whole is read through its current content.

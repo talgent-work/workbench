@@ -105,20 +105,21 @@ func TestWorkspaceFileLinks(t *testing.T) {
 func TestWholeContentReplacementUnderAStandingMount(t *testing.T) {
 	f := newFixture(t)
 	knowledge := named("knowledge", "subject", "case:1")
-	files, err := f.app.ReadContent(t.Context(), knowledge, nil)
+	content, err := f.app.ReadContent(t.Context(), knowledge, nil)
 	require.NoError(t, err)
-	require.Empty(t, files, "a Directory never opened has no content")
+	require.Empty(t, content.Files, "a Directory never opened has no content")
+	require.Empty(t, content.Revision)
 	token := f.open(fileSpace(knowledge))
 	layout := f.workspace("work-1", map[string]application.Located{"knowledge": fileSpace(knowledge)})
 	folder := f.folder(fileSpace(knowledge))
 
-	require.ErrorIs(t, f.app.ReplaceContent(t.Context(), knowledge, "forged", nil), domain.ErrSpaceTokenRejected)
-	require.ErrorIs(t, f.app.ReplaceContent(t.Context(), knowledge, token, []application.ContentFile{{Path: "../x", Content: []byte("x")}}), domain.ErrInvalidContentPath)
+	require.ErrorIs(t, f.replace(knowledge, "forged", nil), domain.ErrSpaceTokenRejected)
+	require.ErrorIs(t, f.replace(knowledge, token, []application.ContentFile{{Path: "../x", Content: []byte("x")}}), domain.ErrInvalidContentPath)
 	first := []application.ContentFile{{Path: "a.md", Content: []byte("a")}, {Path: "sub/b.md", Content: []byte("b")}}
-	require.NoError(t, f.app.ReplaceContent(t.Context(), knowledge, token, first))
+	require.NoError(t, f.replace(knowledge, token, first))
 	read, err := f.app.ReadContent(t.Context(), knowledge, nil)
 	require.NoError(t, err)
-	require.ElementsMatch(t, first, read)
+	require.ElementsMatch(t, first, read.Files)
 	view, err := f.app.WorkspaceView(t.Context(), layout, "knowledge")
 	require.NoError(t, err)
 	require.Equal(t, []string{"a.md", "sub"}, []string{view.Entries[0].Name, view.Entries[1].Name})
@@ -127,10 +128,10 @@ func TestWholeContentReplacementUnderAStandingMount(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "b", string(mounted))
 
-	require.NoError(t, f.app.ReplaceContent(t.Context(), knowledge, token, []application.ContentFile{{Path: "c.md", Content: []byte("c")}}))
+	require.NoError(t, f.replace(knowledge, token, []application.ContentFile{{Path: "c.md", Content: []byte("c")}}))
 	read, err = f.app.ReadContent(t.Context(), knowledge, []string{"c.md"})
 	require.NoError(t, err)
-	require.Equal(t, []application.ContentFile{{Path: "c.md", Content: []byte("c")}}, read)
+	require.Equal(t, []application.ContentFile{{Path: "c.md", Content: []byte("c")}}, read.Files)
 	view, err = f.app.WorkspaceView(t.Context(), layout, "knowledge")
 	require.NoError(t, err)
 	require.Len(t, view.Entries, 1)
@@ -141,6 +142,40 @@ func TestWholeContentReplacementUnderAStandingMount(t *testing.T) {
 	require.Equal(t, "c", string(mounted))
 	_, err = f.app.IssueWorkspaceFileLink(t.Context(), layout, "knowledge/a.md")
 	require.ErrorIs(t, err, application.ErrFileNotFound)
+}
+
+// A replacement that names the content it expects switches in only while
+// that content is current: a writer that made its content from an earlier
+// read never switches over a content it did not read.
+func TestContentReplacementExpectingAContentSwitchesOnlyOverIt(t *testing.T) {
+	f := newFixture(t)
+	knowledge := named("knowledge", "subject", "case:2")
+	token := f.open(fileSpace(knowledge))
+	a := []application.ContentFile{{Path: "a.md", Content: []byte("a")}}
+	b := []application.ContentFile{{Path: "b.md", Content: []byte("b")}}
+
+	first, err := f.app.ReplaceContent(t.Context(), knowledge, token, domain.NoContent(), a)
+	require.NoError(t, err)
+	require.NotEmpty(t, first)
+	_, err = f.app.ReplaceContent(t.Context(), knowledge, token, domain.NoContent(), b)
+	require.ErrorIs(t, err, domain.ErrContentChanged, "a content is already current")
+	read, err := f.app.ReadContent(t.Context(), knowledge, nil)
+	require.NoError(t, err)
+	require.Equal(t, first, read.Revision)
+	require.Equal(t, a, read.Files)
+
+	expected, err := domain.ExpectRevision(read.Revision)
+	require.NoError(t, err)
+	second, err := f.app.ReplaceContent(t.Context(), knowledge, token, expected, b)
+	require.NoError(t, err)
+	require.NotEqual(t, first, second, "each switch takes a fresh revision")
+
+	_, err = f.app.ReplaceContent(t.Context(), knowledge, token, expected, a)
+	require.ErrorIs(t, err, domain.ErrContentChanged, "the read content was replaced since")
+	read, err = f.app.ReadContent(t.Context(), knowledge, nil)
+	require.NoError(t, err)
+	require.Equal(t, second, read.Revision)
+	require.Equal(t, b, read.Files, "a refused replacement changes nothing")
 }
 
 // A rename whose record fails is moved back, so its Share Links keep

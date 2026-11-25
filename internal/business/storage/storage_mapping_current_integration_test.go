@@ -88,13 +88,13 @@ func TestWholeContentReplacementReachesTheMappedPath(t *testing.T) {
 	f := newFixture(t)
 	knowledge := fileSpace(named("knowledge", "project", "p1"))
 	token := f.open(knowledge)
-	require.NoError(t, f.app.ReplaceContent(t.Context(), knowledge.Directory, token, []application.ContentFile{
+	require.NoError(t, f.replace(knowledge.Directory, token, []application.ContentFile{
 		{Path: "a.md", Content: []byte("a")}, {Path: "sub/b.md", Content: []byte("b")}, {Path: ".hidden/state", Content: []byte("h")},
 	}))
 	require.NoError(t, f.mapAt(knowledge, "view/p1/knowledge"))
 	require.ElementsMatch(t, []string{"a.md", "sub/b.md"}, f.viewNames("view/p1/knowledge"), "hidden top-level entries stay out")
 
-	require.NoError(t, f.app.ReplaceContent(t.Context(), knowledge.Directory, token, []application.ContentFile{{Path: "c/d.md", Content: []byte("d")}}))
+	require.NoError(t, f.replace(knowledge.Directory, token, []application.ContentFile{{Path: "c/d.md", Content: []byte("d")}}))
 	require.Equal(t, []string{"c/d.md"}, f.viewNames("view/p1/knowledge"))
 	content, err := os.ReadFile(filepath.Join(f.viewOf("view/p1/knowledge"), "c", "d.md"))
 	require.NoError(t, err)

@@ -160,6 +160,12 @@ func (f *fixture) open(located application.Located) string {
 	return token
 }
 
+// replace replaces a Directory's whole content over whichever is current.
+func (f *fixture) replace(directory application.Named, token string, files []application.ContentFile) error {
+	_, err := f.app.ReplaceContent(f.t.Context(), directory, token, domain.AnyContent(), files)
+	return err
+}
+
 func at(directory application.Named, name string) application.Position {
 	return application.Position{Directory: directory, Name: name}
 }

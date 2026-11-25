@@ -32,7 +32,7 @@ require (
 	github.com/richardlehane/mscfb v1.0.8
 	github.com/samber/oops v1.23.0
 	github.com/stretchr/testify v1.12.1
-	github.com/talgent-work/contracts v0.9.5
+	github.com/talgent-work/contracts v0.9.6
 	github.com/twmb/franz-go v1.22.2
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.45.0

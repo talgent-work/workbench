@@ -207,9 +207,14 @@ func (d *Directory) AdmitFileWrite(token string, writer FileWriter) error {
 }
 
 // AdmitContentReplacement admits switching prepared content in as its whole
-// current content, only while Allocated and on its own Space Token.
-func (d *Directory) AdmitContentReplacement(token string) error {
-	return d.admitToken(token)
+// current content, only while Allocated, on its own Space Token, and while
+// the content the replacement expects is the current one (Conditional
+// replacement).
+func (d *Directory) AdmitContentReplacement(token string, expected ContentExpectation, current ContentRevision) error {
+	if err := d.admitToken(token); err != nil {
+		return err
+	}
+	return expected.Admit(current)
 }
 
 func (d *Directory) admitToken(token string) error {
