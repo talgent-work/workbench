@@ -25,6 +25,9 @@ type loginSessionDO struct {
 	RevokedAt         int64  `xorm:"revoked_at"`
 	LastSeenAt        int64  `xorm:"last_seen_at"`
 	UserAgent         string `xorm:"user_agent"`
+	ReplayDigest      string `xorm:"replay_digest"`
+	ReplaySecret      []byte `xorm:"replay_secret"`
+	ReplayEndsAt      int64  `xorm:"replay_ends_at"`
 	Version           int    `xorm:"'version'"`
 	CreatedAt         int64  `xorm:"created_at"`
 	UpdatedAt         int64  `xorm:"updated_at"`

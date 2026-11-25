@@ -209,6 +209,7 @@ account:
   application-secret-overlap: "24h"
   session-sliding-lifetime: "720h"
   session-absolute-lifetime: "2160h"
+  session-refresh-replay: "30s"
   key-rotation-interval: "720h"
   key-overlap: "10m"
   master-key-path: "${ACCOUNT_MASTER_KEY_PATH:/etc/talgent/account/master-key}"

@@ -65,6 +65,8 @@ func directoryUserFromDO(row *accountDO) query.User {
 	}
 }
 
+// loginSessionToDO maps a session to its row; the repository seals the
+// replay's replacing secret into ReplaySecret.
 func loginSessionToDO(session *domain.LoginSession) *loginSessionDO {
 	return &loginSessionDO{
 		ID:                session.ID,
@@ -75,11 +77,15 @@ func loginSessionToDO(session *domain.LoginSession) *loginSessionDO {
 		RevokedAt:         millis(session.RevokedAt),
 		LastSeenAt:        millis(session.LastSeenAt),
 		UserAgent:         session.UserAgent,
+		ReplayDigest:      string(session.RefreshReplay.Replaced),
+		ReplayEndsAt:      millis(session.RefreshReplay.EndsAt),
 		Version:           session.Version,
 	}
 }
 
-func loginSessionFromDO(row *loginSessionDO) (*domain.LoginSession, error) {
+// loginSessionFromDO rehydrates a session whose replay's replacing secret
+// the repository already opened.
+func loginSessionFromDO(row *loginSessionDO, replaySuccessor domain.RefreshSecret) (*domain.LoginSession, error) {
 	session := &domain.LoginSession{
 		ID:                row.ID,
 		AccountReference:  domain.AccountID(row.AccountID),
@@ -90,6 +96,13 @@ func loginSessionFromDO(row *loginSessionDO) (*domain.LoginSession, error) {
 		LastSeenAt:        fromMillis(row.LastSeenAt),
 		UserAgent:         row.UserAgent,
 		Version:           row.Version,
+	}
+	if row.ReplayDigest != "" {
+		session.RefreshReplay = domain.RefreshReplay{
+			Replaced:  domain.RefreshSecretDigest(row.ReplayDigest),
+			Successor: replaySuccessor,
+			EndsAt:    fromMillis(row.ReplayEndsAt),
+		}
 	}
 	if err := session.Validate(); err != nil {
 		return nil, err

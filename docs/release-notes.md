@@ -5,6 +5,18 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that keeps entries sharing one sign-in signed in when they refresh at once
+
+Before deploying, apply
+[`20261125-login-session-refresh-replay.sql`](../deploy/middleware/migrations/20261125-login-session-refresh-replay.sql)
+to the database named by `ACCOUNT_MYSQL_DATABASE`: it adds `login_session.replay_digest`,
+`replay_secret` and `replay_ends_at`. Within `account.session-refresh-replay` (default `30s`), a
+refresh secret Account just replaced gives back the same successor instead of revoking its Login
+Session. Entries on sibling hosts that share the refresh cookie, and a browser whose refresh
+response was lost, then stay signed in. A configuration that lists every `account` key needs
+`session-refresh-replay` added ([configuration](configuration.md#account)). A rollback to the
+previous release ignores the new columns.
+
 ## The release that tells Works of changes to their inputs and stops copying them onto Managed Computers
 
 Before deploying, apply

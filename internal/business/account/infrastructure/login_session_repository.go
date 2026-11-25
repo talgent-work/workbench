@@ -13,18 +13,26 @@ import (
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 )
 
-var loginSessionColumns = []string{"id", "account_id", "refresh_digest", "expires_at", "absolute_expires_at", "revoked_at", "last_seen_at", "user_agent", "version"}
+var loginSessionColumns = []string{"id", "account_id", "refresh_digest", "expires_at", "absolute_expires_at", "revoked_at", "last_seen_at", "user_agent", "replay_digest", "replay_secret", "replay_ends_at", "version"}
 
 // LoginSessionRepository persists Login Sessions with the refresh secrets they
-// replaced, so a replaced secret still finds its session.
+// replaced, so a replaced secret still finds its session. It seals the
+// replacing secret of a session's refresh replay at rest.
 type LoginSessionRepository struct {
-	db *jimuxorm.DB
+	db     *jimuxorm.DB
+	sealer sealer
 }
 
 var _ domain.LoginSessionRepository = (*LoginSessionRepository)(nil)
 
-func NewLoginSessionRepository(db *jimuxorm.DB) *LoginSessionRepository {
-	return &LoginSessionRepository{db: db}
+// NewLoginSessionRepository takes the 32-byte key that seals refresh
+// replays, derived from the Account master key for this use alone.
+func NewLoginSessionRepository(db *jimuxorm.DB, replaySealKey []byte) (*LoginSessionRepository, error) {
+	sealer, err := newSealer(replaySealKey)
+	if err != nil {
+		return nil, err
+	}
+	return &LoginSessionRepository{db: db, sealer: sealer}, nil
 }
 
 func (r *LoginSessionRepository) Get(ctx context.Context, id string) (*domain.LoginSession, error) {
@@ -75,28 +83,51 @@ func (r *LoginSessionRepository) load(ctx context.Context, where string, arg any
 	if !found {
 		return nil, domain.ErrLoginSessionNotFound
 	}
-	session, err := loginSessionFromDO(row)
+	successor, err := r.openReplay(row)
+	if err != nil {
+		return nil, oops.With("operation", "login_session.open_replay").With("session_id", row.ID).Wrap(err)
+	}
+	session, err := loginSessionFromDO(row, successor)
 	if err != nil {
 		return nil, oops.With("operation", "login_session.rehydrate").With("session_id", row.ID).Wrap(err)
 	}
 	return session, nil
 }
 
+func (r *LoginSessionRepository) openReplay(row *loginSessionDO) (domain.RefreshSecret, error) {
+	if row.ReplayDigest == "" {
+		return "", nil
+	}
+	plaintext, err := r.sealer.open(row.ReplaySecret, row.ID)
+	if err != nil {
+		return "", err
+	}
+	return domain.RefreshSecret(plaintext), nil
+}
+
 // Save writes the session row and, after a Refresh, records the secret it
-// replaced so presenting it again is recognized as reuse.
+// replaced so presenting it again is recognized as a replay or reuse.
 func (r *LoginSessionRepository) Save(ctx context.Context, session *domain.LoginSession) error {
+	row := loginSessionToDO(session)
+	row.ReplaySecret = []byte{}
+	if successor := session.RefreshReplay.Successor; successor != "" {
+		sealed, err := r.sealer.seal([]byte(successor), session.ID)
+		if err != nil {
+			return oops.With("operation", "login_session.seal_replay").With("session_id", session.ID).Wrap(err)
+		}
+		row.ReplaySecret = sealed
+	}
 	return r.db.Manager().WithinOrJoin(ctx, func(ctx context.Context) error {
 		dbSession, err := r.db.Session(ctx)
 		if err != nil {
 			return err
 		}
-		return saveLoginSession(dbSession, session)
+		return saveLoginSession(dbSession, session, row)
 	})
 }
 
-func saveLoginSession(tx *xorm.Session, session *domain.LoginSession) error {
+func saveLoginSession(tx *xorm.Session, session *domain.LoginSession, row *loginSessionDO) error {
 	now := time.Now().UnixMilli()
-	row := loginSessionToDO(session)
 	row.UpdatedAt = now
 	if session.Version == 0 {
 		row.Version = 1
@@ -106,7 +137,7 @@ func saveLoginSession(tx *xorm.Session, session *domain.LoginSession) error {
 		}
 	} else {
 		affected, err := tx.
-			Cols("refresh_digest", "expires_at", "revoked_at", "last_seen_at", "updated_at").
+			Cols("refresh_digest", "expires_at", "revoked_at", "last_seen_at", "replay_digest", "replay_secret", "replay_ends_at", "updated_at").
 			Incr("version").
 			Where("id = ? AND version = ? AND deleted_at = 0", row.ID, session.Version).
 			Update(row)

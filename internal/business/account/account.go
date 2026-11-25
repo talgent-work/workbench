@@ -61,11 +61,16 @@ type Config struct {
 	ApplicationSecretOverlap string `json:"application-secret-overlap" yaml:"application-secret-overlap" toml:"application-secret-overlap"`
 	SessionSlidingLifetime   string `json:"session-sliding-lifetime" yaml:"session-sliding-lifetime" toml:"session-sliding-lifetime"`
 	SessionAbsoluteLifetime  string `json:"session-absolute-lifetime" yaml:"session-absolute-lifetime" toml:"session-absolute-lifetime"`
-	KeyRotationInterval      string `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
+	// SessionRefreshReplay is the bounded replay window: how long the refresh
+	// secret a Login Session last replaced still gives back its successor, so
+	// entries sharing the refresh cookie may refresh at once. At most
+	// AccessTokenLifetime.
+	SessionRefreshReplay string `json:"session-refresh-replay" yaml:"session-refresh-replay" toml:"session-refresh-replay"`
+	KeyRotationInterval  string `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
 	// KeyOverlap is how long a new key is published before it signs.
 	KeyOverlap string `json:"key-overlap" yaml:"key-overlap" toml:"key-overlap"`
 	// MasterKeyPath is a file holding 32 base64-encoded bytes that seal
-	// signing keys at rest and sign in-progress sign-ins.
+	// signing keys and refresh replays at rest and sign in-progress sign-ins.
 	MasterKeyPath string       `json:"master-key-path" yaml:"master-key-path" toml:"master-key-path"`
 	GitHub        GitHubConfig `json:"github" yaml:"github" toml:"github"`
 }
@@ -101,6 +106,7 @@ func (c Config) policy() (policy, error) {
 		{"application-secret-overlap", c.ApplicationSecretOverlap, &p.secretOverlap},
 		{"session-sliding-lifetime", c.SessionSlidingLifetime, &p.lifetimes.Sliding},
 		{"session-absolute-lifetime", c.SessionAbsoluteLifetime, &p.lifetimes.Absolute},
+		{"session-refresh-replay", c.SessionRefreshReplay, &p.lifetimes.Replay},
 		{"key-rotation-interval", c.KeyRotationInterval, &p.rotationInterval},
 		{"key-overlap", c.KeyOverlap, &p.overlap},
 	} {
@@ -112,6 +118,9 @@ func (c Config) policy() (policy, error) {
 	}
 	if p.lifetimes.Access > p.lifetimes.Sliding || p.lifetimes.Sliding > p.lifetimes.Absolute {
 		return policy{}, errors.New("account config: lifetimes must satisfy access <= sliding <= absolute")
+	}
+	if p.lifetimes.Replay > p.lifetimes.Access {
+		return policy{}, errors.New("account config: session-refresh-replay must not be longer than access-token-lifetime")
 	}
 	if p.agentToken < p.lifetimes.Access {
 		return policy{}, errors.New("account config: agent-token-lifetime must not be shorter than access-token-lifetime")
@@ -155,12 +164,17 @@ func deriveKey(master []byte, purpose string) []byte {
 	return mac.Sum(nil)
 }
 
+// sessionSealKey seals the replacing secret of each Login Session's refresh
+// replay at rest.
+type sessionSealKey []byte
+
 type runtime struct {
 	fx.Out
-	Policy     policy
-	SigningKey infrastructure.SigningKeyConfig
-	HTTP       accounthttp.Config
-	GitHub     infrastructure.GitHubOAuthConfig
+	Policy         policy
+	SessionSealKey sessionSealKey
+	SigningKey     infrastructure.SigningKeyConfig
+	HTTP           accounthttp.Config
+	GitHub         infrastructure.GitHubOAuthConfig
 }
 
 func newRuntime(cfg Config) (runtime, error) {
@@ -173,7 +187,8 @@ func newRuntime(cfg Config) (runtime, error) {
 		return runtime{}, err
 	}
 	return runtime{
-		Policy: p,
+		Policy:         p,
+		SessionSealKey: deriveKey(master, "refresh-replay-seal"),
 		SigningKey: infrastructure.SigningKeyConfig{
 			Issuer:                cfg.Issuer,
 			Audience:              cfg.Audience,
@@ -202,10 +217,11 @@ func newRuntime(cfg Config) (runtime, error) {
 
 type applicationDependencies struct {
 	fx.In
-	DB     *jimuxorm.DB
-	Policy policy
-	Keys   *infrastructure.SigningKeys
-	GitHub *infrastructure.GitHubIdentity
+	DB             *jimuxorm.DB
+	Policy         policy
+	SessionSealKey sessionSealKey
+	Keys           *infrastructure.SigningKeys
+	GitHub         *infrastructure.GitHubIdentity
 	// Bus publishes Application Removed; without it Agent never learns of a
 	// removal, and the removed Application's Works stop at their idle
 	// timeout.
@@ -213,13 +229,16 @@ type applicationDependencies struct {
 	Logger *slog.Logger
 }
 
-func newApplication(deps applicationDependencies) *application.Application {
+func newApplication(deps applicationDependencies) (*application.Application, error) {
 	db, p, keys, github := deps.DB, deps.Policy, deps.Keys, deps.GitHub
 	var publisher application.AccountPublisherPort
 	if deps.Bus != nil {
 		publisher = infrastructure.NewAccountPublisher(deps.Bus)
 	}
-	sessions := infrastructure.NewLoginSessionRepository(db)
+	sessions, err := infrastructure.NewLoginSessionRepository(db, deps.SessionSealKey)
+	if err != nil {
+		return nil, err
+	}
 	return application.NewApplication(application.Dependencies{
 		Accounts:           infrastructure.NewAccountRepository(db),
 		Sessions:           sessions,
@@ -236,7 +255,7 @@ func newApplication(deps applicationDependencies) *application.Application {
 		SecretOverlap:            p.secretOverlap,
 		Publisher:                publisher,
 		Logger:                   deps.Logger,
-	})
+	}), nil
 }
 
 func newGitHubIdentity(cfg infrastructure.GitHubOAuthConfig) (*infrastructure.GitHubIdentity, error) {

@@ -44,7 +44,7 @@ const (
 	secretOverlap            = 24 * time.Hour
 )
 
-var lifetimes = domain.SessionLifetimes{Access: 15 * time.Minute, Sliding: 30 * 24 * time.Hour, Absolute: 90 * 24 * time.Hour}
+var lifetimes = domain.SessionLifetimes{Access: 15 * time.Minute, Sliding: 30 * 24 * time.Hour, Absolute: 90 * 24 * time.Hour, Replay: 30 * time.Second}
 
 type clock struct {
 	mu  sync.Mutex
@@ -185,7 +185,8 @@ func newHarness(t *testing.T) *harness {
 		WebBaseURL: ghServer.URL, APIBaseURL: ghServer.URL,
 	}, ghServer.Client())
 	require.NoError(t, err)
-	sessions := infrastructure.NewLoginSessionRepository(db)
+	sessions, err := infrastructure.NewLoginSessionRepository(db, make([]byte, 32))
+	require.NoError(t, err)
 	removals := &recordedRemovals{}
 	signer := &switchableSigner{SigningKeys: keys}
 	app := application.NewApplication(application.Dependencies{

@@ -65,7 +65,7 @@ function endSession() {
   for (const listener of endListeners) listener();
 }
 
-async function requestRefresh(): Promise<RefreshOutcome> {
+async function requestRefreshOnce(): Promise<RefreshOutcome> {
   if (ended) return "rejected";
   let response: Response;
   try {
@@ -79,10 +79,26 @@ async function requestRefresh(): Promise<RefreshOutcome> {
   return "rejected";
 }
 
-// Tabs share one refresh cookie. Account revokes a session when a replaced
-// secret comes back, so two tabs must never present the same secret: the
-// lock serializes them, and the second tab then sends the cookie the first
-// one received.
+// Account may have rotated the secret although its response never arrived.
+// It gives the same new secret back to the replaced one only within its
+// replay window (30 seconds by default), so retries stay well inside it;
+// a later retry would present a replaced secret and end the session.
+const refreshRetryDelaysMs = [1_000, 3_000];
+
+async function requestRefresh(): Promise<RefreshOutcome> {
+  let outcome = await requestRefreshOnce();
+  for (const delay of refreshRetryDelaysMs) {
+    if (outcome !== "unavailable") break;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    outcome = await requestRefreshOnce();
+  }
+  return outcome;
+}
+
+// Tabs of this entry share one refresh cookie, so the lock lets one refresh
+// at a time and the next sends the cookie the first received. Other entries
+// on sibling hosts share the cookie too but not the lock; Account replays a
+// just-replaced secret for them, so presenting it again stays safe.
 async function refreshAcrossTabs(): Promise<RefreshOutcome> {
   const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
   if (!locks) return requestRefresh();
