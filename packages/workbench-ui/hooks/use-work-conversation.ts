@@ -81,22 +81,23 @@ export function useWorkConversation(workId: string | undefined, onWorkState?: (s
     for (const user of users) if (!turns.has(user.turnId)) turns.set(user.turnId, user);
     return [...turns.values()];
   }, [index.data, liveAnchors, workId, snapshot.turns]);
-  useWorkStream({
+  const live = useWorkStream({
     workId, includeUnattributedErrors: true, onWorkState, onAccessWithdrawn,
     onDiagnostic: diagnostic => { if (workId) notifyWorkNotice(workId, diagnostic); },
-    onMessage: (message, replay) => {
-      if (!replay && [UnifiedMessageKind.USER, UnifiedMessageKind.RESULT, UnifiedMessageKind.PERMISSION, UnifiedMessageKind.INTERACTION, UnifiedMessageKind.ERROR].includes(message.kind)) onActivity?.();
+    onMessage: message => {
+      if ([UnifiedMessageKind.USER, UnifiedMessageKind.RESULT, UnifiedMessageKind.PERMISSION, UnifiedMessageKind.INTERACTION, UnifiedMessageKind.ERROR].includes(message.kind)) onActivity?.();
       const anchors = turnAnchor(message);
       if (anchors.length) setLiveAnchors(current => ({ workId, users: [...(current.workId === workId ? current.users.filter(user => user.id !== message.id) : []), ...anchors].slice(-100) }));
-      liveTail.add([message], replay ? "replay" : "live");
+      liveTail.add([message], "live");
       // While reading older pages, keep the reading window intact. Returning to
       // latest combines authoritative history with the bounded recent tail.
       if (browsingHistory && !conversation.has(message.id)) {
-        if (!replay && message.kind === UnifiedMessageKind.USER) setNavigation({ workId, generation });
+        if (message.kind === UnifiedMessageKind.USER) setNavigation({ workId, generation });
         else { setArrival(conversation); return; }
       }
-      conversation.add([message], replay ? "replay" : "live");
+      conversation.add([message], "live");
     },
+    // The stream listens again: history read now covers what the gap held.
     onReconnect: () => { if (!browsingHistory) void history.refetch(); void index.refetch(); onReconnect?.(); },
   });
   const hasMore = Boolean(from || history.data?.hasMore || snapshot.olderEvicted);
@@ -108,6 +109,8 @@ export function useWorkConversation(workId: string | undefined, onWorkState?: (s
     retryIndex: () => { void index.refetch(); },
     browsingHistory, hasNewer: arrival === conversation,
     retry: () => { void history.refetch(); },
+    // Live updates stopped after repeated failures; reconnect resumes them.
+    liveDisconnected: live.status === "disconnected", reconnectLive: live.reconnect,
     loadOlder: () => {
       const oldest = conversation.getOldest();
       if (!workId || history.isFetching || !hasMore || !oldest?.timestamp) return;
