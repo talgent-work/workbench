@@ -92,18 +92,20 @@ for attempt in $(seq 1 90); do
   sleep 1
 done
 docker exec "${TASK_NAME}-clickhouse" clickhouse-client --query 'CREATE DATABASE talgent_trace'
-docker run -d --name "${TASK_NAME}-collector" --network "$TASK_NETWORK" --memory 256m --cpus 1 -p 127.0.0.1::4318 \
+export TALGENT_TEST_CLICKHOUSE_DSN="clickhouse://default:@$(docker port "${TASK_NAME}-clickhouse" 9000/tcp)/talgent_trace"
+# The Collector writes into the tables the migration defines, so they exist first.
+(cd "$TASK_ROOT" && go run ./scripts/test/prepare)
+docker run -d --name "${TASK_NAME}-collector" --network "$TASK_NETWORK" --memory 256m --cpus 1 -p 127.0.0.1::4318 -p 127.0.0.1::13133 \
   --mount "type=bind,src=${TASK_ROOT}/configs/otelcol/config.yaml,dst=/etc/otelcol/config.yaml,readonly" \
   -e CLICKHOUSE_ENDPOINT=tcp://clickhouse:9000 -e CLICKHOUSE_USERNAME=default -e CLICKHOUSE_PASSWORD= -e CLICKHOUSE_DATABASE=talgent_trace \
   "$TASK_COLLECTOR_IMAGE" --config=/etc/otelcol/config.yaml >/dev/null
 for attempt in $(seq 1 60); do
-  if [[ "$(docker exec "${TASK_NAME}-clickhouse" clickhouse-client --query "SELECT count() FROM system.tables WHERE database='talgent_trace' AND name IN ('otel_traces','otel_logs','otel_traces_trace_id_ts')")" == 3 ]]; then break; fi
-  if [[ "$attempt" == 60 ]]; then echo 'test Collector schema did not become ready' >&2; exit 1; fi
+  if curl -sf "http://$(docker port "${TASK_NAME}-collector" 13133/tcp)/" >/dev/null 2>&1; then break; fi
+  if [[ "$attempt" == 60 ]]; then echo 'test Collector did not become ready' >&2; exit 1; fi
   sleep 1
 done
 export TALGENT_TEST_REDIS_ADDR="$(docker port "${TASK_NAME}-redis" 6379/tcp)"
 export TALGENT_TEST_NATS_URL="nats://$(docker port "${TASK_NAME}-nats" 4222/tcp)"
-export TALGENT_TEST_CLICKHOUSE_DSN="clickhouse://default:@$(docker port "${TASK_NAME}-clickhouse" 9000/tcp)/talgent_trace"
 export TALGENT_TEST_OTLP_URL="http://$(docker port "${TASK_NAME}-collector" 4318/tcp)"
 export TALGENT_TEST_CLICKHOUSE_CONTAINER="${TASK_NAME}-clickhouse"
 export TALGENT_TEST_KEYCLOAK_URL="http://$(docker port "${TASK_NAME}-keycloak" 8080/tcp)/realms/talgent-test"
@@ -118,6 +120,5 @@ for attempt in $(seq 1 30); do
   if [[ "$attempt" == 30 ]]; then echo 'test OIDC provider did not become ready' >&2; exit 1; fi
   sleep 1
 done
-(cd "$TASK_ROOT" && go run ./scripts/test/prepare)
 echo "Shared test middleware ready: MySQL (${TASK_SLOTS} initialized reusable schemas), Redis, NATS, ClickHouse, Collector, Keycloak, OIDC provider" >&2
 "$@"

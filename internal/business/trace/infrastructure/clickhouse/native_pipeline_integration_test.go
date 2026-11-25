@@ -42,7 +42,7 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 			id  string
 			age int
 		}{{"recent", 0}, {"retained-metrics", 8}, {"expired-metrics", 31}} {
-			_, err := db.ExecContext(ctx, `INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, ResourceAttributes, SpanAttributes)
+			_, err := db.ExecContext(ctx, `INSERT INTO native_spans (Timestamp, TraceId, SpanId, SpanName, ResourceAttributes, SpanAttributes)
                 SELECT now64(9) - toIntervalDay(?), 'injected-trace', ?, 'claude_code.llm_request',
                     map('talgent.work_caller', 'team:team-edge', 'talgent.agent_work_id', ?),
                     map('model', 'fixture-model', 'input_tokens', 'invalid', 'output_tokens', '0', 'cache_read_tokens', '-1')`, item.age, item.id, item.id)
@@ -90,13 +90,13 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 	t.Run("physical evidence expiry preserves retained measurements", func(t *testing.T) {
 		// Insert old but valid evidence through the same raw tables and MVs.
 		// Explicit TTL materialization makes the actual storage deletion bounded.
-		if _, err := db.ExecContext(ctx, `INSERT INTO otel_logs (Timestamp, TraceId, Body, LogAttributes, ResourceAttributes)
+		if _, err := db.ExecContext(ctx, `INSERT INTO native_events (Timestamp, TraceId, Body, LogAttributes, ResourceAttributes)
             SELECT now64(9) - INTERVAL 8 DAY, 'ttl-trace', 'claude_code.skill_activated',
                 map('event.name', 'skill_activated', 'event.sequence', '1', 'skill.name', 'retained-skill'),
                 map('talgent.work_caller', 'team:team-ttl', 'talgent.agent_work_id', 'session-ttl')`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.ExecContext(ctx, `INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes)
+		if _, err := db.ExecContext(ctx, `INSERT INTO native_spans (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes)
             SELECT now64(9) - INTERVAL 8 DAY, 'ttl-trace', 'ttl-span', 'claude_code.llm_request',
                 map('model', 'ttl-model', 'input_tokens', '10', 'output_tokens', '5', 'cache_read_tokens', '0', 'cache_creation_tokens', '0'),
                 map('talgent.work_caller', 'team:team-ttl', 'talgent.agent_work_id', 'session-ttl')`); err != nil {
@@ -111,12 +111,12 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, table := range []string{"otel_traces", "otel_logs", "otel_traces_trace_id_ts", "trace_work_measurements"} {
+		for _, table := range []string{"native_spans", "native_events", "trace_work_measurements"} {
 			if _, err := db.ExecContext(ctx, "ALTER TABLE "+table+" MATERIALIZE TTL SETTINGS mutations_sync=2"); err != nil {
 				t.Fatal(err)
 			}
 		}
-		for _, table := range []string{"otel_traces", "otel_logs", "otel_traces_trace_id_ts"} {
+		for _, table := range []string{"native_spans", "native_events"} {
 			var count uint64
 			if err := db.QueryRowContext(ctx, "SELECT count() FROM "+table+" WHERE TraceId='ttl-trace'").Scan(&count); err != nil || count != 0 {
 				t.Fatalf("expired %s still stored: %d %v", table, count, err)

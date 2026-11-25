@@ -5,8 +5,6 @@ package clickhouse
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -58,43 +56,67 @@ func (r *Repository) listSpans(ctx context.Context, scope spanListScope, opts qu
 	if limit <= 0 || limit > defaultLimit {
 		limit = defaultLimit
 	}
-
-	q, params, err := buildSpanListQuery(scope, opts)
+	spans, next, err := readEvidencePage(ctx, opts.AfterCursor, limit, func(ctx context.Context, after string) ([]listedSpan, error) {
+		opts.AfterCursor = after
+		q, params, err := buildSpanListQuery(scope, opts)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := r.db.Query(clickhousego.Context(ctx, clickhousego.WithParameters(params)), q)
+		if err != nil {
+			return nil, oops.With("operation", "trace.query").Wrap(err)
+		}
+		defer rows.Close()
+		read, err := scanSpans(rows)
+		if err != nil {
+			return nil, oops.With("operation", "trace.scan").Wrap(err)
+		}
+		listed := make([]listedSpan, len(read))
+		for i, span := range read {
+			listed[i] = listedSpan{span}
+		}
+		return listed, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.Query(clickhousego.Context(ctx, clickhousego.WithParameters(params)), q)
-	if err != nil {
-		return nil, oops.With("operation", "trace.query").Wrap(err)
+	result := &query.SpanListResult{Spans: make([]*query.Span, len(spans)), NextCursor: next}
+	for i, span := range spans {
+		result.Spans[i] = span.Span
 	}
-	defer rows.Close()
-
-	spans, err := scanSpans(rows)
-	if err != nil {
-		return nil, oops.With("operation", "trace.scan").Wrap(err)
-	}
-	result := &query.SpanListResult{}
-	if len(spans) > limit {
-		result.NextCursor = spans[limit-1].Cursor
-		spans = spans[:limit]
-	}
-	result.Spans = spans
 	return result, nil
 }
 
+// listedSpan is a span a page read returns.
+type listedSpan struct{ *query.Span }
+
+func (s listedSpan) identity() string { return s.TraceID + ":" + s.SpanID }
+func (s listedSpan) cursor() string   { return s.Cursor }
+
+// spanColumns are what a span read returns, in scanSpans order.
+const spanColumns = `SpanId, TraceId, ParentSpanId, AgentWorkId,
+			SpanName, SpanKind,
+			Timestamp, Timestamp + INTERVAL Duration NANOSECOND,
+			toInt64(Duration),
+			StatusCode, StatusMessage,
+			SpanAttributes, ResourceAttributes,
+			talgent_span_category(SpanName, SpanAttributes)`
+
+// buildSpanListQuery reads a page in the table's sort key order, after the
+// Work Caller: one more span than the page holds tells whether more follow.
 func buildSpanListQuery(scope spanListScope, opts query.SpanListOptions) (string, clickhousego.Parameters, error) {
 	limit := opts.Limit
 	if limit <= 0 || limit > defaultLimit {
 		limit = defaultLimit
 	}
 
-	direction, beyond := "ASC", ">"
+	direction := "ASC"
 	if opts.NewestFirst {
-		direction, beyond = "DESC", "<"
+		direction = "DESC"
 	}
 	// Every scope names its Work Caller; the empty one names no Work.
 	params := clickhousego.Parameters{"work_caller": opts.WorkCaller.String()}
-	filters := []string{"Timestamp >= now64(9) - INTERVAL 7 DAY", "ResourceAttributes['talgent.work_caller'] = {work_caller:String}", "ResourceAttributes['talgent.work_caller'] != ''"}
+	filters := []string{"WorkCaller = {work_caller:String}", "WorkCaller != ''", "Timestamp >= now64(9) - INTERVAL 7 DAY"}
 	switch scope {
 	case spanScopeWorkCaller:
 		for _, attribute := range []struct{ name, value string }{
@@ -107,55 +129,36 @@ func buildSpanListQuery(scope spanListScope, opts query.SpanListOptions) (string
 		}
 		if opts.WorkIDs != nil {
 			params["work_ids"] = stringArrayParam(opts.WorkIDs)
-			filters = append(filters, "has({work_ids:Array(String)}, ResourceAttributes['talgent.agent_work_id'])")
+			filters = append(filters, "AgentWorkId IN {work_ids:Array(String)}")
 		}
 	default:
 		params["agent_work_id"] = strings.TrimSpace(opts.AgentWorkID)
-		filters = append(filters, "ResourceAttributes['talgent.agent_work_id'] = {agent_work_id:String}")
+		filters = append(filters, "AgentWorkId = {agent_work_id:String}")
 	}
 	if opts.AfterCursor != "" {
-		start, evidenceID, err := decodeEvidenceCursor(opts.AfterCursor)
+		after, err := afterCursorFilter(opts.AfterCursor, opts.NewestFirst, "TraceId", "SpanId", params)
 		if err != nil {
 			return "", nil, err
 		}
-		params["after_time"] = start.UTC().Format("2006-01-02 15:04:05.999999999")
-		params["after_id"] = evidenceID
-		filters = append(filters, fmt.Sprintf(`(Timestamp %[1]s {after_time:DateTime64(9, 'UTC')}
-	OR (Timestamp = {after_time:DateTime64(9, 'UTC')} AND concat(TraceId, ':', SpanId) %[1]s {after_id:String}))`, beyond))
+		filters = append(filters, after...)
 	}
 
 	q := fmt.Sprintf(`
-		SELECT DISTINCT
-			SpanId, TraceId, ParentSpanId,
-			ResourceAttributes['talgent.agent_work_id'],
-			SpanName, SpanKind,
-			Timestamp, Timestamp + INTERVAL Duration NANOSECOND,
-			toInt64(Duration),
-			StatusCode, StatusMessage,
-			mapSort(SpanAttributes), mapSort(ResourceAttributes),
-            talgent_span_category(SpanName, SpanAttributes)
-		FROM otel_traces
+		SELECT %s
+		FROM native_spans
 		WHERE %s
-		ORDER BY Timestamp %[2]s, concat(TraceId, ':', SpanId) %[2]s
-		LIMIT %[3]d`, strings.Join(filters, "\n\t\tAND "), direction, limit+1)
+		ORDER BY Timestamp %[3]s, TraceId %[3]s, SpanId %[3]s
+		LIMIT %[4]d`, spanColumns, strings.Join(filters, "\n\t\tAND "), direction, limit+1)
 	return q, params, nil
 }
 
 func (r *Repository) GetByIdentity(ctx context.Context, identity query.SpanIdentity) (*query.Span, error) {
 	const q = `
-		SELECT DISTINCT
-			SpanId, TraceId, ParentSpanId,
-			ResourceAttributes['talgent.agent_work_id'],
-			SpanName, SpanKind,
-			Timestamp, Timestamp + INTERVAL Duration NANOSECOND,
-			toInt64(Duration),
-			StatusCode, StatusMessage,
-			mapSort(SpanAttributes), mapSort(ResourceAttributes),
-            talgent_span_category(SpanName, SpanAttributes)
-		FROM otel_traces
-		WHERE ResourceAttributes['talgent.work_caller'] = ? AND ResourceAttributes['talgent.work_caller'] != ''
+		SELECT ` + spanColumns + `
+		FROM native_spans
+		WHERE WorkCaller = ? AND WorkCaller != ''
 		  AND TraceId = ? AND SpanId = ?
-		  AND (? = '' OR ResourceAttributes['talgent.agent_work_id'] = ?)
+		  AND (? = '' OR AgentWorkId = ?)
 		  AND Timestamp >= now64(9) - INTERVAL 7 DAY
 		LIMIT 1`
 	rows, err := r.db.Query(ctx, q, identity.WorkCaller.String(), identity.TraceID, identity.SpanID, identity.AgentWorkID, identity.AgentWorkID)
@@ -210,7 +213,7 @@ func scanSpans(rows driver.Rows) ([]*query.Span, error) {
 		sp.RuntimePurpose = scope.RuntimePurpose
 		sp.OwnerContext = scope.OwnerContext
 		sp.OwnerID = scope.OwnerID
-		if cursor, err := encodeEvidenceCursor(sp.StartTime, sp.TraceID+":"+sp.SpanID); err == nil {
+		if cursor, err := encodeEvidenceCursor(sp.StartTime, sp.TraceID, sp.SpanID); err == nil {
 			sp.Cursor = cursor
 		}
 		out = append(out, &sp)
@@ -219,41 +222,6 @@ func scanSpans(rows driver.Rows) ([]*query.Span, error) {
 		return nil, err
 	}
 	return out, nil
-}
-
-type evidenceCursor struct {
-	StartTime string `json:"start_time"`
-	ID        string `json:"id"`
-}
-
-func encodeEvidenceCursor(startTime time.Time, evidenceID string) (string, error) {
-	payload, err := json.Marshal(evidenceCursor{
-		StartTime: startTime.UTC().Format(time.RFC3339Nano),
-		ID:        evidenceID,
-	})
-	if err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(payload), nil
-}
-
-func decodeEvidenceCursor(cursor string) (time.Time, string, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(cursor)
-	if err != nil {
-		return time.Time{}, "", fmt.Errorf("%w: %v", query.ErrInvalidSpanCursor, err)
-	}
-	var payload evidenceCursor
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return time.Time{}, "", fmt.Errorf("%w: %v", query.ErrInvalidSpanCursor, err)
-	}
-	start, err := time.Parse(time.RFC3339Nano, payload.StartTime)
-	if err != nil {
-		return time.Time{}, "", fmt.Errorf("%w: %v", query.ErrInvalidSpanCursor, err)
-	}
-	if payload.ID == "" {
-		return time.Time{}, "", fmt.Errorf("%w: evidence id is required", query.ErrInvalidSpanCursor)
-	}
-	return start, payload.ID, nil
 }
 
 func spanScopeFromAttributes(attrs map[string]string) query.Span {

@@ -136,18 +136,18 @@ fi
 
 bash "${ROOT_DIR}/scripts/deploy/apply-opensandbox.sh" "${rendered}"
 
-# The Collector creates the native tables the ClickHouse projections read. Its
-# pipeline has one copy, configs/otelcol/config.yaml; the rendered Deployment
-# carries its hash, so a change rolls the Pods.
+# The Collector writes native evidence into the tables the ClickHouse migration
+# defines, so the migration runs first. Its pipeline has one copy,
+# configs/otelcol/config.yaml; the rendered Deployment carries its hash, so a
+# change rolls the Pods.
+if [[ "${SKIP_CLICKHOUSE_MIGRATION}" != "1" ]]; then
+  bash "${ROOT_DIR}/scripts/deploy/bootstrap-clickhouse.sh"
+else
+  echo "skip ClickHouse migration because TALGENT_SKIP_CLICKHOUSE_MIGRATION=1" >&2
+fi
 kubectl -n "${NS}" create configmap otelcol-config --from-file=config.yaml="${ROOT_DIR}/configs/otelcol/config.yaml" --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "${rendered}" -l app.kubernetes.io/name=workbench-environment
 kubectl apply -f "${rendered}" -l app.kubernetes.io/name=otel-collector
 kubectl -n "${NS}" rollout status deployment/otel-collector --timeout=180s
-
-if [[ "${SKIP_CLICKHOUSE_MIGRATION}" != "1" ]]; then
-  CLICKHOUSE_WAIT_SECONDS="${CLICKHOUSE_WAIT_SECONDS:-120}" bash "${ROOT_DIR}/scripts/deploy/bootstrap-clickhouse.sh"
-else
-  echo "skip ClickHouse migration because TALGENT_SKIP_CLICKHOUSE_MIGRATION=1" >&2
-fi
 kubectl apply -f "${rendered}"
 kubectl -n "${NS}" rollout status deployment/controlplane --timeout=180s

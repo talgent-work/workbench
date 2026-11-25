@@ -10,16 +10,40 @@ import (
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 )
 
-// Keep the evidence identity identical to trace_logs_measurements_mv. It includes the
-// native sequence and timestamp; identical OTLP retries therefore share an ID.
-const logEvidenceID = `talgent_log_evidence_id(TraceId, Timestamp, Body, LogAttributes)`
+// eventLimit caps an event page.
+const eventLimit = 500
 
+// ListEvents reads a Work Caller's interaction events oldest first, in the
+// table's sort key order after the Work Caller.
 func (r *Repository) ListEvents(ctx context.Context, opts query.EventOptions) (*query.EventResult, error) {
+	limit := opts.Limit
+	if limit <= 0 || limit > eventLimit {
+		limit = eventLimit
+	}
+	events, next, err := readEvidencePage(ctx, opts.AfterCursor, limit, func(ctx context.Context, after string) ([]listedEvent, error) {
+		opts.AfterCursor = after
+		statement, params, err := buildEventListQuery(opts, limit)
+		if err != nil {
+			return nil, err
+		}
+		return r.readEvents(ctx, statement, params)
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := &query.EventResult{Events: make([]query.NativeEvent, len(events)), NextCursor: next}
+	for i, event := range events {
+		result.Events[i] = event.NativeEvent
+	}
+	return result, nil
+}
+
+func buildEventListQuery(opts query.EventOptions, limit int) (string, clickhousego.Parameters, error) {
 	// Every scope names its Work Caller; the empty one names no Work.
 	params := clickhousego.Parameters{"work_caller": opts.WorkCaller.String()}
-	filters := []string{"ResourceAttributes['talgent.work_caller'] = {work_caller:String}", "ResourceAttributes['talgent.work_caller'] != ''", "Timestamp >= now64(9) - INTERVAL 7 DAY"}
+	filters := []string{"WorkCaller = {work_caller:String}", "WorkCaller != ''", "Timestamp >= now64(9) - INTERVAL 7 DAY"}
 	for _, f := range []struct{ value, name, column string }{
-		{opts.AgentWorkID, "session_id", "ResourceAttributes['talgent.agent_work_id']"},
+		{opts.AgentWorkID, "session_id", "AgentWorkId"},
 		{opts.TraceID, "trace_id", "TraceId"}, {opts.CallID, "call_id", "LogAttributes['tool_use_id']"},
 	} {
 		if f.value != "" {
@@ -36,44 +60,52 @@ func (r *Repository) ListEvents(ctx context.Context, opts query.EventOptions) (*
 		filters = append(filters, "Timestamp < {end_time:DateTime64(9, 'UTC')}")
 	}
 	if opts.AfterCursor != "" {
-		at, id, err := decodeEvidenceCursor(opts.AfterCursor)
+		after, err := afterCursorFilter(opts.AfterCursor, false, "SessionId", "EventSequence", params)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
-		params["after_time"] = at.UTC().Format("2006-01-02 15:04:05.999999999")
-		params["after_id"] = id
-		filters = append(filters, "(Timestamp, evidence_id) > ({after_time:DateTime64(9, 'UTC')}, {after_id:String})")
+		filters = append(filters, after...)
 	}
-	limit := opts.Limit
-	if limit <= 0 || limit > 500 {
-		limit = 500
-	}
-	statement := fmt.Sprintf(`SELECT DISTINCT %s AS evidence_id, Timestamp, TraceId, SpanId, Body, mapSort(LogAttributes), mapSort(ResourceAttributes)
- FROM otel_logs WHERE %s ORDER BY Timestamp, evidence_id LIMIT %d`, logEvidenceID, strings.Join(filters, " AND "), limit+1)
+	// Keep the evidence identity identical to the event measurement views.
+	return fmt.Sprintf(`SELECT talgent_event_evidence_id(SessionId, EventSequence, Timestamp), SessionId, EventSequence,
+ Timestamp, TraceId, SpanId, Body, LogAttributes, ResourceAttributes
+ FROM native_events WHERE %s ORDER BY Timestamp, SessionId, EventSequence LIMIT %d`, strings.Join(filters, " AND "), limit+1), params, nil
+}
+
+func (r *Repository) readEvents(ctx context.Context, statement string, params clickhousego.Parameters) ([]listedEvent, error) {
 	rows, err := r.db.Query(clickhousego.Context(ctx, clickhousego.WithParameters(params)), statement)
 	if err != nil {
 		return nil, oops.With("operation", "trace.events").Wrap(err)
 	}
 	defer rows.Close()
-	result := &query.EventResult{}
+	var read []listedEvent
 	for rows.Next() {
-		var e query.NativeEvent
-		if err := rows.Scan(&e.ID, &e.Timestamp, &e.TraceID, &e.SpanID, &e.Body, &e.Attributes, &e.ResourceAttributes); err != nil {
+		var e listedEvent
+		var session, sequence string
+		if err := rows.Scan(&e.ID, &session, &sequence, &e.Timestamp, &e.TraceID, &e.SpanID, &e.Body, &e.Attributes, &e.ResourceAttributes); err != nil {
 			return nil, oops.With("operation", "trace.events").Wrap(err)
 		}
 		e.Name = e.Attributes["event.name"]
 		e.WorkCaller = query.ParseWorkCaller(e.ResourceAttributes["talgent.work_caller"])
 		e.WorkKey = query.ParseWorkKey(e.ResourceAttributes["talgent.work_key"])
 		e.AgentWorkID = e.ResourceAttributes["talgent.agent_work_id"]
-		result.Events = append(result.Events, e)
+		if e.next, err = encodeEvidenceCursor(e.Timestamp, session, sequence); err != nil {
+			return nil, oops.With("operation", "trace.events").Wrap(err)
+		}
+		read = append(read, e)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, oops.With("operation", "trace.events").Wrap(err)
 	}
-	if len(result.Events) > limit {
-		last := result.Events[limit-1]
-		result.NextCursor, _ = encodeEvidenceCursor(last.Timestamp, last.ID)
-		result.Events = result.Events[:limit]
-	}
-	return result, nil
+	return read, nil
 }
+
+// listedEvent is an event a page read returns, with the cursor that resumes
+// after it.
+type listedEvent struct {
+	query.NativeEvent
+	next string
+}
+
+func (e listedEvent) identity() string { return e.ID }
+func (e listedEvent) cursor() string   { return e.next }

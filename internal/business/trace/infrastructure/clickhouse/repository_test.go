@@ -48,8 +48,8 @@ func TestBuildMetricBucketsQueryUsesMetricBucketsOnly(t *testing.T) {
 	if !strings.Contains(query, "trace_metric_buckets") {
 		t.Fatalf("query = %s, want trace_metric_buckets source", query)
 	}
-	if strings.Contains(query, "otel_traces") {
-		t.Fatalf("query = %s, must not scan raw otel_traces", query)
+	if strings.Contains(query, "native_spans") {
+		t.Fatalf("query = %s, must not scan raw native_spans", query)
 	}
 	for _, want := range []string{"agent_work_id = {agent_work_id:String}", "work_caller = {work_caller:String}", "work_caller != ''"} {
 		if !strings.Contains(query, want) {
@@ -126,18 +126,20 @@ func TestBuildMetricBucketsQuery_ApplicationReadsItsWorkCallersWorks(t *testing.
 	}
 }
 
-// A Work Caller's spans are listed by its attribution, newest first, narrowed
-// to resolved Works when a filter applies.
+// A Work Caller's spans are listed by its attribution, newest first, in the
+// table's sort key order after the Work Caller, narrowed to resolved Works when
+// a filter applies.
 func TestBuildSpanListQuery_WorkCallerScopeReadsItsWorks(t *testing.T) {
 	sql, params, err := buildSpanListQuery(spanScopeWorkCaller, query.SpanListOptions{WorkCaller: query.ApplicationCaller("application-1"), WorkIDs: []string{"work-1"}, NewestFirst: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"ResourceAttributes['talgent.work_caller'] = {work_caller:String}",
-		"ResourceAttributes['talgent.work_caller'] != ''",
-		"has({work_ids:Array(String)}, ResourceAttributes['talgent.agent_work_id'])",
-		"ORDER BY Timestamp DESC",
+		"FROM native_spans",
+		"WorkCaller = {work_caller:String}",
+		"WorkCaller != ''",
+		"AgentWorkId IN {work_ids:Array(String)}",
+		"ORDER BY Timestamp DESC, TraceId DESC, SpanId DESC",
 	} {
 		if !strings.Contains(sql, want) {
 			t.Fatalf("query = %s, want %q", sql, want)
@@ -145,6 +147,12 @@ func TestBuildSpanListQuery_WorkCallerScopeReadsItsWorks(t *testing.T) {
 	}
 	if strings.Contains(sql, "owner_context") || params["work_caller"] != "application:application-1" {
 		t.Fatalf("query = %s params = %v", sql, params)
+	}
+	// A page stops at its limit only while nothing merges the whole range.
+	for _, unwanted := range []string{"DISTINCT", "FINAL", "mapSort"} {
+		if strings.Contains(sql, unwanted) {
+			t.Fatalf("query = %s, a page must read in key order and stop at its limit", sql)
+		}
 	}
 }
 
@@ -163,11 +171,12 @@ func TestBuildSpanListQuery_OwnerScopeFiltersWorkCallerOwnerAndPurpose(t *testin
 	}
 
 	for _, want := range []string{
-		"ResourceAttributes['talgent.work_caller'] = {work_caller:String}",
+		"WorkCaller = {work_caller:String}",
 		"ResourceAttributes['talgent.owner_context'] = {owner_context:String}",
 		"ResourceAttributes['talgent.owner_id'] = {owner_id:String}",
 		"ResourceAttributes['talgent.runtime_purpose'] = {runtime_purpose:String}",
-		"Timestamp > {after_time:DateTime64(9, 'UTC')}",
+		"Timestamp >= {after_time:DateTime64(9, 'UTC')}",
+		"(Timestamp, TraceId, SpanId) > ({after_time:DateTime64(9, 'UTC')}, {after_first:String}, {after_second:String})",
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query = %s, want %q", query, want)
@@ -235,7 +244,7 @@ func TestClickHouseMigrationUsesDedicatedPrincipal(t *testing.T) {
 
 func mustEncodeSpanCursorForTest(t *testing.T) string {
 	t.Helper()
-	cursor, err := encodeEvidenceCursor(time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC), "1111111111111111")
+	cursor, err := encodeEvidenceCursor(time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC), "trace-1", "1111111111111111")
 	if err != nil {
 		t.Fatalf("encode cursor: %v", err)
 	}
