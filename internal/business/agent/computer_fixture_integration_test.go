@@ -12,12 +12,11 @@ import (
 	"github.com/talgent-work/workbench/internal/business/computer"
 )
 
-// testCloud is the Cloud of a test cluster whose quota is "executions" in
-// "sandboxes"; each run takes one CPU and 1Gi.
-func testCloud(cpu, memory, pods string) computer.Config {
+// testCloud is the Cloud of a test cluster whose quota, "executions" in
+// "sandboxes", is its Capacity; each run takes one CPU and 1Gi.
+func testCloud() computer.Config {
 	return computer.Config{ControlToken: "computer", VerificationURI: "https://workbench.test/computers/connect", Cloud: computer.CloudConfig{
 		ID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Name: "Test Cloud",
-		Capacity:  map[string]string{"requests.cpu": cpu, "requests.memory": memory, "pods": pods},
 		Namespace: "sandboxes", QuotaName: "executions",
 		Demand: map[string]string{"requests.cpu": "1", "requests.memory": "1Gi"},
 	}}

@@ -13,10 +13,11 @@ import (
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
 )
 
-// ClusterQuota supplies, for a Cloud, whether its cluster's quota fits one
-// more run now. It is a preflight fact, not a reservation.
-type ClusterQuota interface {
-	FitsRun(ctx context.Context) (bool, error)
+// CloudCapacity supplies this cluster's Cloud Capacity as its execution quota
+// gives it now: the platform sets a Cloud's Capacity there, and the Cloud's
+// Desks reserve within it.
+type CloudCapacity interface {
+	Capacity(ctx context.Context) (domain.Room, error)
 }
 
 // Queries reads Computers and Desks for listing.
@@ -39,7 +40,7 @@ type Application struct {
 	computers     domain.ComputerRepository
 	desks         domain.DeskRepository
 	transactions  transaction.Transactor
-	quota         ClusterQuota
+	capacity      CloudCapacity
 	queries       Queries
 	registrations Registrations
 	connections   Connections
@@ -54,11 +55,11 @@ type Application struct {
 
 // Dependencies groups what Computer's use cases consume.
 type Dependencies struct {
-	Computers    domain.ComputerRepository
-	Desks        domain.DeskRepository
-	Transactions transaction.Transactor
-	Quota        ClusterQuota
-	Queries      Queries
+	Computers     domain.ComputerRepository
+	Desks         domain.DeskRepository
+	Transactions  transaction.Transactor
+	CloudCapacity CloudCapacity
+	Queries       Queries
 	// Registrations holds registrations until they are approved and redeemed.
 	Registrations Registrations
 	// Connections tells which Managed Computers the Computer Gateway holds.
@@ -99,7 +100,7 @@ func NewApplication(deps Dependencies) *Application {
 	if removals == nil {
 		removals = noRemovals{}
 	}
-	return &Application{seatings: seatings, presences: presences, removals: removals, logger: logger, computers: deps.Computers, desks: deps.Desks, transactions: deps.Transactions, quota: deps.Quota, queries: deps.Queries, registrations: deps.Registrations, connections: deps.Connections, cloud: deps.Cloud, minimum: deps.MinimumVersion, now: now}
+	return &Application{seatings: seatings, presences: presences, removals: removals, logger: logger, computers: deps.Computers, desks: deps.Desks, transactions: deps.Transactions, capacity: deps.CloudCapacity, queries: deps.Queries, registrations: deps.Registrations, connections: deps.Connections, cloud: deps.Cloud, minimum: deps.MinimumVersion, now: now}
 }
 
 // attempts bounds retries of a change that lost a concurrent update of the

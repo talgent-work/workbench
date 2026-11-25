@@ -1,11 +1,12 @@
-// Package cluster supplies a Cloud's admission with whether its cluster's
-// quota fits one more run.
+// Package cluster supplies a Cloud's Capacity from its cluster's execution
+// quota.
 package cluster
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/samber/oops"
 	corev1 "k8s.io/api/core/v1"
@@ -14,22 +15,24 @@ import (
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 
 	"github.com/talgent-work/workbench/internal/business/computer/application"
+	"github.com/talgent-work/workbench/internal/business/computer/domain"
 )
 
 var ErrQuotaNotReady = errors.New("computer: execution resource quota is not ready")
 
-// Quota checks a namespace-wide compute quota against one run's complete
-// resource demand, including sidecars and runtime overhead. This is a
-// preflight snapshot, not a reservation: the Cloud's Desks reserve room, and
-// Kubernetes still enforces the quota when compute is created, since services
-// share it.
+// Quota reads a Cloud's Capacity from the namespace-wide quota that holds its
+// runs, the one place the platform sets it: the quota's requested compute,
+// and how many runs every dimension it limits fits, sidecars and runtime
+// overhead included. The Cloud's Desks reserve within it, since the quota's
+// own usage lags runs admitted but not yet created; Kubernetes still enforces
+// it when compute is created.
 type Quota struct {
 	quotas typedcorev1.ResourceQuotaInterface
 	name   string
 	demand corev1.ResourceList
 }
 
-var _ application.ClusterQuota = (*Quota)(nil)
+var _ application.CloudCapacity = (*Quota)(nil)
 
 func NewQuota(quotas typedcorev1.ResourceQuotaInterface, name string, demand corev1.ResourceList) (*Quota, error) {
 	if quotas == nil || name == "" {
@@ -51,48 +54,51 @@ func NewQuota(quotas typedcorev1.ResourceQuotaInterface, name string, demand cor
 	return &Quota{quotas: quotas, name: name, demand: copied}, nil
 }
 
-// FitsRun reports whether the quota fits one more run now.
-func (c *Quota) FitsRun(ctx context.Context) (bool, error) {
+// Capacity is the room the quota gives runs now.
+func (c *Quota) Capacity(ctx context.Context) (domain.Room, error) {
 	quota, err := c.quotas.Get(ctx, c.name, metav1.GetOptions{})
 	if err != nil {
-		return false, oops.With("quota", c.name).Wrap(err)
+		return domain.Room{}, oops.With("quota", c.name).Wrap(err)
 	}
 	// Without the Pod's scope predicates a scoped quota is not authoritative for
 	// this request. Runtime must supply the namespace-wide execution quota.
 	if len(quota.Spec.Scopes) > 0 || quota.Spec.ScopeSelector != nil {
-		return false, ErrQuotaNotReady
+		return domain.Room{}, ErrQuotaNotReady
 	}
 	for _, key := range []corev1.ResourceName{corev1.ResourceRequestsCPU, corev1.ResourceRequestsMemory} {
 		if _, ok := quota.Spec.Hard[key]; !ok {
-			return false, ErrQuotaNotReady
-		}
-	}
-	for key, required := range c.demand {
-		hard, limited := quota.Spec.Hard[key]
-		if !limited {
-			continue
-		}
-		observedHard, ready := quota.Status.Hard[key]
-		used, accounted := quota.Status.Used[key]
-		if !ready || !accounted {
-			return false, ErrQuotaNotReady
-		}
-		// A quota change may not yet be reconciled. Honor whichever bound is lower.
-		if observedHard.Cmp(hard) < 0 {
-			hard = observedHard
-		}
-		used.Add(required)
-		if used.Cmp(hard) > 0 {
-			return false, nil
+			return domain.Room{}, ErrQuotaNotReady
 		}
 	}
 	// A limit not represented in the complete demand cannot be checked safely.
 	for _, key := range []corev1.ResourceName{corev1.ResourceLimitsCPU, corev1.ResourceLimitsMemory} {
 		if _, limited := quota.Spec.Hard[key]; limited {
 			if _, known := c.demand[key]; !known {
-				return false, ErrQuotaNotReady
+				return domain.Room{}, ErrQuotaNotReady
 			}
 		}
 	}
-	return true, nil
+	hard := make(corev1.ResourceList, len(c.demand))
+	runs := int64(math.MaxInt64)
+	for key, required := range c.demand {
+		bound, limited := quota.Spec.Hard[key]
+		if !limited {
+			continue
+		}
+		// Kubernetes admits against the hard limits its quota controller has
+		// reconciled; a change not yet reconciled honors the lower bound.
+		observed, ready := quota.Status.Hard[key]
+		if !ready {
+			return domain.Room{}, ErrQuotaNotReady
+		}
+		if observed.Cmp(bound) < 0 {
+			bound = observed
+		}
+		hard[key] = bound
+		if required.Sign() > 0 {
+			runs = min(runs, bound.MilliValue()/required.MilliValue())
+		}
+	}
+	cpu, memory := hard[corev1.ResourceRequestsCPU], hard[corev1.ResourceRequestsMemory]
+	return domain.Room{MilliCPU: cpu.MilliValue(), MemoryBytes: memory.Value(), Desks: max(runs, 0)}, nil
 }

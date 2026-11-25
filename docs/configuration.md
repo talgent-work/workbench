@@ -157,8 +157,7 @@ Where Works run: this cluster's Cloud and people's Managed Computers.
 | `verification-uri` | `${COMPUTER_VERIFICATION_URI:http://localhost:3000/computers/connect}` | Where a person approves a Talgent Computer registration; base: `${WORKBENCH_ORIGIN}/computers/connect` |
 | `minimum-version` | `${COMPUTER_MINIMUM_VERSION:}` | Oldest Talgent Computer release (`X.Y.Z`) that may take a run; empty admits all. Set only a release published to npm, at or below the Computer Gateway's `release-version`. |
 | `cloud.id`, `cloud.name` | `${COMPUTER_CLOUD_ID:01a19bc3-075a-7c57-b42b-7fdf73b611ed}`, `${COMPUTER_CLOUD_NAME:Talgent Cloud}` | The Cloud's identity, which Works keep for good, and its name |
-| `cloud.capacity` | `requests.cpu: "8"`, `requests.memory: 12Gi`, `pods: "64"` | The room runs get; keep it with ResourceQuota `agent-executions` |
-| `cloud.namespace`, `cloud.quota-name` | `${SANDBOX_NAMESPACE:talgent-sandbox}`, `agent-executions` | The ResourceQuota each admission checks; it must be in the sandboxes' namespace, so it counts only their Pods |
+| `cloud.namespace`, `cloud.quota-name` | `${SANDBOX_NAMESPACE:talgent-sandbox}`, `agent-executions` | The ResourceQuota that is the Cloud's Capacity, read at each admission; it must be in the sandboxes' namespace, so it counts only their Pods |
 | `cloud.demand` | requests 600m CPU and 960Mi, limits 2250m and 2368Mi, 1 Pod | Everything the quota charges for one run: the sandbox container, its egress sidecar and the sandbox RuntimeClass's Pod overhead (250m/320Mi for the bundled `kata-qemu-runtime-rs`); change it with the RuntimeClass |
 
 ### agent-computer

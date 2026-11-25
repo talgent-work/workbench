@@ -37,7 +37,7 @@ func newManaged(t *testing.T) *managedFixture {
 	server := miniredis.RunT(t)
 	rdb := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
 	f := &managedFixture{memory: &memory{computers: map[string]domain.Computer{}, desks: map[string]domain.Desk{}}, redis: server, presences: &presences{}, now: time.Now().UTC()}
-	f.app = application.NewApplication(application.Dependencies{Computers: f.memory, Desks: desks{f.memory}, Transactions: inline{}, Quota: quota(true), Queries: queries{f.memory},
+	f.app = application.NewApplication(application.Dependencies{Computers: f.memory, Desks: desks{f.memory}, Transactions: inline{}, CloudCapacity: &quota{room: oneRun}, Queries: queries{f.memory},
 		Registrations: registration.NewStore(rdb), Connections: infrastructure.NewGatewayConnections(rdb), Presences: f.presences, Now: func() time.Time { return f.now }})
 	return f
 }

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -161,9 +162,9 @@ type RunAdmission struct {
 	StarterID   string
 	// Demand is the room the run needs, as this Computer's kind decides.
 	Demand Room
-	// QuotaFits reports, for a Cloud, whether its cluster's quota fits the
-	// demand now.
-	QuotaFits bool
+	// CloudCapacity is, for a Cloud, the Capacity its cluster's execution
+	// quota gives runs now; the platform sets a Cloud's Capacity there.
+	CloudCapacity Room
 	// MinimumVersion is the oldest Talgent Computer a Managed Computer may
 	// take a run on.
 	MinimumVersion string
@@ -184,10 +185,11 @@ func (c *Computer) RunDemand(cloudRun Room) Room {
 
 // AdmitRun admits a run: it seats the run when this Computer is usable by its
 // starter, reachable, current enough, provides the sandbox a run asking for
-// it needs, fits its cluster's quota for a Cloud
-// and has room, adding the demand to Occupied; when full it queues the run or
-// rejects it by its Admission Policy; it rejects it otherwise. A seated or
-// queued run gets its Desk.
+// it needs and has room, adding the demand to Occupied; when full it queues
+// the run or rejects it by its Admission Policy; it rejects it otherwise. A
+// seated or queued run gets its Desk. A Cloud first takes the Capacity its
+// cluster's quota gives now, and while a lower one waits for Desks to leave
+// it seats nothing beyond it.
 func (c *Computer) AdmitRun(run RunAdmission) (*Desk, Rejection, error) {
 	if run.Now.IsZero() {
 		return nil, "", fmt.Errorf("%w: admission time is required", ErrInvalidDesk)
@@ -198,10 +200,10 @@ func (c *Computer) AdmitRun(run RunAdmission) (*Desk, Rejection, error) {
 	if rejection := c.refusal(run); rejection != "" {
 		return nil, rejection, nil
 	}
-	if c.Kind == KindCloud && !run.QuotaFits {
-		return nil, RejectedFull, nil
+	if err := c.takeCloudCapacity(run.CloudCapacity); err != nil {
+		return nil, "", err
 	}
-	if c.Occupied.add(run.Demand).within(c.Capacity) {
+	if room := c.Occupied.add(run.Demand); room.within(c.Capacity) && (c.Kind != KindCloud || room.within(run.CloudCapacity)) {
 		desk, err := openDesk(run, c.ID, DeskStateOccupied)
 		if err != nil {
 			return nil, "", err
@@ -218,6 +220,18 @@ func (c *Computer) AdmitRun(run RunAdmission) (*Desk, Rejection, error) {
 	}
 	c.WaitingLine = append(c.WaitingLine, WaitingDesk{DeskID: desk.ID, Demand: run.Demand})
 	return desk, "", nil
+}
+
+// takeCloudCapacity takes the Capacity a Cloud's cluster quota gives now, or
+// defers it while Desks occupy more (Lower Cloud Capacity).
+func (c *Computer) takeCloudCapacity(capacity Room) error {
+	if c.Kind != KindCloud || capacity == c.Capacity {
+		return nil
+	}
+	if err := c.SetRoomRules(capacity, c.Policy); err != nil && !errors.Is(err, ErrCapacityBelowOccupied) {
+		return err
+	}
+	return nil
 }
 
 func (c *Computer) refusal(run RunAdmission) Rejection {

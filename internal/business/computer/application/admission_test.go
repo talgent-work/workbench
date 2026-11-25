@@ -2,7 +2,6 @@ package application_test
 
 import (
 	"context"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -81,19 +80,21 @@ type inline struct{}
 
 func (inline) Within(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
 
-type quota bool
+// quota is the Cloud Capacity a test cluster's quota gives now.
+type quota struct{ room domain.Room }
 
-func (q quota) FitsRun(context.Context) (bool, error) { return bool(q), nil }
+func (q *quota) Capacity(context.Context) (domain.Room, error) { return q.room, nil }
 
 var oneRun = domain.Room{MilliCPU: 1000, MemoryBytes: 1 << 30, Desks: 1}
 
-func newApp(t *testing.T, capacity domain.Room) (*application.Application, *memory) {
+func newApp(t *testing.T, capacity domain.Room) (*application.Application, *memory, *quota) {
 	t.Helper()
 	m := &memory{computers: map[string]domain.Computer{}, desks: map[string]domain.Desk{}}
-	app := application.NewApplication(application.Dependencies{Computers: m, Desks: desks{m}, Transactions: inline{}, Quota: quota(true),
-		Cloud: application.Cloud{ID: cloudID, Name: "Cloud", Capacity: capacity, RunDemand: oneRun}, Now: time.Now})
-	require.NoError(t, app.EnsureCloud(context.Background(), slog.Default()))
-	return app, m
+	q := &quota{room: capacity}
+	app := application.NewApplication(application.Dependencies{Computers: m, Desks: desks{m}, Transactions: inline{}, CloudCapacity: q,
+		Cloud: application.Cloud{ID: cloudID, Name: "Cloud", RunDemand: oneRun}, Now: time.Now})
+	require.NoError(t, app.EnsureCloud(context.Background()))
+	return app, m, q
 }
 
 func admit(t *testing.T, app *application.Application) (string, application.Admission) {
@@ -104,34 +105,39 @@ func admit(t *testing.T, app *application.Application) (string, application.Admi
 	return desk, admission
 }
 
-// A lowered Cloud Capacity is refused while Desks occupy more, and taken up
-// once enough of them leave.
-func TestCloudTakesUpALowerCapacityOnceDesksLeave(t *testing.T) {
+// The Cloud admits within the Capacity its cluster's quota gives at each
+// admission: a raised quota seats more runs at once, a lowered one seats
+// nothing beyond it and is taken up once enough Desks have left.
+func TestCloudAdmitsWithinItsClusterQuota(t *testing.T) {
 	two := domain.Room{MilliCPU: 2000, MemoryBytes: 2 << 30, Desks: 2}
-	app, m := newApp(t, two)
-	first, _ := admit(t, app)
-	second, _ := admit(t, app)
-
-	// The platform lowers the Cloud to one run while two are seated.
-	lowered := application.NewApplication(application.Dependencies{Computers: m, Desks: desks{m}, Transactions: inline{}, Quota: quota(true),
-		Cloud: application.Cloud{ID: cloudID, Name: "Cloud", Capacity: oneRun, RunDemand: oneRun}, Now: time.Now})
-	require.NoError(t, lowered.EnsureCloud(context.Background(), slog.Default()))
-	require.Equal(t, two, m.computers[cloudID].Capacity, "capacity never drops below occupied room")
-
-	require.NoError(t, lowered.LeaveDesk(context.Background(), first))
-	require.Equal(t, oneRun, m.computers[cloudID].Capacity, "the lower capacity applies once the room fits")
-	_, admission := admit(t, lowered)
-	require.Equal(t, application.AnswerRejected, admission.Answer)
+	app, m, q := newApp(t, oneRun)
+	first, admission := admit(t, app)
+	require.Equal(t, application.AnswerSeated, admission.Answer)
+	_, admission = admit(t, app)
 	require.Equal(t, domain.RejectedFull, admission.Rejection)
 
-	require.NoError(t, lowered.LeaveDesk(context.Background(), second))
-	require.NoError(t, lowered.LeaveDesk(context.Background(), second), "leaving again does nothing")
+	q.room = two
+	second, admission := admit(t, app)
+	require.Equal(t, application.AnswerSeated, admission.Answer, "a raised quota seats the next run at once")
+	require.Equal(t, two, m.computers[cloudID].Capacity)
+
+	q.room = oneRun
+	require.NoError(t, app.LeaveDesk(context.Background(), first))
+	_, admission = admit(t, app)
+	require.Equal(t, application.AnswerRejected, admission.Answer, "the lowered quota has no room left")
+	require.Equal(t, domain.RejectedFull, admission.Rejection)
+
+	require.NoError(t, app.LeaveDesk(context.Background(), second))
+	require.NoError(t, app.LeaveDesk(context.Background(), second), "leaving again does nothing")
 	require.Equal(t, domain.Room{}, m.computers[cloudID].Occupied)
+	_, admission = admit(t, app)
+	require.Equal(t, application.AnswerSeated, admission.Answer)
+	require.Equal(t, oneRun, m.computers[cloudID].Capacity, "the lower Capacity applies once the room fits")
 }
 
 // Each answer names what the admitting Computer is, a repeated one too.
 func TestRepeatedAdmissionOfADeskReturnsItsAnswer(t *testing.T) {
-	app, m := newApp(t, oneRun)
+	app, m, _ := newApp(t, oneRun)
 	desk, admission := admit(t, app)
 	require.Equal(t, application.Admission{Answer: application.AnswerSeated, Kind: domain.KindCloud}, admission)
 	work := m.desks[desk].WorkID
@@ -147,8 +153,8 @@ func TestRepeatedAdmissionOfADeskReturnsItsAnswer(t *testing.T) {
 // as outdated; one at it seats the run.
 func TestAManagedComputerBelowTheMinimumVersionTakesNoRun(t *testing.T) {
 	m := &memory{computers: map[string]domain.Computer{}, desks: map[string]domain.Desk{}}
-	app := application.NewApplication(application.Dependencies{Computers: m, Desks: desks{m}, Transactions: inline{}, Quota: quota(true),
-		Cloud: application.Cloud{ID: cloudID, Name: "Cloud", Capacity: oneRun, RunDemand: oneRun}, MinimumVersion: "0.4.0", Now: time.Now})
+	app := application.NewApplication(application.Dependencies{Computers: m, Desks: desks{m}, Transactions: inline{}, CloudCapacity: &quota{room: oneRun},
+		Cloud: application.Cloud{ID: cloudID, Name: "Cloud", RunDemand: oneRun}, MinimumVersion: "0.4.0", Now: time.Now})
 	require.Equal(t, "0.4.0", app.MinimumVersion(), "the machine is told the minimum admission uses")
 	laptop := domain.Computer{ID: uuid.NewString(), Kind: domain.KindManaged, OwnerID: "owner", Name: "Laptop", Capacity: domain.Room{Desks: 2}, Policy: domain.AdmissionReject,
 		Presence: domain.Presence{Reachable: true}, Versions: domain.ReportedVersions{TalgentComputer: "0.3.9"}, State: domain.StateActive}

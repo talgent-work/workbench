@@ -62,11 +62,9 @@ type CloudConfig struct {
 	// ID is the Cloud's fixed identity, a UUID; Works keep it for good.
 	ID   string `json:"id" yaml:"id" toml:"id"`
 	Name string `json:"name" yaml:"name" toml:"name"`
-	// Capacity is the room the platform gives its runs: requests.cpu,
-	// requests.memory and pods.
-	Capacity map[string]string `json:"capacity" yaml:"capacity" toml:"capacity"`
 	// Namespace and QuotaName locate the cluster's execution quota, in the
-	// namespace where sandboxes run and which holds only them.
+	// namespace where sandboxes run and which holds only them. The quota is
+	// the Cloud's Capacity: the platform sets it there alone.
 	Namespace string `json:"namespace" yaml:"namespace" toml:"namespace"`
 	QuotaName string `json:"quota-name" yaml:"quota-name" toml:"quota-name"`
 	// Demand is everything the quota charges for one run's Pod; its requests
@@ -78,19 +76,14 @@ func (c CloudConfig) cloud() (application.Cloud, corev1.ResourceList, error) {
 	if uuid.Validate(c.ID) != nil || strings.TrimSpace(c.Name) == "" {
 		return application.Cloud{}, nil, errors.New("computer: the Cloud needs a UUID identity and a name")
 	}
-	capacity, err := quantities(c.Capacity, "capacity")
-	if err != nil {
-		return application.Cloud{}, nil, err
-	}
 	demand, err := quantities(c.Demand, "demand")
 	if err != nil {
 		return application.Cloud{}, nil, err
 	}
-	pods := capacity[corev1.ResourcePods]
+	cpu, memory := demand[corev1.ResourceRequestsCPU], demand[corev1.ResourceRequestsMemory]
 	return application.Cloud{
 		ID: c.ID, Name: c.Name,
-		Capacity:  room(capacity, pods.Value()),
-		RunDemand: room(demand, 1),
+		RunDemand: domain.Room{MilliCPU: cpu.MilliValue(), MemoryBytes: memory.Value(), Desks: 1},
 	}, demand, nil
 }
 
@@ -109,11 +102,6 @@ func quantities(raw map[string]string, what string) (corev1.ResourceList, error)
 		}
 	}
 	return list, nil
-}
-
-func room(list corev1.ResourceList, desks int64) domain.Room {
-	cpu, memory := list[corev1.ResourceRequestsCPU], list[corev1.ResourceRequestsMemory]
-	return domain.Room{MilliCPU: cpu.MilliValue(), MemoryBytes: memory.Value(), Desks: desks}
 }
 
 var Module = fx.Module("domain.computer",
@@ -166,7 +154,7 @@ func newApplication(deps dependencies) (*application.Application, error) {
 		return nil, err
 	}
 	return application.NewApplication(application.Dependencies{
-		Computers: deps.Computers, Desks: deps.Desks, Transactions: deps.Transactions, Quota: quota, Queries: deps.Queries,
+		Computers: deps.Computers, Desks: deps.Desks, Transactions: deps.Transactions, CloudCapacity: quota, Queries: deps.Queries,
 		Registrations: deps.Registrations, Connections: deps.Connections, Cloud: cloud, MinimumVersion: config.MinimumVersion, Now: deps.Now, Logger: deps.Logger,
 		Seatings: seatings(deps.Lifecycle, deps.Bus, deps.Logger), Presences: presences(deps.Lifecycle, deps.Bus, deps.Logger),
 		Removals: removals(deps.Lifecycle, deps.Bus, deps.Logger),
@@ -245,10 +233,8 @@ func sweepPresence(lc fx.Lifecycle, app *application.Application, logger *slog.L
 }
 
 // ensureCloud registers this cluster's Cloud before anything is admitted.
-func ensureCloud(lc fx.Lifecycle, app *application.Application, logger *slog.Logger) {
-	lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
-		return app.EnsureCloud(ctx, logger)
-	}})
+func ensureCloud(lc fx.Lifecycle, app *application.Application) {
+	lc.Append(fx.Hook{OnStart: app.EnsureCloud})
 }
 
 func registerHandlers(server connectrpc.Server, app *application.Application, config Config) error {

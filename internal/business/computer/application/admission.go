@@ -53,11 +53,11 @@ func (a *Application) AdmitRun(ctx context.Context, request AdmitRun) (Admission
 	if err != nil {
 		return Admission{}, err
 	}
-	// The cluster's quota is a supplied fact, read before admission so no
-	// transaction waits on the cluster.
-	quotaFits := false
+	// A Cloud's Capacity is a supplied fact, read from its cluster's quota
+	// before admission so no transaction waits on the cluster.
+	var cloudCapacity domain.Room
 	if computer.Kind == domain.KindCloud {
-		if quotaFits, err = a.quota.FitsRun(ctx); err != nil {
+		if cloudCapacity, err = a.capacity.Capacity(ctx); err != nil {
 			return Admission{}, err
 		}
 	}
@@ -70,7 +70,7 @@ func (a *Application) AdmitRun(ctx context.Context, request AdmitRun) (Admission
 			}
 			desk, rejection, err := computer.AdmitRun(domain.RunAdmission{
 				DeskID: request.DeskID, WorkID: request.WorkID, WorkOwnerID: request.WorkOwnerID, StarterID: request.StarterID, Sandbox: request.Sandbox,
-				Demand: computer.RunDemand(a.cloud.RunDemand), QuotaFits: quotaFits, MinimumVersion: a.minimum, Now: a.now(),
+				Demand: computer.RunDemand(a.cloud.RunDemand), CloudCapacity: cloudCapacity, MinimumVersion: a.minimum, Now: a.now(),
 			})
 			if err != nil {
 				return err
@@ -149,9 +149,6 @@ func (a *Application) LeaveDesk(ctx context.Context, deskID string) error {
 				return err
 			}
 			if err := computer.FreeDesk(vacated); err != nil {
-				return err
-			}
-			if err := a.applyCloudRules(computer); err != nil {
 				return err
 			}
 			if err := a.desks.Save(ctx, desk); err != nil {

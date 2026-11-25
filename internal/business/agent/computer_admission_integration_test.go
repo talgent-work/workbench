@@ -69,7 +69,8 @@ func startOneRoomCloudWith(t *testing.T, ctx context.Context, environments comma
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
+	// The quota gives the Cloud room for one run.
+	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("1"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
 	kube := fake.NewClientset(quota.DeepCopy())
 	port := &sessionCommandRecorder{}
@@ -78,7 +79,7 @@ func startOneRoomCloudWith(t *testing.T, ctx context.Context, environments comma
 	server := connecttest.NewFronted(t)
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return environments }), fx.Supply(domain.LeaseTerms{}, commandtest.CreationWaits), runs.option(),
-		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("1", "4Gi", "64")),
+		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud()),
 		mysqltest.Provide(t, "execution", db),
 		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return kube }),
@@ -186,16 +187,17 @@ func TestCloudSeatsOneRunPerRoomAndFreesItAfterRelease(t *testing.T) {
 	require.NotEqual(t, seated, second)
 }
 
-// A run the cluster's quota cannot fit is rejected with today's answer, and
-// holds no Desk.
+// A run beyond what the cluster's quota gives the Cloud is rejected with
+// today's answer, and holds no Desk; the quota the platform raises admits it.
 func TestCloudRejectsARunItsClusterQuotaCannotFit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	cloud := startOneRoomCloud(t, ctx)
 	definition := cloud.definition(t, ctx)
-	full := cloud.quota.DeepCopy()
-	full.Status.Used = full.Status.Hard.DeepCopy()
-	_, err := cloud.kube.CoreV1().ResourceQuotas("sandboxes").UpdateStatus(ctx, full, metav1.UpdateOptions{})
+	none := cloud.quota.DeepCopy()
+	none.Spec.Hard[corev1.ResourceRequestsCPU] = resource.MustParse("500m")
+	none.Status.Hard = none.Spec.Hard.DeepCopy()
+	_, err := cloud.kube.CoreV1().ResourceQuotas("sandboxes").Update(ctx, none, metav1.UpdateOptions{})
 	require.NoError(t, err)
 	_, err = cloud.create(ctx, definition, "work-a")
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
@@ -206,7 +208,7 @@ func TestCloudRejectsARunItsClusterQuotaCannotFit(t *testing.T) {
 	found, err := cloud.db.Table("computer").Cols("id").Where("kind = 'cloud'").Get(&computerID)
 	require.NoError(t, err)
 	require.True(t, found)
-	_, err = cloud.kube.CoreV1().ResourceQuotas("sandboxes").UpdateStatus(ctx, cloud.quota.DeepCopy(), metav1.UpdateOptions{})
+	_, err = cloud.kube.CoreV1().ResourceQuotas("sandboxes").Update(ctx, cloud.quota.DeepCopy(), metav1.UpdateOptions{})
 	require.NoError(t, err)
 	id, err := cloud.create(ctx, definition, "work-a")
 	require.NoError(t, err)
