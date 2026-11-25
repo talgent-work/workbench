@@ -5,13 +5,14 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { output, Pipe } from './support/execd-client.ts'
 import type { Decision, Inventory } from './support/gateway.ts'
 import { computerTarget, eventually, exists, SETUP_HOOK } from './support/targets.ts'
+import { portableProcessRules } from './support/platform.ts'
 
 // Reconciliation on reconnecting, driven through the Gateway protocol against the
 // executable: every connection opens a round in which nothing new is
 // reserved or started until the platform's decision for that round ends the
 // processes it names and removes the Works it names.
 
-describe('reconciliation on reconnecting', () => {
+describe('reconciliation on reconnecting', { skip: portableProcessRules }, () => {
   let target: Awaited<ReturnType<typeof computerTarget>>
   // What the stand-in platform decides on each connection; undefined leaves
   // the round pending for the test to decide.
@@ -120,7 +121,7 @@ describe('reconciliation on reconnecting', () => {
 
 // Each drop backs the machine's reconnection off further, so these run on a
 // machine of their own.
-describe('reconciliation as the platform announces it', () => {
+describe('reconciliation as the platform announces it', { skip: portableProcessRules }, () => {
   let target: Awaited<ReturnType<typeof computerTarget>>
   let decide: (inventory: Inventory) => Omit<Decision, 'round'> | undefined = () => ({})
   before(async () => { target = await computerTarget({ reconcile: (inventory) => decide(inventory) }) }, SETUP_HOOK)

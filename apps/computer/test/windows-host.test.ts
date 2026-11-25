@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { openPipe, type PipeInput, type PipeSink } from '../src/execd/pipe.ts'
 import { ProcessTable } from '../src/execd/processes.ts'
-import { findGitBash, namedPipe } from '../src/execd/windows-host.ts'
+import { findGitBash, namedPipe, WindowsHost } from '../src/execd/windows-host.ts'
 import { windowsLikeHost } from './support/windows-like-host.ts'
 import { removeScratch } from './support/platform.ts'
 
@@ -37,9 +37,10 @@ test('each run has its own named pipe', () => {
   assert.notEqual(namedPipe(dir, 1), namedPipe(`${dir}x`, 1))
 })
 
-// The Windows realization driven end to end, with a Unix socket for the pipe
+// The Windows realization driven end to end: on Windows for real, through a
+// named pipe, Git Bash and taskkill; elsewhere with a Unix socket for the pipe
 // and a process group for the tree.
-describe('Windows processes', { skip: process.platform === 'win32' ? 'the real realization runs in every suite there' : false }, () => {
+describe('Windows processes', () => {
   let dir: string
   let table: ProcessTable
   beforeEach(async () => {
@@ -48,7 +49,7 @@ describe('Windows processes', { skip: process.platform === 'win32' ? 'the real r
   })
   afterEach(() => removeScratch(dir))
 
-  const processTable = () => new ProcessTable({ stateRoot: join(dir, 'state'), shim: [process.execPath, SHIM], host: windowsLikeHost() })
+  const processTable = () => new ProcessTable({ stateRoot: join(dir, 'state'), shim: [process.execPath, SHIM], host: process.platform === 'win32' ? new WindowsHost() : windowsLikeHost() })
 
   function attach(id: string, on: ProcessTable = table) {
     const closed = new AbortController()
@@ -96,7 +97,7 @@ describe('Windows processes', { skip: process.platform === 'win32' ? 'the real r
     if (running?.kind === 'running') await until(() => !alive(running.started.pid))
   })
 
-  test('a running process is found again by a fresh table over the same state, then deleted', async () => {
+  test('a running process is found again by a fresh table over the same state', async () => {
     const id = await table.reserve('w-1', { cwd: dir, command: 'echo up; read x; echo "got-$x"' })
     const first = attach(id)
     await first.opened
@@ -112,15 +113,17 @@ describe('Windows processes', { skip: process.platform === 'win32' ? 'the real r
     input.binary(Buffer.from('\0x\n'))
     await until(() => second.stdout() === 'up\ngot-x\n')
     await until(() => second.ended())
+  })
 
-    const id2 = await again.reserve('w-1', { cwd: dir, command: 'echo held; exec sleep 30' })
-    const third = attach(id2, again)
-    await third.opened
-    await until(() => third.stdout() === 'held\n')
-    const held = await again.phase('w-1', id2)
-    assert.equal(await again.delete('w-1', id2), true)
+  test('a deleted process ends with its tree and is forgotten', async () => {
+    const id = await table.reserve('w-1', { cwd: dir, command: 'echo held; exec sleep 30' })
+    const pipe = attach(id)
+    await pipe.opened
+    await until(() => pipe.stdout() === 'held\n')
+    const held = await table.phase('w-1', id)
+    assert.equal(await table.delete('w-1', id), true)
     if (held?.kind === 'running') await until(() => !alive(held.started.pid))
-    assert.equal(await again.phase('w-1', id2), undefined)
+    assert.equal(await table.phase('w-1', id), undefined)
   })
 })
 

@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { output, Pipe, type Frame } from './support/execd-client.ts'
-import { posixOnly } from './support/platform.ts'
+import { portableProcessRules } from './support/platform.ts'
 import { computerTarget, eventually, execdTarget, exists, SETUP_HOOK, type Target } from './support/targets.ts'
 
 // execd's pipe semantics, run against OpenSandbox execd itself when
@@ -18,7 +18,7 @@ if (binary !== undefined && binary !== '') targets.unshift({ name: 'execd', open
 const isExit = (frame: Frame) => frame.type === 'exit'
 
 for (const { name, open } of targets) {
-  describe(`execd pipe: ${name}`, () => {
+  describe(`execd pipe: ${name}`, { skip: portableProcessRules }, () => {
     let target: Target
     const created: string[] = []
     before(async () => { target = await open() }, SETUP_HOOK)
@@ -38,7 +38,7 @@ for (const { name, open } of targets) {
       return pipe
     }
 
-    test('a reservation starts on attach; output, stdin, stderr, signal and exit', { skip: posixOnly('a signal ends the process tree on Windows; no trap sees it') }, async () => {
+    test('a reservation starts on attach; output, stdin, stderr, signal and exit', async () => {
       const id = await create(`trap 'echo got-int; exit 5' INT; echo ready; while read l; do echo "L:$l"; echo "E:$l" >&2; done`)
       assert.deepEqual(await target.client.status(id), { status: 200, running: false, offset: 0 })
       const pipe = await attach(id, 0)
@@ -134,7 +134,7 @@ for (const { name, open } of targets) {
       await pipe.until(isExit)
     })
 
-    test('delete kills the process group and is not found afterwards', { skip: posixOnly('Git Bash\'s $$ is not a Windows pid') }, async () => {
+    test('delete kills the process group and is not found afterwards', async () => {
       const id = await create('echo $$; exec sleep 30')
       const pipe = await attach(id, 0)
       const seen = await pipe.until((frame) => frame.type === 'stdout')

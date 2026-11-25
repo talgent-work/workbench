@@ -3,13 +3,14 @@ import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { computerTarget, exists, SETUP_HOOK } from './support/targets.ts'
+import { portableProcessRules } from './support/platform.ts'
 
 // Earlier releases kept copies of a Work's inputs in its inputs/ directory,
 // read-only, with a download record per Work. The first start after the
 // upgrade removes those copies and records once; from then on inputs/
 // belongs to the Work's Agent.
 
-describe('input copies of earlier releases', () => {
+describe('input copies of earlier releases', { skip: portableProcessRules }, () => {
   let target: Awaited<ReturnType<typeof computerTarget>>
   before(async () => { target = await computerTarget() }, SETUP_HOOK)
   after(() => target?.close(), SETUP_HOOK)

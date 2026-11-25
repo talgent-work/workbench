@@ -6,6 +6,7 @@ import { after, before, describe, test } from 'node:test'
 import { output, Pipe } from './support/execd-client.ts'
 import { computerTarget, SETUP_HOOK } from './support/targets.ts'
 import { Upstream } from './support/upstream.ts'
+import { portableProcessRules } from './support/platform.ts'
 
 const IDENTITY_TOKEN = 'agent-identity-token'
 
@@ -56,7 +57,7 @@ async function files(root: string): Promise<string[]> {
 
 // One machine serves every case; starting it, which copies the bundled
 // Claude Code, is the suite's setup rather than any case's.
-describe('the executable behind its Gateway', () => {
+describe('the executable behind its Gateway', { skip: portableProcessRules }, () => {
   before(async () => {
     upstream = new Upstream()
     await upstream.listen()

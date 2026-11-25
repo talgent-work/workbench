@@ -11,7 +11,7 @@ import { ExecdService } from '../src/execd/service.ts'
 import { SHIM_ARG } from '../src/execd/shim.ts'
 import { Works } from '../src/execd/works.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
-import { posixOnly, removeScratch } from './support/platform.ts'
+import { removeScratch, portableProcessRules } from './support/platform.ts'
 
 const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url))
 
@@ -75,7 +75,7 @@ async function until(check: () => boolean, timeoutMs = 10_000): Promise<void> {
   }
 }
 
-test('calls of a Work need its token; unknown Works and paths are not found', async () => {
+test('calls of a Work need its token; unknown Works and paths are not found', { skip: portableProcessRules }, async () => {
   assert.deepEqual(await call('GET', '/ping'), { status: 200, body: { reconciled: true } }, 'before any connection the round is decided')
   assert.equal((await call('GET', '/ping', undefined, 'wrong')).status, 401)
   assert.equal((await call('GET', '/ping', undefined, 'tok', 'w-2')).status, 404)
@@ -84,7 +84,7 @@ test('calls of a Work need its token; unknown Works and paths are not found', as
   assert.equal((await service.request({ workId: 'w-1', method: 'PUT', path: '/', token: '', body: {} })).status, 400)
 })
 
-test('create only reserves: nothing runs before the first attach', async () => {
+test('create only reserves: nothing runs before the first attach', { skip: portableProcessRules }, async () => {
   const id = await create('touch started')
   assert.deepEqual(await call('GET', `/pty/${id}`), { status: 200, body: { session_id: id, running: false, output_offset: 0 } })
   await new Promise((resolve) => setTimeout(resolve, 200))
@@ -92,7 +92,7 @@ test('create only reserves: nothing runs before the first attach', async () => {
   assert.equal(existsSync(join(processes.dir('w-1', id), 'started.json')), false)
 })
 
-test('a process runs as sent in the mapped cwd with the machine, Work and Talgent environment', { skip: posixOnly('Git Bash prints POSIX-style paths') }, async () => {
+test('a process runs as sent in the mapped cwd with the machine, Work and Talgent environment', { skip: portableProcessRules }, async () => {
   const root = join(dir, 'works', 'w-1')
   await writeFile(join(root, 'marker'), 'found\n')
   const id = await create('pwd; echo "$TALGENT_WORK_ROOT|$HOME|$A|$MACHINE|$PATH"; cat "$TALGENT_WORK_ROOT/marker"; echo /workspace', '/workspace/sub')
@@ -107,7 +107,7 @@ test('a process runs as sent in the mapped cwd with the machine, Work and Talgen
   assert.deepEqual(status.body, { session_id: id, running: false, output_offset: Buffer.byteLength(stdout) })
 })
 
-test('one pipe holds a process; a second open answers 409 until the first closes', async () => {
+test('one pipe holds a process; a second open answers 409 until the first closes', { skip: portableProcessRules }, async () => {
   const id = await create('read x')
   const first = sink()
   const input = (await service.openStream({ workId: 'w-1', processId: id, since: 0, token: 'tok' }, first.value)) as PipeInput
@@ -129,7 +129,7 @@ test('one pipe holds a process; a second open answers 409 until the first closes
   await until(() => second.texts.some((text) => text.includes('"exit"')))
 })
 
-test('delete forgets a reservation and is not found the second time', async () => {
+test('delete forgets a reservation and is not found the second time', { skip: portableProcessRules }, async () => {
   const id = await create('true')
   assert.deepEqual(await call('DELETE', `/pty/${id}`), { status: 200 })
   assert.equal(existsSync(processes.dir('w-1', id)), false)
@@ -137,7 +137,7 @@ test('delete forgets a reservation and is not found the second time', async () =
   assert.equal((await call('GET', `/pty/${id}`)).status, 404)
 })
 
-test('a cwd reached through a symlink is the cwd the process sees, as named', { skip: posixOnly('Git Bash prints POSIX-style paths') }, async () => {
+test('a cwd reached through a symlink is the cwd the process sees, as named', { skip: portableProcessRules }, async () => {
   // As macOS's /var, which is /private/var.
   const root = join(dir, 'works', 'w-1')
   await mkdir(join(root, 'real'))

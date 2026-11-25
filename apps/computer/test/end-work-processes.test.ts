@@ -12,7 +12,7 @@ import { SHIM_ARG } from '../src/execd/shim.ts'
 import { Works } from '../src/execd/works.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
 import { endEveryWorkProcess } from '../src/end-work-processes.ts'
-import { posixOnly, removeScratch } from './support/platform.ts'
+import { removeScratch, portableProcessRules } from './support/platform.ts'
 
 const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url))
 
@@ -65,7 +65,7 @@ async function running(work: string, command = 'read x'): Promise<string> {
   return id
 }
 
-test('a removed Computer ends the processes of every Work on it', async () => {
+test('a removed Computer ends the processes of every Work on it', { skip: portableProcessRules }, async () => {
   const first = await running('w-1')
   const second = await running('w-2')
   const logs: string[] = []
@@ -75,7 +75,7 @@ test('a removed Computer ends the processes of every Work on it', async () => {
   assert.deepEqual(logs, ['ended 2 Work processes: this Computer was removed'])
 })
 
-test('processes that cannot be ended are tried again, then reported', async () => {
+test('processes that cannot be ended are tried again, then reported', { skip: portableProcessRules }, async () => {
   const id = await running('w-1')
   let attempts = 0
   const stubborn = {
@@ -93,7 +93,7 @@ test('processes that cannot be ended are tried again, then reported', async () =
   assert.equal((await processes.phase('w-1', id))?.kind, 'running')
 })
 
-test('a credential refused for good ends every Work process too', async () => {
+test('a credential refused for good ends every Work process too', { skip: portableProcessRules }, async () => {
   const id = await running('w-1')
   const logs: string[] = []
   assert.equal(await endEveryWorkProcess(processes, 'credential_rejected', (line) => logs.push(line)), 0)
@@ -103,7 +103,7 @@ test('a credential refused for good ends every Work process too', async () => {
 
 // The fence and the end of every Work process may hold starts at once: a
 // start waits until both released their holds.
-test('holds on starts nest', async () => {
+test('holds on starts nest', { skip: portableProcessRules }, async () => {
   const fence = await processes.holdStarts()
   const ending = await processes.holdStarts()
   let started = false
@@ -120,7 +120,7 @@ test('holds on starts nest', async () => {
 // Ending a process can end its command before its shim (taskkill /T walks the
 // tree in no set order), and the shim then records the command's own exit
 // code. An ended process is still recorded as killed.
-test('a process whose command ended before its shim is recorded as killed', { skip: posixOnly('stands in for taskkill with POSIX signals') }, async () => {
+test('a process whose command ended before its shim is recorded as killed', { skip: portableProcessRules }, async () => {
   const id = await running('w-1', 'trap "exit 1" TERM; while :; do sleep 0.05; done')
   const host = currentHost()
   const commandFirst: ProcessHost = Object.assign(Object.create(Object.getPrototypeOf(host)) as ProcessHost, host, {
