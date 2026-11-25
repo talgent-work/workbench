@@ -194,7 +194,7 @@ func newHarness(t *testing.T) *harness {
 		Tokens: signer, Directory: infrastructure.NewUserDirectoryQueries(db),
 		Lifetimes: lifetimes, Now: c.Now,
 		AgentAccounts: infrastructure.NewAgentAccountRepository(db), AgentTokenLifetime: agentTokenLifetime,
-		Applications: infrastructure.NewApplicationRepository(db), ApplicationQueries: infrastructure.NewApplicationQueries(db),
+		Applications: infrastructure.NewApplicationRepository(db), ApplicationQueries: infrastructure.NewApplicationQueries(db), SecretUses: infrastructure.NewClientSecretUses(db),
 		ApplicationTokenLifetime: applicationTokenLifetime, SecretOverlap: secretOverlap,
 		Publisher: removals, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})

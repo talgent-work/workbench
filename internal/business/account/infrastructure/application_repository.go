@@ -13,11 +13,12 @@ import (
 
 var (
 	applicationColumns  = []string{"id", "owner_id", "name", "state", "registered_at", "version"}
-	clientSecretColumns = []string{"id", "application_id", "secret_digest", "hint", "state", "issued_at", "overlap_ends_at", "last_used_at"}
+	clientSecretColumns = []string{"id", "application_id", "secret_digest", "hint", "state", "issued_at", "overlap_ends_at"}
 )
 
 // ApplicationRepository persists Applications with their Client Secrets,
-// which change only with their Application.
+// which change only with their Application; a secret's last use is
+// ClientSecretUses' alone, so saving never writes it.
 type ApplicationRepository struct {
 	db *jimuxorm.DB
 }
@@ -105,7 +106,7 @@ func saveApplication(tx *xorm.Session, application *domain.Application) error {
 		secretRow := clientSecretToDO(application.ID, secret)
 		secretRow.UpdatedAt = now
 		if stored[secret.ID] {
-			if _, err := tx.Cols("state", "overlap_ends_at", "last_used_at", "updated_at").Incr("version").
+			if _, err := tx.Cols("state", "overlap_ends_at", "updated_at").Incr("version").
 				Where("id = ? AND application_id = ? AND deleted_at = 0", secret.ID, row.ID).Update(secretRow); err != nil {
 				return oops.With("operation", "application.update_secret").With("application_id", row.ID).Wrap(err)
 			}

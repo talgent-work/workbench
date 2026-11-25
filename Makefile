@@ -94,6 +94,7 @@ test-scripts:
 	bash test/computer-release-test.sh
 	bash test/request-catalog-sync-test.sh
 	bash test/apply-opensandbox-test.sh
+	bash test/case-budget-test.sh
 
 test-go:
 	set -o pipefail; TALGENT_TEST_SERVICES=nats bash scripts/test/with-middleware.sh go test -json -p=4 $(UNIT_TEST_FLAGS) $(UNIT_PACKAGES) \

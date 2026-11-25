@@ -18,6 +18,7 @@ import (
 
 	accountpublicv1 "github.com/talgent-work/contracts/gen/go/account/public/v1"
 	"github.com/talgent-work/contracts/gen/go/account/public/v1/accountpublicv1connect"
+	"github.com/talgent-work/workbench/internal/business/account/application"
 	accountconnect "github.com/talgent-work/workbench/internal/business/account/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/connectrpc"
@@ -203,6 +204,69 @@ func TestParallelGrantsOfOneApplicationAllSucceed(t *testing.T) {
 	for range 8 {
 		require.Equal(t, http.StatusOK, <-statuses)
 	}
+}
+
+// Workers moving to a rotated secret present both secrets of the overlap at
+// once; each grant records its own secret's use and none waits on another.
+func TestParallelGrantsOverBothSecretsOfAnOverlapAllSucceed(t *testing.T) {
+	h := newHarness(t)
+	service := h.applicationService()
+	owner := newPerson()
+	registered, err := service.RegisterApplication(as("user", owner), &accountpublicv1.RegisterApplicationRequest{Name: "Support Desk"})
+	require.NoError(t, err)
+	id := registered.GetApplication().GetId()
+	rotated, err := service.RotateClientSecret(as("user", owner), &accountpublicv1.RotateClientSecretRequest{ApplicationId: id})
+	require.NoError(t, err)
+	secrets := []string{registered.GetClientSecret(), rotated.GetClientSecret()}
+	for range 3 {
+		h.clock.Advance(application.LastUseResolution)
+		statuses := make(chan int, 16)
+		for i := range 16 {
+			go func() {
+				status, _ := h.grant(id, secrets[i%2])
+				statuses <- status
+			}()
+		}
+		for range 16 {
+			require.Equal(t, http.StatusOK, <-statuses)
+		}
+	}
+	read, err := service.GetApplication(as("user", owner), &accountpublicv1.GetApplicationRequest{ApplicationId: id})
+	require.NoError(t, err)
+	for _, secret := range read.GetApplication().GetClientSecrets() {
+		require.Equal(t, h.clock.Now().UnixMilli(), secret.GetLastUsedAtUnixMs())
+	}
+}
+
+func TestLastUseMovesForwardByTheResolutionAndOutlastsOwnerChanges(t *testing.T) {
+	h := newHarness(t)
+	service := h.applicationService()
+	owner := newPerson()
+	registered, err := service.RegisterApplication(as("user", owner), &accountpublicv1.RegisterApplicationRequest{Name: "Support Desk"})
+	require.NoError(t, err)
+	id := registered.GetApplication().GetId()
+	lastUse := func() int64 {
+		read, err := service.GetApplication(as("user", owner), &accountpublicv1.GetApplicationRequest{ApplicationId: id})
+		require.NoError(t, err)
+		return read.GetApplication().GetClientSecrets()[0].GetLastUsedAtUnixMs()
+	}
+
+	status, _ := h.grant(id, registered.GetClientSecret())
+	require.Equal(t, http.StatusOK, status)
+	first := h.clock.Now().UnixMilli()
+	h.clock.Advance(application.LastUseResolution - time.Second)
+	status, _ = h.grant(id, registered.GetClientSecret())
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, first, lastUse(), "a use within the resolution keeps the recorded one")
+
+	_, err = service.RenameApplication(as("user", owner), &accountpublicv1.RenameApplicationRequest{ApplicationId: id, Name: "Help Desk"})
+	require.NoError(t, err)
+	require.Equal(t, first, lastUse(), "an owner change keeps the recorded use")
+
+	h.clock.Advance(time.Second)
+	status, _ = h.grant(id, registered.GetClientSecret())
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, h.clock.Now().UnixMilli(), lastUse())
 }
 
 func TestAGrantThatIssuesNoTokenRecordsNoUse(t *testing.T) {

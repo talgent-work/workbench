@@ -2,7 +2,8 @@
 """Fails a Go test run in which a case took longer than its budget.
 
 Reads `go test -json` on stdin, prints what go test prints without -v (each
-package's result and the output of failed cases), and exits 1
+package's result and the output of failed cases, a case that hung until
+-timeout included), and exits 1
 when go test failed or any case, top-level or subtest, passed or failed after
 more than BUDGET seconds (docs/development.md: a case takes at most 3s).
 Go has no per-case timeout; the run's -timeout still bounds a case that hangs.
@@ -34,6 +35,11 @@ def main() -> int:
             output = cases.pop(case, [])
             if action == "fail":
                 sys.stdout.writelines(output)
+        if action == "fail" and not test:
+            # A case still running when its package fails never ends: it hung
+            # until -timeout, which reports the goroutines in its output.
+            for unfinished in [c for c in cases if c[0] == event.get("Package")]:
+                sys.stdout.writelines(cases.pop(unfinished))
         if action == "fail":
             failed = True
         if action in ("pass", "fail") and test and event.get("Elapsed", 0) > budget:

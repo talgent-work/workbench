@@ -251,6 +251,7 @@ func newApplication(deps applicationDependencies) (*application.Application, err
 
 		Applications:             infrastructure.NewApplicationRepository(db),
 		ApplicationQueries:       infrastructure.NewApplicationQueries(db),
+		SecretUses:               infrastructure.NewClientSecretUses(db),
 		ApplicationTokenLifetime: p.applicationToken,
 		SecretOverlap:            p.secretOverlap,
 		Publisher:                publisher,

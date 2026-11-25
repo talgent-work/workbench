@@ -34,7 +34,6 @@ func TestRegisterApplicationIssuesItsFirstSecretOnce(t *testing.T) {
 	require.Equal(t, secret.Digest(), kept.SecretDigest)
 	require.Equal(t, string(secret)[len(secret)-4:], kept.Hint)
 	require.Equal(t, now, kept.IssuedAt)
-	require.True(t, kept.LastUsedAt.IsZero())
 
 	parsed, err := ParseClientSecretValue(string(secret))
 	require.NoError(t, err)
@@ -54,27 +53,20 @@ func TestRegisterApplicationRejectsABadNameOrOwner(t *testing.T) {
 	require.NoError(t, err, "the limit counts characters, not bytes")
 }
 
-func TestApplicationIssuesApplicationClaimsForItsSecretAndRecordsUse(t *testing.T) {
+func TestApplicationIssuesApplicationClaimsAndNamesTheMatchedSecret(t *testing.T) {
 	application, secret, now := registered(t)
 	later := now.Add(time.Hour)
+	before := *application.Secrets[0]
 
-	claims, recorded, err := application.IssueIdentityToken(secret, later, applicationLifetime)
+	claims, secretID, err := application.IssueIdentityToken(secret, later, applicationLifetime)
 	require.NoError(t, err)
-	require.True(t, recorded)
+	require.Equal(t, application.Secrets[0].ID, secretID)
 	require.Equal(t, PrincipalApplication, claims.Principal)
 	require.Equal(t, string(application.ID), claims.Subject)
 	require.Equal(t, later.Add(applicationLifetime), claims.ExpiresAt)
 	require.Empty(t, claims.SessionID)
 	require.Equal(t, WorkFacts{}, claims.Work)
-	require.Equal(t, later, application.Secrets[0].LastUsedAt)
-
-	_, recorded, err = application.IssueIdentityToken(secret, later.Add(LastUseResolution-time.Second), applicationLifetime)
-	require.NoError(t, err)
-	require.False(t, recorded, "a use within the resolution writes nothing")
-	require.Equal(t, later, application.Secrets[0].LastUsedAt)
-	_, recorded, err = application.IssueIdentityToken(secret, later.Add(LastUseResolution), applicationLifetime)
-	require.NoError(t, err)
-	require.True(t, recorded)
+	require.Equal(t, before, *application.Secrets[0], "a grant changes nothing to save")
 }
 
 func TestApplicationRefusesAnotherSecret(t *testing.T) {
@@ -83,7 +75,6 @@ func TestApplicationRefusesAnotherSecret(t *testing.T) {
 
 	_, _, err := application.IssueIdentityToken(otherSecret, now, applicationLifetime)
 	require.ErrorIs(t, err, ErrClientSecretMismatch)
-	require.True(t, application.Secrets[0].LastUsedAt.IsZero())
 }
 
 func TestApplicationIssuesNothingOnceRemoved(t *testing.T) {
@@ -101,13 +92,10 @@ func TestClientSecretMatchesInItsOverlapOnly(t *testing.T) {
 	kept.State = ClientSecretOverlapping
 	kept.OverlapEndsAt = now.Add(24 * time.Hour)
 
-	matched, _ := kept.Match(secret.Digest(), now.Add(23*time.Hour))
-	require.True(t, matched)
-	matched, _ = kept.Match(secret.Digest(), now.Add(24*time.Hour))
-	require.False(t, matched)
+	require.True(t, kept.Match(secret.Digest(), now.Add(23*time.Hour)))
+	require.False(t, kept.Match(secret.Digest(), now.Add(24*time.Hour)))
 	kept.State = ClientSecretEnded
-	matched, _ = kept.Match(secret.Digest(), now)
-	require.False(t, matched)
+	require.False(t, kept.Match(secret.Digest(), now))
 }
 
 func TestValidSecretsListTheCurrentFirst(t *testing.T) {
