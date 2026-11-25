@@ -165,9 +165,7 @@ func TestASlowSubscriptionDoesNotDelayOtherWorks(t *testing.T) {
 			reader.Close()
 		}
 	}()
-	for stream.count("slow") == 0 {
-		time.Sleep(time.Millisecond)
-	}
+	waitFor(t, func() bool { return stream.count("slow") > 0 })
 	done := make(chan error, 1)
 	go func() {
 		reader, err := registry.Acquire(t.Context(), "w1", "b")
@@ -201,7 +199,12 @@ func TestReadersArrivingDuringSubscribingShareItsOutcome(t *testing.T) {
 			errs <- err
 		}()
 	}
-	time.Sleep(20 * time.Millisecond)
+	// Every reader is waiting on the one subscription before it fails.
+	waitFor(t, func() bool {
+		registry.mu.Lock()
+		defer registry.mu.Unlock()
+		return registry.hubs["w1"] != nil && registry.hubs["w1"].readers == 3
+	})
 	close(stream.hold["w1"])
 	for range 3 {
 		if err := <-errs; err == nil || err.Error() != "broker refused" {
@@ -233,9 +236,7 @@ func TestAReaderGivingUpWhileSubscribingLeavesTheOthers(t *testing.T) {
 		reader, _ := registry.Acquire(context.Background(), "w1", "a")
 		building <- reader
 	}()
-	for stream.count("w1") == 0 {
-		time.Sleep(time.Millisecond)
-	}
+	waitFor(t, func() bool { return stream.count("w1") > 0 })
 	waiting, cancel := context.WithCancel(t.Context())
 	cancel()
 	if _, err := registry.Acquire(waiting, "w1", "b"); !errors.Is(err, context.Canceled) {
@@ -346,5 +347,17 @@ func TestAnEndedSubscriptionEndsItsReaders(t *testing.T) {
 	defer again.Close()
 	if got := stream.count("w1"); got != 2 {
 		t.Fatalf("subscriptions = %d, want a fresh one", got)
+	}
+}
+
+// waitFor waits up to a second for done to hold.
+func waitFor(t *testing.T, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for !done() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not reached within a second")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
