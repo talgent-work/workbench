@@ -48,8 +48,10 @@ type NativeExecutions struct {
 	connections map[string]*nativeExecution
 	workers     sync.WaitGroup
 	loops       sync.WaitGroup
-	// alive is when this replica last refreshed its liveness, in Unix nanoseconds.
-	alive atomic.Int64
+	// alive is when this replica last sent a liveness refresh that succeeded.
+	// It keeps the monotonic clock reading, so a step of the wall clock does
+	// not move when this replica stops reading.
+	alive atomic.Pointer[time.Time]
 }
 
 type nativeExecution struct {
@@ -67,9 +69,6 @@ type nativeExecution struct {
 	written map[string]bool
 	// flushDue marks buffered input that could not be written yet.
 	flushDue bool
-	// flushFailures counts the flushes in a row that could not read the
-	// buffer and retried themselves.
-	flushFailures int
 	// flushQueued coalesces buffer notifications into one pending flush.
 	flushQueued atomic.Bool
 	// unsettled holds settlements whose removal from the buffer failed.
@@ -80,8 +79,13 @@ type nativeExecution struct {
 	// activityReportedAt is when Turn activity was last reported to Agent.
 	activityReportedAt time.Time
 	// dirty marks state changed since the last snapshot.
-	dirty    bool
-	cancel   context.CancelCauseFunc
+	dirty bool
+	// ctx bounds the reading, from the claim on; cancel ends it with its cause
+	// and needs no lock, so fencing never waits for a reader busy under mu.
+	ctx    context.Context
+	cancel context.CancelCauseFunc
+	// reading marks that reading started; until then the claim is in flight.
+	reading  bool
 	settings map[string]chan settingResult
 	feedback *feedbackQueue
 	done     chan struct{}
@@ -123,7 +127,6 @@ func (m *NativeExecutions) Connect(ctx context.Context, input command.ConnectExe
 // adopt claims a Work's stream and starts reading it from its snapshot. A nil
 // binding takes over with the binding stored in Redis.
 func (m *NativeExecutions) adopt(ctx context.Context, workID string, binding *command.ConnectExecution) error {
-	entry := &nativeExecution{done: make(chan struct{}), claimed: make(chan struct{})}
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -148,6 +151,8 @@ func (m *NativeExecutions) adopt(ctx context.Context, workID string, binding *co
 		}
 		return nil
 	}
+	reading, cancel := context.WithCancelCause(m.ctx)
+	entry := &nativeExecution{ctx: reading, cancel: cancel, done: make(chan struct{}), claimed: make(chan struct{})}
 	m.connections[workID] = entry
 	m.workers.Add(1)
 	m.mu.Unlock()
@@ -158,6 +163,7 @@ func (m *NativeExecutions) adopt(ctx context.Context, workID string, binding *co
 	entry.claimErr = err
 	close(entry.claimed)
 	if err != nil {
+		cancel(err)
 		m.forget(entry, workID)
 		m.workers.Done()
 		return err
@@ -234,9 +240,7 @@ func (m *NativeExecutions) snapshot(ctx context.Context, entry *nativeExecution)
 
 func (e *nativeExecution) disconnect(err error) error {
 	e.broken, e.attached = true, false
-	if e.cancel != nil {
-		e.cancel(err)
-	}
+	e.cancel(err)
 	if e.connection != nil {
 		_ = e.connection.Close()
 	}

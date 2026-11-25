@@ -14,13 +14,18 @@ import (
 // boundary: a changed state is snapshotted at least this often.
 const snapshotInterval = 30 * time.Second
 
+// attachTimeout bounds attaching to the process's output stream. Readiness
+// has no bound here: a Harness that never becomes ready fails its start at
+// the Startup Deadline, which Agent owns.
+const attachTimeout = 30 * time.Second
+
 func (m *NativeExecutions) run(entry *nativeExecution, client *execd.Client) {
 	defer m.workers.Done()
 	defer close(entry.done)
-	ctx, cancel := context.WithCancelCause(m.ctx)
-	defer cancel(nil)
+	ctx := entry.ctx
+	defer entry.cancel(nil)
 	entry.mu.Lock()
-	entry.cancel = cancel
+	entry.reading = true
 	entry.mu.Unlock()
 	go m.snapshotPeriodically(ctx, entry)
 	err := m.consume(ctx, entry, client)
@@ -152,9 +157,9 @@ func (m *NativeExecutions) consume(ctx context.Context, entry *nativeExecution, 
 	}
 	offset := entry.Offset
 	entry.mu.Unlock()
-	startup, done := context.WithTimeout(ctx, 30*time.Second)
-	defer done()
-	pipe, err := client.Attach(startup, entry.target.ProcessID, offset)
+	attach, done := context.WithTimeout(ctx, attachTimeout)
+	pipe, err := client.Attach(attach, entry.target.ProcessID, offset)
+	done()
 	if err != nil {
 		return err
 	}
@@ -165,19 +170,12 @@ func (m *NativeExecutions) consume(ctx context.Context, entry *nativeExecution, 
 	entry.mu.Unlock()
 	initializeID := "initialize-" + entry.target.ProcessID
 	for {
-		entry.mu.Lock()
-		ready := entry.Ready
-		entry.mu.Unlock()
-		readContext := ctx
-		if !ready {
-			readContext = startup
-		}
-		event, err := connection.Receive(readContext)
+		event, err := connection.Receive(ctx)
 		if err != nil {
 			return err
 		}
 		entry.mu.Lock()
-		err = m.applyEvent(ctx, startup, entry, initializeID, event)
+		err = m.applyEvent(ctx, entry, initializeID, event)
 		entry.mu.Unlock()
 		if err != nil {
 			return err
