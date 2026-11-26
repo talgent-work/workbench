@@ -22,9 +22,9 @@ const launchTimeout = 30 * time.Second
 
 // longStepsPerRun bounds the long steps one run takes: the creation's
 // submission, then the preparation that a reconciliation made due while the
-// creation awaited its answer, whose wake of the long step found this run
-// still active and was absorbed. A wake absorbed after this run decided for
-// the last time waits for the next sweep.
+// creation awaited its answer, whose wake of the long step met this run and
+// was handed to it. A wake handed over after this run decided for the last
+// time runs the long step again once this run ends.
 const longStepsPerRun = 2
 
 // RunLongStep takes the long steps the execution's current facts call for, if

@@ -37,7 +37,7 @@ func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms,
 // reconcileRounds bounds the decisions one reconciliation makes: after a step
 // that changed the execution, such as a delivery, or a retired execution's
 // deleted environments, the next step is decided at once, not on the next
-// wake, which the running reconciliation would absorb.
+// wake, which waits for the running reconciliation to end.
 const reconcileRounds = 4
 
 // Reconcile decides the execution's steps and takes each short one:

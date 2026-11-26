@@ -17,7 +17,7 @@ import (
 const LanesTag = `group:"taskqueue.lanes"`
 
 // Module owns the lane named name; process composition supplies its Option
-// under the same name. Its enqueuer and schema registry are named; Bind selects them for one bounded context. Processors and
+// under the same name. Its enqueuer, coalescing and schema registry are named; Bind selects them for one bounded context. Processors and
 // periodic tasks tagged for another lane are not registered with this one.
 func Module(name string) fx.Option {
 	tag := fmt.Sprintf(`name:%q`, name)
@@ -25,6 +25,7 @@ func Module(name string) fx.Option {
 		fx.Provide(
 			fx.Annotate(componenttaskqueue.NewSchemaRegistry, fx.ResultTags(tag)),
 			fx.Annotate(NewEnqueuer, fx.ParamTags(tag, ""), fx.ResultTags(tag)),
+			fx.Annotate(NewCoalescing, fx.ParamTags(tag, tag, ""), fx.ResultTags(tag)),
 			fx.Annotate(
 				func(option Option, logger *slog.Logger, processors []componenttaskqueue.Processor, periodic []componenttaskqueue.PeriodicTask) (*Lane, error) {
 					return NewLane(name, option, logger, processors, periodic)
@@ -36,13 +37,14 @@ func Module(name string) fx.Option {
 	)
 }
 
-// Bind gives a business module access to its selected lane's enqueuer and
-// schemas without exporting an ambiguous process-wide
+// Bind gives a business module access to its selected lane's enqueuer,
+// coalescing and schemas without exporting an ambiguous process-wide
 // default.
 func Bind(name string) fx.Option {
 	tag := fmt.Sprintf(`name:%q`, name)
 	return fx.Provide(
 		fx.Annotate(func(client componenttaskqueue.Enqueuer) componenttaskqueue.Enqueuer { return client }, fx.ParamTags(tag)),
+		fx.Annotate(func(coalescing *Coalescing) *Coalescing { return coalescing }, fx.ParamTags(tag)),
 		fx.Annotate(func(registry *componenttaskqueue.SchemaRegistry) *componenttaskqueue.SchemaRegistry { return registry }, fx.ParamTags(tag)),
 		fx.Private,
 	)

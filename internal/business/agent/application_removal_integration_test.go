@@ -19,6 +19,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
@@ -76,7 +77,7 @@ func TestARemovedApplicationsWorksAreClosed(t *testing.T) {
 	require.NoError(t, err, "the Application reads its Work's stream while it exists")
 
 	queued := &queuedTasks{}
-	recovery := application.NewRecovery(m.app, queued, nil, nil, nil, nil, nil)
+	recovery := application.NewRecovery(m.app, queued, &commandtest.ObjectTasks{}, nil, nil, nil, nil, nil)
 	payload := &accountintegrationv1.ApplicationRemovedV1{EventId: uuid.NewString(), ApplicationId: supportDesk}
 	fact, err := integrationmessage.New(integrationmessage.KindOf(payload), payload, integrationmessage.WithKey(supportDesk))
 	require.NoError(t, err)

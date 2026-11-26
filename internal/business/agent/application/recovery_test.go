@@ -39,6 +39,22 @@ func (e *recordingEnqueuer) Enqueue(_ context.Context, task taskqueue.Task, opts
 	return nil
 }
 
+// Wake records a coalesced wake under its object, as Enqueue records a keyed
+// task under its key.
+func (e *recordingEnqueuer) Wake(_ context.Context, object string, task taskqueue.Task, opts ...taskqueue.EnqueueOption) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.keys = append(e.keys, object)
+	e.tasks = append(e.tasks, task)
+	e.options = append(e.options, taskqueue.NewEnqueueOptions(opts...))
+	return nil
+}
+
+// Run takes the attempt at once.
+func (e *recordingEnqueuer) Run(ctx context.Context, _ string, run, _ func(context.Context) error) error {
+	return run(ctx)
+}
+
 // reconciliations are the executions whose Reconcile execution task was
 // enqueued.
 func (e *recordingEnqueuer) reconciliations(t *testing.T) []string {
@@ -86,7 +102,7 @@ type recoveryFixture struct {
 func newRecoveryFixture(app *application.Application, lookups executionLookups, storage command.StoragePort) *recoveryFixture {
 	f := &recoveryFixture{executions: &commandtest.Executions{}, environment: &commandtest.Environment{}, enqueuer: &recordingEnqueuer{}}
 	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, commandtest.Supplies(&commandtest.Storage{}, &commandtest.Accounts{}))
-	f.recovery = application.NewRecovery(app, f.enqueuer, f.executions, lookups, reconciliation, storage, nil)
+	f.recovery = application.NewRecovery(app, f.enqueuer, f.enqueuer, f.executions, lookups, reconciliation, storage, nil)
 	return f
 }
 
@@ -305,14 +321,19 @@ func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
 	require.Contains(t, f.enqueuer.keys, "agent:work:work-2")
 }
 
-type failingEnqueuer struct{}
+// unavailableQueue refuses every wake, as when its Redis is unreachable.
+type unavailableQueue struct{}
 
-func (failingEnqueuer) Enqueue(context.Context, taskqueue.Task, ...taskqueue.EnqueueOption) error {
+func (unavailableQueue) Wake(context.Context, string, taskqueue.Task, ...taskqueue.EnqueueOption) error {
 	return errors.New("redis unavailable")
 }
 
+func (unavailableQueue) Run(ctx context.Context, _ string, run, _ func(context.Context) error) error {
+	return run(ctx)
+}
+
 func TestUnavailableQueueFailsTheWake(t *testing.T) {
-	recovery := application.NewRecovery(&application.Application{}, failingEnqueuer{}, &commandtest.Executions{}, executionLookups{}, nil, nil, nil)
+	recovery := application.NewRecovery(&application.Application{}, nil, unavailableQueue{}, &commandtest.Executions{}, executionLookups{}, nil, nil, nil)
 	require.Error(t, recovery.WakeExecution(context.Background(), "allocation-1"))
 	_, err := agenttask.NewReconcileExecution("allocation-1")
 	require.NoError(t, err)
