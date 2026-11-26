@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -146,6 +147,7 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	// settings are disabled. Keep workspace configuration and explicit snapshot
 	// settings; neither platform config supplies a finite retention period.
 	args = append(args, "--setting-sources", "project,local")
+	args = append(args, repositoryDirectories(request)...)
 	// A startup Agent that no release the Work took declares any more is
 	// left out: the start runs without one (Dropped startup Agent).
 	if agent := request.Capabilities.LaunchedStartupAgent(); agent != "" {
@@ -223,9 +225,38 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 		// starts it as a fresh start would.
 		recovered = layout.recovered(harness, sessionID, freshContext(request.StartingContext, sessionID))
 	}
-	command := layout.prefix + "exec 2>>" + diagnostic + "; talgent_effort=" + effort + "; unset CLAUDE_CODE_EFFORT_LEVEL; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
+	command := layout.prefix + "exec 2>>" + diagnostic + "; " + repositoryInstructions + "talgent_effort=" + effort + "; unset CLAUDE_CODE_EFFORT_LEVEL; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
 	return nativeLaunch{Command: command, SessionID: sessionID, PreparationCommand: preparation}, nil
 }
+
+// repositoryDirectories opens each of the Work's selected repositories as a
+// working directory of the Harness, so the repository's own Skills, agents,
+// commands and instruction files load from the first Turn on. As a mere
+// subdirectory of the workspace a repository contributes none of them at
+// launch, and its instruction files enter the conversation only once the
+// Harness touches a file in it. Its settings, hooks and MCP declarations
+// still do not load.
+//
+// The paths are relative to the workspace, the Harness's working directory
+// in every layout. They follow the Work's retained selection, so every start
+// opens the same ones; checkout ends before the Harness starts, and a
+// repository left unchecked out names a directory the Harness skips.
+func repositoryDirectories(request domain.LaunchSpecification) []string {
+	var args []string
+	for _, checkout := range command.PlanCheckouts(request.WorkID, request.RepositorySelection) {
+		if relative, inside := strings.CutPrefix(checkout.TargetPath, domain.WorkspacePath+"/"); inside {
+			args = append(args, "--add-dir", relative)
+		}
+	}
+	return args
+}
+
+// repositoryInstructions makes the Harness load the instruction files of each
+// directory repositoryDirectories opens, which it otherwise leaves out.
+// Every instruction file stays in context side by side: the Harness neither
+// orders nor reconciles conflicting ones, so a repository's instructions
+// govern by what they say, below the Work's system prompt.
+const repositoryInstructions = "export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1; "
 
 // diagnosticName is the file a live execution's Harness writes its
 // diagnostics to, in its layout's place for them.

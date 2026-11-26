@@ -64,10 +64,13 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, domain.DefaultWorkLayout(), agent.WorkLayout, "a definition keeps its Work Layout")
 	_, err = agent.ChangeSoul(domain.DefinitionRequester{ID: "owner"}, "Answer with the conclusion first.")
 	require.NoError(t, err)
+	_, err = agent.ChangeWorkspaceInstructions(domain.DefinitionRequester{ID: "owner"}, "# Repositories\nRun make check.")
+	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
 	agent, err = agents.Get(ctx, agent.ID)
 	require.NoError(t, err)
 	require.Equal(t, "Answer with the conclusion first.", agent.Soul)
+	require.Equal(t, "# Repositories\nRun make check.", agent.WorkspaceInstructions)
 
 	traceAttributes := map[string]string{"talgent.project_id": "project-1", "talgent.owner_id": "case"}
 	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, TraceAttributes: traceAttributes})
@@ -77,6 +80,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "case", session.TraceAttributes["talgent.owner_id"])
 	require.NotContains(t, session.TraceAttributes, "talgent.project_id", "a supplied attribute never states platform attribution")
 	require.Equal(t, "Answer with the conclusion first.", session.HarnessProcess.Soul, "the first start took up the Soul, retained with its process")
+	require.Equal(t, "# Repositories\nRun make check.", session.HarnessProcess.WorkspaceInstructions, "and the Workspace Instructions with it")
 	originalCapabilities := session.CapabilitySnapshot.Clone()
 	located := session.LocatedLayout
 	require.Equal(t, "claude-code", session.AgentHarnessReference)

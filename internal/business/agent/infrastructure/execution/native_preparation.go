@@ -2,6 +2,7 @@ package execution
 
 import (
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -28,7 +29,8 @@ type repositoryCheckout struct {
 }
 
 // preparationCommand prepares the Work's environment before its Harness
-// starts: Plugin installation, then checkout of the planned
+// starts: the Work's Workspace Instructions in the Agent Harness's
+// instructions file, Plugin installation, then checkout of the planned
 // repositories. The plan is supplied when the process is created, through
 // withCheckoutPlan; without one the start checks nothing out. The Work's
 // resolved releases reach the native installer as a local marketplace named
@@ -60,7 +62,10 @@ func (c NativeLaunchConfig) preparationCommand(layout launchLayout, harness doma
 	// prepares again.
 	receipt := storageKey(owner.WorkID + ":" + owner.ID)[:32]
 	budget := "remaining=$((" + strconv.FormatInt(request.PreparationBound.Unix(), 10) + " - $(date +%s))); [ \"$remaining\" -ge " + preparationMinimumSeconds + " ] || remaining=" + preparationMinimumSeconds + "; "
-	arguments := " " + shellWord(nativePreparation) + " " + shellWord(c.Binary) + " " + shellWord(string(catalog)) + " " + shellWord(receipt) + " \"${talgent_checkout_plan-}\" \"$remaining\""
+	// The instructions travel encoded, so no character of theirs grows under
+	// shell quoting and the command stays within one process argument.
+	instructions := base64.StdEncoding.EncodeToString([]byte(request.WorkspaceInstructions))
+	arguments := " " + shellWord(nativePreparation) + " " + shellWord(c.Binary) + " " + shellWord(string(catalog)) + " " + shellWord(receipt) + " " + shellWord(harness.InstructionsFile) + " " + shellWord(instructions) + " \"${talgent_checkout_plan-}\" \"$remaining\""
 	return layout.preparation(harness, budget, arguments), nil
 }
 

@@ -5,6 +5,18 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that gives an Agent its Workspace Instructions
+
+Apply
+[`20261126-workspace-instructions.sql`](../deploy/middleware/migrations/20261126-workspace-instructions.sql)
+to the database named by `WORKBENCH_MYSQL_DATABASE`, then deploy `controlplane` of this release;
+an earlier `controlplane` keeps running against the new column. An Agent's owners now write its
+Workspace Instructions, from Profile for a person's Work Agent, and every start of its Works writes
+them into the Harness's instructions file at the Session Workspace root. A Work's selected
+repositories are opened as the Harness's working directories, so each repository's own
+instructions, Skills, agents and commands load from the first Turn. A rollback drops the column as
+the script's header describes; Works already started keep the file their last start wrote.
+
 ## The release that lets a Share Link follow its file by identity
 
 Stop `controlplane`, apply

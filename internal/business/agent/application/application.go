@@ -10,22 +10,23 @@ import (
 )
 
 type Commands struct {
-	EnsureAgentDefinition *command.EnsureAgentDefinitionHandler
-	ChangeAgentAppearance *command.ChangeAgentAppearanceHandler
-	ChangeAgentSoul       *command.ChangeAgentSoulHandler
-	ChangeWorkDefaults    *command.ChangeAgentWorkDefaultsHandler
-	SendMessage           *command.SendWorkMessageHandler
-	ReplyToInteraction    *command.ReplyToWorkInteractionHandler
-	PrepareWorkExecution  *command.PrepareWorkExecutionHandler
-	EndWorkExecution      *command.EndWorkExecutionHandler
-	RecoverWork           *command.RecoverWorkHandler
-	ReconcileDesks        *command.ReconcileDesksHandler
-	RespondToInteraction  *command.RespondWorkInteractionHandler
-	ResumeWork            *command.ResumeWorkHandler
-	RestartWork           *command.RestartWorkHandler
-	StopWork              *command.StopWorkHandler
-	CloseWork             *command.CloseWorkHandler
-	DeliverInput          *command.DeliverWorkInputHandler
+	EnsureAgentDefinition            *command.EnsureAgentDefinitionHandler
+	ChangeAgentAppearance            *command.ChangeAgentAppearanceHandler
+	ChangeAgentSoul                  *command.ChangeAgentSoulHandler
+	ChangeAgentWorkspaceInstructions *command.ChangeAgentWorkspaceInstructionsHandler
+	ChangeWorkDefaults               *command.ChangeAgentWorkDefaultsHandler
+	SendMessage                      *command.SendWorkMessageHandler
+	ReplyToInteraction               *command.ReplyToWorkInteractionHandler
+	PrepareWorkExecution             *command.PrepareWorkExecutionHandler
+	EndWorkExecution                 *command.EndWorkExecutionHandler
+	RecoverWork                      *command.RecoverWorkHandler
+	ReconcileDesks                   *command.ReconcileDesksHandler
+	RespondToInteraction             *command.RespondWorkInteractionHandler
+	ResumeWork                       *command.ResumeWorkHandler
+	RestartWork                      *command.RestartWorkHandler
+	StopWork                         *command.StopWorkHandler
+	CloseWork                        *command.CloseWorkHandler
+	DeliverInput                     *command.DeliverWorkInputHandler
 	// DeliverInputChangeNotice is Agent's own delivery of an input change
 	// notice (Notify changed inputs).
 	DeliverInputChangeNotice *command.DeliverInputChangeNoticeHandler
@@ -35,23 +36,24 @@ type Commands struct {
 }
 
 type Queries struct {
-	GetAgentSoul                 *query.GetAgentSoulHandler
-	GetWorkReport                *query.GetWorkReportHandler
-	ListWorks                    *query.ListWorksHandler
-	GetWorkView                  *query.GetWorkViewHandler
-	ListWorkLifecycleEvents      *query.ListWorkLifecycleEventsHandler
-	GetWorkOrigin                *query.GetWorkOriginHandler
-	ResolveWorkContextPosition   *query.ResolveWorkContextPositionHandler
-	ResolveWorkStarts            *query.ResolveWorkStartsHandler
-	ResolveAgents                *query.ResolveAgentsHandler
-	GetWorkPreparation           *query.GetWorkPreparationHandler
-	ListSubmittedPreparations    *query.ListSubmittedPreparationsHandler
-	LocateWork                   *query.LocateWorkHandler
-	AdmitAgentAction             *query.AdmitAgentActionHandler
-	GetAgentDefinitionForPurpose *query.GetAgentDefinitionForPurposeHandler
-	ListRecoveryWorks            *query.ListRecoveryWorksHandler
-	GetAgentDefinition           *query.GetAgentDefinitionHandler
-	GetWork                      *query.GetWorkHandler
+	GetAgentSoul                  *query.GetAgentSoulHandler
+	GetAgentWorkspaceInstructions *query.GetAgentWorkspaceInstructionsHandler
+	GetWorkReport                 *query.GetWorkReportHandler
+	ListWorks                     *query.ListWorksHandler
+	GetWorkView                   *query.GetWorkViewHandler
+	ListWorkLifecycleEvents       *query.ListWorkLifecycleEventsHandler
+	GetWorkOrigin                 *query.GetWorkOriginHandler
+	ResolveWorkContextPosition    *query.ResolveWorkContextPositionHandler
+	ResolveWorkStarts             *query.ResolveWorkStartsHandler
+	ResolveAgents                 *query.ResolveAgentsHandler
+	GetWorkPreparation            *query.GetWorkPreparationHandler
+	ListSubmittedPreparations     *query.ListSubmittedPreparationsHandler
+	LocateWork                    *query.LocateWorkHandler
+	AdmitAgentAction              *query.AdmitAgentActionHandler
+	GetAgentDefinitionForPurpose  *query.GetAgentDefinitionForPurposeHandler
+	ListRecoveryWorks             *query.ListRecoveryWorksHandler
+	GetAgentDefinition            *query.GetAgentDefinitionHandler
+	GetWork                       *query.GetWorkHandler
 }
 
 type Application struct {
@@ -141,45 +143,47 @@ func NewApplication(
 		Accounts:          accounts,
 		Logger:            logger,
 		Commands: Commands{
-			EnsureAgentDefinition:    ensure,
-			ChangeAgentAppearance:    appearance,
-			ChangeAgentSoul:          command.NewChangeAgentSoulHandler(definitions),
-			ChangeWorkDefaults:       command.NewChangeAgentWorkDefaultsHandler(definitions, models),
-			SendMessage:              sendMessage,
-			ReplyToInteraction:       reply,
-			PrepareWorkExecution:     prepare,
-			EndWorkExecution:         endExecution,
-			RecoverWork:              recovery,
-			ReconcileDesks:           reconcileDesks,
-			RespondToInteraction:     interaction,
-			ResumeWork:               resume,
-			RestartWork:              restart,
-			StopWork:                 stop,
-			CloseWork:                close,
-			DeliverInput:             input,
-			DeliverInputChangeNotice: notices,
-			CreateWork:               createSession,
-			ApplyExecutionFeedback:   feedback,
-			ExecutionCoordination:    coordination,
+			EnsureAgentDefinition:            ensure,
+			ChangeAgentAppearance:            appearance,
+			ChangeAgentSoul:                  command.NewChangeAgentSoulHandler(definitions),
+			ChangeAgentWorkspaceInstructions: command.NewChangeAgentWorkspaceInstructionsHandler(definitions),
+			ChangeWorkDefaults:               command.NewChangeAgentWorkDefaultsHandler(definitions, models),
+			SendMessage:                      sendMessage,
+			ReplyToInteraction:               reply,
+			PrepareWorkExecution:             prepare,
+			EndWorkExecution:                 endExecution,
+			RecoverWork:                      recovery,
+			ReconcileDesks:                   reconcileDesks,
+			RespondToInteraction:             interaction,
+			ResumeWork:                       resume,
+			RestartWork:                      restart,
+			StopWork:                         stop,
+			CloseWork:                        close,
+			DeliverInput:                     input,
+			DeliverInputChangeNotice:         notices,
+			CreateWork:                       createSession,
+			ApplyExecutionFeedback:           feedback,
+			ExecutionCoordination:            coordination,
 		},
 		Queries: Queries{
-			GetAgentSoul:                 query.NewGetAgentSoulHandler(definitions),
-			GetWorkReport:                workReport,
-			ListWorks:                    listWorks,
-			GetWorkView:                  workView,
-			ListWorkLifecycleEvents:      lifecycle,
-			GetWorkOrigin:                origin,
-			ResolveWorkContextPosition:   resolvePositions,
-			ResolveWorkStarts:            resolveStarts,
-			ResolveAgents:                resolveAgents,
-			GetWorkPreparation:           preparation,
-			ListSubmittedPreparations:    submitted,
-			LocateWork:                   locate,
-			AdmitAgentAction:             acting,
-			GetAgentDefinitionForPurpose: definition,
-			ListRecoveryWorks:            recoverySessions,
-			GetAgentDefinition:           getAgent,
-			GetWork:                      getSession,
+			GetAgentSoul:                  query.NewGetAgentSoulHandler(definitions),
+			GetAgentWorkspaceInstructions: query.NewGetAgentWorkspaceInstructionsHandler(definitions),
+			GetWorkReport:                 workReport,
+			ListWorks:                     listWorks,
+			GetWorkView:                   workView,
+			ListWorkLifecycleEvents:       lifecycle,
+			GetWorkOrigin:                 origin,
+			ResolveWorkContextPosition:    resolvePositions,
+			ResolveWorkStarts:             resolveStarts,
+			ResolveAgents:                 resolveAgents,
+			GetWorkPreparation:            preparation,
+			ListSubmittedPreparations:     submitted,
+			LocateWork:                    locate,
+			AdmitAgentAction:              acting,
+			GetAgentDefinitionForPurpose:  definition,
+			ListRecoveryWorks:             recoverySessions,
+			GetAgentDefinition:            getAgent,
+			GetWork:                       getSession,
 		},
 	}
 }

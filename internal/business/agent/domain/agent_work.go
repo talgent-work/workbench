@@ -115,6 +115,9 @@ type StartAdmission struct {
 	ModelConfigurationProvided bool
 	// Soul is the definition's current Soul, which this start takes up.
 	Soul string
+	// WorkspaceInstructions are the definition's current Workspace
+	// Instructions, which this start places.
+	WorkspaceInstructions string
 	// CurrentPlugins are the current releases of the Work's selected Plugins;
 	// a Resume or Restart upgrades to them. A first start already has them.
 	CurrentPlugins []PluginRelease
@@ -162,6 +165,9 @@ type HarnessProcess struct {
 	StartWithdrawn bool
 	// Soul is the definition's Soul this start took up.
 	Soul string
+	// WorkspaceInstructions are the definition's Workspace Instructions this
+	// start places.
+	WorkspaceInstructions string
 	// Ready records its AgentExecution's report that the run became ready.
 	Ready            bool
 	StartRejected    bool

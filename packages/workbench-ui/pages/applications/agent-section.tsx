@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Alert, Button, Card, Skeleton } from "@heroui/react";
 import { AlertTriangle } from "lucide-react";
 import { AgentAppearanceEditor } from "../../components/agent/agent-appearance-editor";
-import { AgentSoulEditor } from "../../components/agent/agent-soul-editor";
+import { AgentTextEditor } from "../../components/agent/agent-text-editor";
+import { MAX_SOUL } from "../../lib/agent-soul-service";
 import { PromptModelControl } from "../../components/composer/prompt-bar-controls";
 import { AgentPicker } from "../../components/work-start/work-start-tray";
 import { InstallationsSection } from "./installations-section";
@@ -89,8 +90,18 @@ function Soul({ agentId }: { agentId: string }) {
     </Alert>;
   }
   if (soul.data === undefined) return <Loading label="Loading the Soul…" />;
-  return <AgentSoulEditor key={soul.data} saved={soul.data} placeholder="How this application’s Agent should talk and work" saving={change.isPending}
-    error={change.isError ? applicationAgentErrorMessage(change.error, "Soul") : ""} onSave={value => change.mutate(value)} onDiscard={() => change.reset()} />;
+  return <SoulEditor key={soul.data} saved={soul.data} saving={change.isPending} error={change.isError ? applicationAgentErrorMessage(change.error, "Soul") : ""}
+    onSave={value => change.mutate(value)} onDiscard={() => change.reset()} />;
+}
+
+// The Soul's draft starts from what is saved and starts again whenever that
+// changes, as the key above makes it.
+function SoulEditor({ saved, saving, error, onSave, onDiscard }: { saved: string; saving: boolean; error: string; onSave: (soul: string) => void; onDiscard: () => void }) {
+  const [draft, setDraft] = useState(saved);
+  return <Card className="mk-group"><Card.Content className="p-5">
+    <AgentTextEditor label="Soul" draft={draft} saved={saved} max={MAX_SOUL} placeholder="How this application’s Agent should talk and work" saving={saving} error={error}
+      onChange={setDraft} onSave={onSave} onDiscard={() => { onDiscard(); setDraft(saved); }} />
+  </Card.Content></Card>;
 }
 
 function Defaults({ agentId }: { agentId: string }) {
