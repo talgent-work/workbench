@@ -5,9 +5,11 @@ import { Alert, Button, FieldError, Label, TextArea, TextField } from "@heroui/r
  * take up at their next start. The caller owns the draft, so a draft survives
  * the editor leaving the screen, and the save: `saving` while it runs and
  * `error` when it failed, which `onDiscard` clears. A `document` is a file's
- * Markdown, edited in a monospace face with its length shown against `max`. */
-export function AgentTextEditor({ label, draft, saved, max, placeholder, rows = 5, document = false, saving, error, onChange, onSave, onDiscard }: {
-  label: string; draft: string; saved: string; max: number; placeholder: string; rows?: number; document?: boolean;
+ * Markdown, edited in a monospace face with its length shown against `max`.
+ * A `height` sets the box's height whatever its face, so editors set side by
+ * side match; without one it is `rows` lines tall. */
+export function AgentTextEditor({ label, draft, saved, max, placeholder, rows = 5, height, document = false, saving, error, onChange, onSave, onDiscard }: {
+  label: string; draft: string; saved: string; max: number; placeholder: string; rows?: number; height?: string; document?: boolean;
   saving: boolean; error: string; onChange: (draft: string) => void; onSave: (text: string) => void; onDiscard: () => void;
 }) {
   const text = draft.trim();
@@ -23,7 +25,7 @@ export function AgentTextEditor({ label, draft, saved, max, placeholder, rows = 
     <form onSubmit={save} aria-label={label} className="grid gap-4">
       <TextField value={draft} onChange={onChange} isInvalid={Boolean(problem)} isDisabled={saving}>
         <Label className="sr-only">{label}</Label>
-        <TextArea rows={rows} placeholder={placeholder} spellCheck={!document} className={document ? "font-mono text-[13px] leading-relaxed" : undefined} />
+        <TextArea rows={rows} placeholder={placeholder} spellCheck={!document} style={height ? { height } : undefined} className={document ? "font-mono text-[13px] leading-relaxed" : undefined} />
         <FieldError>{problem}</FieldError>
       </TextField>
       {error && (

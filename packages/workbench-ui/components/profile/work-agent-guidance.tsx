@@ -9,11 +9,16 @@ import {
 
 type Guidance = "soul" | "instructions";
 
+// Both texts are edited in boxes of this height, so switching tabs moves nothing.
+const height = "15rem";
+// A panel's content lines up with the tab list above it.
+const panel = "px-0 pb-0 pt-4";
+
 // Profile › How your Work Agent works: its Soul and its Workspace
 // Instructions, the two texts the person writes for every Work of their Work
-// Agent. They differ in who reads them, which each tab states first. Drafts
-// live here, so switching tabs keeps an unsaved one, which its tab marks. A
-// Work Agent that cannot be loaded is reported once, by Your Work Agent.
+// Agent, edited in boxes of one height. Drafts live here, so switching tabs
+// keeps an unsaved one, which its tab marks. A Work Agent that cannot be
+// loaded is reported once, by Your Work Agent.
 export function WorkAgentGuidance() {
   const agent = useMyWorkAgent();
   const agentId = agent.data?.agentId;
@@ -40,22 +45,20 @@ export function WorkAgentGuidance() {
                 <Tabs.Tab id="instructions">Workspace instructions<UnsavedMark shown={unsaved("instructions", instructions.data)} /><Tabs.Indicator /></Tabs.Tab>
               </Tabs.List>
             </Tabs.ListContainer>
-            <Tabs.Panel id="soul" className="grid gap-4 pt-4">
-              <p className="text-[14px] text-muted">How your Work Agent talks and works. Only you can read it. Every Work takes it up at its next start; platform rules and the agreements a Work follows still come first.</p>
+            <Tabs.Panel id="soul" className={panel}>
               <Loaded noun="Soul" query={soul}>
                 {saved => (
-                  <AgentTextEditor label="Soul" draft={draft("soul", saved)} saved={saved} max={MAX_SOUL} placeholder="How your Work Agent should talk and work"
+                  <AgentTextEditor label="Soul" height={height} draft={draft("soul", saved)} saved={saved} max={MAX_SOUL} placeholder="How your Work Agent should talk and work"
                     saving={changeSoul.isPending} error={changeSoul.isError ? soulErrorMessage(changeSoul.error) : ""} onChange={edit("soul")}
                     onSave={text => changeSoul.mutate({ agentId: agentId ?? "", soul: text }, { onSuccess: () => settle("soul") })}
                     onDiscard={() => { changeSoul.reset(); settle("soul"); }} />
                 )}
               </Loaded>
             </Tabs.Panel>
-            <Tabs.Panel id="instructions" className="grid gap-4 pt-4">
-              <p className="text-[14px] text-muted">Written into each Work's workspace as its instructions file at the Work's next start, beside the instructions of the repositories it works on. Anyone who can open a Work can read them.</p>
+            <Tabs.Panel id="instructions" className={panel}>
               <Loaded noun="workspace instructions" query={instructions}>
                 {saved => (
-                  <AgentTextEditor label="Workspace instructions" document rows={12} draft={draft("instructions", saved)} saved={saved} max={MAX_WORKSPACE_INSTRUCTIONS}
+                  <AgentTextEditor label="Workspace instructions" document height={height} draft={draft("instructions", saved)} saved={saved} max={MAX_WORKSPACE_INSTRUCTIONS}
                     placeholder={"# Working in these repositories\n- Run the tests before you push\n- Keep commits small"}
                     saving={changeInstructions.isPending} error={changeInstructions.isError ? workspaceInstructionsErrorMessage(changeInstructions.error) : ""} onChange={edit("instructions")}
                     onSave={text => changeInstructions.mutate({ agentId: agentId ?? "", instructions: text }, { onSuccess: () => settle("instructions") })}

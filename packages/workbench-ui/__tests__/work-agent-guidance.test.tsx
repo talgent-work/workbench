@@ -50,17 +50,15 @@ function renderGuidance() {
   return render(<WorkAgentGuidance />, { wrapper });
 }
 
-it("edits the Soul and the workspace instructions in one place, each saying who reads it", async () => {
+it("edits the Soul and the workspace instructions in one place", async () => {
   const user = userEvent.setup();
   renderGuidance();
 
   const soul = await screen.findByRole("form", { name: "Soul" });
   expect(within(soul).getByRole("textbox", { name: "Soul" })).toHaveValue("Answer with the conclusion first.");
-  expect(screen.getByText(/Only you can read it/)).toBeInTheDocument();
 
   await user.click(screen.getByRole("tab", { name: "Workspace instructions" }));
   const instructions = await screen.findByRole("form", { name: "Workspace instructions" });
-  expect(screen.getByText(/Anyone who can open a Work can read them/)).toBeInTheDocument();
   await user.type(within(instructions).getByRole("textbox", { name: "Workspace instructions" }), "  Run make check.  ");
   expect(within(instructions).getByText(`15 / ${MAX_WORKSPACE_INSTRUCTIONS.toLocaleString("en-US")}`)).toBeInTheDocument();
 
