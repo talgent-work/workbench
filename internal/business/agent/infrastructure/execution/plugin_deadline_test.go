@@ -27,7 +27,7 @@ func TestPreparationIsBoundedByTheStartupDeadline(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			// A stand-in timeout reports the budget it was given instead of running.
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "timeout"), []byte("#!/bin/sh\necho \"$3 ${11}\"\n"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "timeout"), []byte("#!/bin/sh\necho \"$3 ${13}\"\n"), 0o755))
 			input := request()
 			input.PreparationBound = time.Now().Add(tc.bound)
 			input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "fixed", Source: "fixture", Version: "1", RetrievalRef: "archive:fixed", NativeEntry: []byte(`{"name":"fixed","version":"1"}`)}}}

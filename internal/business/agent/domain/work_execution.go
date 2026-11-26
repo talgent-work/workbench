@@ -118,7 +118,8 @@ func (s *AgentWork) startRequest() WorkStartAdmitted {
 }
 
 // LaunchSpecification is what the current start's run launches with, taken
-// from the Work: its context, capabilities, bindings, the Soul it took up,
+// from the Work: its context, capabilities, bindings, the Soul and Workspace
+// Instructions it took up,
 // the repositories it selected and those still to check out.
 func (s *AgentWork) LaunchSpecification() LaunchSpecification {
 	return LaunchSpecification{
@@ -126,7 +127,7 @@ func (s *AgentWork) LaunchSpecification() LaunchSpecification {
 		RemainingRepositories:  s.RemainingRepositories(),
 		AuthorizationSelection: s.AuthorizationSelection.Clone(),
 		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, WorkCaller: s.WorkCaller, WorkKey: s.WorkKey, FileHome: s.FileHome, Capabilities: s.CapabilitySnapshot.Clone(),
-		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, LocatedLayout: s.LocatedLayout.Clone(),
+		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, WorkspaceInstructions: s.HarnessProcess.WorkspaceInstructions, LocatedLayout: s.LocatedLayout.Clone(),
 		AgentHarness: s.AgentHarnessReference, RepresentedPerson: s.RepresentedPerson, OwningApplication: s.OwningApplication, WorkLabels: s.WorkLabels.Map(), TraceAttributes: s.executionTraceAttributes(), StartingContext: s.StartingContext.clone(),
 	}
 }

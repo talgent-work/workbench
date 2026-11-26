@@ -167,6 +167,10 @@ type AgentDefinition struct {
 	// Soul is the persona and working style its Owners write; each of its
 	// Works takes it up at its next start. Only its Owners read or write it.
 	Soul string
+	// WorkspaceInstructions are the instructions its Owners write for its
+	// Works' Session Workspaces; each of its Works places them at its
+	// Session Workspace root at its next start.
+	WorkspaceInstructions string
 	// ApplicationRemoved is set once Agent learns that the Application owning
 	// this definition was removed: from then on the Application is admitted
 	// as no Owner (Removed Application admits nothing).
@@ -205,6 +209,9 @@ func (a *AgentDefinition) Validate() error {
 		return fmt.Errorf("%w: only an Application's Agent records its Application's removal", ErrInvalidAgentDefinition)
 	}
 	if err := validateSoul(a.Soul); err != nil {
+		return err
+	}
+	if err := validateWorkspaceInstructions(a.WorkspaceInstructions); err != nil {
 		return err
 	}
 	if err := a.WorkDefaults.validate(); err != nil {

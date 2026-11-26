@@ -115,7 +115,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	}
 	// Definition and Computer admission are consulted only for an available
 	// model; admission refuses a withdrawn Model Configuration first.
-	admission := domain.StartAdmission{AdmittedAt: h.now(), AgentID: agent.ID, ModelConfigurationProvided: provided, Soul: agent.Soul}
+	admission := domain.StartAdmission{AdmittedAt: h.now(), AgentID: agent.ID, ModelConfigurationProvided: provided, Soul: agent.Soul, WorkspaceInstructions: agent.WorkspaceInstructions}
 	workID := request.workID()
 	if available {
 		seat, err := admitRun(ctx, h.computers, RunAdmission{ComputerID: computer.ID, DeskID: requestedDeskID(agent.WorkPrincipal(), request.RequestID), WorkID: workID, WorkOwnerID: agent.WorkPrincipal(), StarterID: request.SubjectID, Sandbox: harness.Sandbox})

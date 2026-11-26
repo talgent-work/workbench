@@ -1,14 +1,17 @@
 // Prepares a Work's environment inside its sandbox before the Harness starts:
-// native Plugin installation, then checkout of the planned
-// repositories. It adapts the native CLI and git; it is not a package fetcher.
+// the Work's Workspace Instructions, native Plugin installation, then checkout
+// of the planned repositories. It adapts the native CLI and git; it is not a package fetcher.
 // Output is one bounded report line; CLI and git diagnostics never leave the
 // sandbox, because they can echo remote URLs and credential errors.
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 // place is "machine" on a Managed Computer, whose own git credentials serve
 // the checkouts; it is absent in a Cloud sandbox.
-const [binary, encodedCatalog, receipt, encodedPlan, budget, place] = process.argv.slice(1);
+// instructionsFile is the Agent Harness's instructions file, which holds the
+// Work's Workspace Instructions, given base64-encoded and empty for none.
+const [binary, encodedCatalog, receipt, instructionsFile, encodedInstructions, encodedPlan, budget, place] = process.argv.slice(1);
 const onMachine = place === 'machine';
 const catalog = JSON.parse(encodedCatalog);
 // The plan is null when this start does not check out (Resume after a checkout
@@ -325,6 +328,44 @@ async function checkOutRepositories() {
   return outcomes;
 }
 
+// The instructions file at the workspace root holds the Work's Workspace
+// Instructions as this start took them up. A file this preparation placed
+// earlier is recognised by its recorded digest: with no instructions it is
+// removed only while it still holds what was placed, so instructions the Work
+// wrote there itself stay. The outcome is placed, removed, absent or failed.
+const instructionsDigestPath = path.join(workspace, '.claude', 'talgent', 'instructions.sha256');
+const digest = (content) => crypto.createHash('sha256').update(content).digest('hex');
+function placeInstructions() {
+  try {
+    if (!instructionsFile || path.basename(instructionsFile) !== instructionsFile) return 'failed';
+    const target = path.join(workspace, instructionsFile);
+    const instructions = Buffer.from(encodedInstructions || '', 'base64');
+    fs.mkdirSync(path.dirname(instructionsDigestPath), { recursive: true, mode: 0o700 });
+    if (instructions.length > 0) {
+      const temporary = target + '.talgent-' + process.pid;
+      try {
+        fs.writeFileSync(temporary, instructions);
+        fs.renameSync(temporary, target);
+      } finally {
+        fs.rmSync(temporary, { force: true });
+      }
+      fs.writeFileSync(instructionsDigestPath, digest(instructions));
+      return 'placed';
+    }
+    let placed = '';
+    try { placed = fs.readFileSync(instructionsDigestPath, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (!placed) return 'absent';
+    let current = null;
+    try { current = fs.readFileSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const unchanged = current !== null && digest(current) === placed;
+    if (unchanged) fs.rmSync(target, { force: true });
+    fs.rmSync(instructionsDigestPath, { force: true });
+    return unchanged ? 'removed' : 'absent';
+  } catch {
+    return 'failed';
+  }
+}
+
 async function main() {
   const finished = read(reportPath);
   if (Array.isArray(finished.results)) {
@@ -332,7 +373,8 @@ async function main() {
     return;
   }
   fs.mkdirSync(path.dirname(reportPath), { recursive: true, mode: 0o700 });
-  const report = { results: await installPlugins(), repositories: await checkOutRepositories(), cleanup: cleanupFailures.slice(0, 32) };
+  const instructions = placeInstructions();
+  const report = { instructions, results: await installPlugins(), repositories: await checkOutRepositories(), cleanup: cleanupFailures.slice(0, 32) };
   save(reportPath, report);
   process.stdout.write(JSON.stringify(report) + '\n');
 }

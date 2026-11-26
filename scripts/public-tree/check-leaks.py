@@ -111,6 +111,10 @@ PREFIX = "" if not HOLDS_TREE or ROOT == TREE else TREE.relative_to(ROOT).as_pos
 SKIPPED = ("gen/", PREFIX + "gen/")
 # This directory names the extension's concepts to find them.
 TERM_SOURCE = PREFIX + "scripts/public-tree/"
+# The Agent Harness description names the file each Harness reads as a Work's
+# project instructions; that file name is product behavior, not a development
+# document.
+HARNESS_DESCRIPTION = PREFIX + "internal/business/agent/domain/agent_harness.go"
 
 
 def manifest():
@@ -191,6 +195,8 @@ def core_findings(path, text, documents):
         if m.group(0).rstrip("/") in documents:
             yield m.start(), "development document", m.group(0)
     for m in DEV_DOC.finditer(text):
+        if path == HARNESS_DESCRIPTION:
+            continue
         yield m.start(), "development document", m.group(0)
     for m in ACCOUNT.finditer(text):
         yield m.start(), "account", m.group(0)

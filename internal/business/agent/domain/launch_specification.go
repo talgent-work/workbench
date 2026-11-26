@@ -41,6 +41,10 @@ type LaunchSpecification struct {
 	// Soul is appended to the startup Agent's prompt, never replacing it, and
 	// is not part of the Capability Snapshot.
 	Soul string
+	// WorkspaceInstructions are placed at the Work's Session Workspace root,
+	// where the Agent Harness reads them as its project instructions; empty
+	// leaves none there.
+	WorkspaceInstructions string
 	// PreparationBound is when the in-environment preparation of this start
 	// (Plugin installation, then repository checkout) degrades.
 	PreparationBound time.Time

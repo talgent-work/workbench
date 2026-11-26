@@ -32,15 +32,16 @@ func stoppedWork(t *testing.T) (*domain.AgentWork, *executionPort) {
 }
 
 // Resume takes the selected Plugins' current release declarations and the
-// definition's current Soul (Start upgrade); the selection, Prompt, startup Agent and
-// Connectors stay, and the Harness conversation continues.
+// definition's current Soul and Workspace Instructions (Start upgrade); the
+// selection, Prompt, startup Agent and Connectors stay, and the Harness
+// conversation continues.
 func TestResumeUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 	work, port := stoppedWork(t)
 	// The starting user chose "paths"; "flag" holds the old release's default.
 	work.CapabilitySnapshot.Plugins[0].Configuration["paths"] = []string{"docs"}
 	before := work.CapabilitySnapshot.Clone()
 	conversation := work.HarnessSessionReference
-	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-next"}, ModelConfigurationProvided: true, Soul: "Answer with the conclusion first.", CurrentPlugins: []domain.PluginRelease{reviewV2()}}
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-next"}, ModelConfigurationProvided: true, Soul: "Answer with the conclusion first.", WorkspaceInstructions: "Run make check before you push.", CurrentPlugins: []domain.PluginRelease{reviewV2()}}
 	require.NoError(t, work.Resume(admission))
 
 	snapshot := work.CapabilitySnapshot
@@ -55,13 +56,16 @@ func TestResumeUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 	require.Equal(t, domain.ContextContinue, resumed.ContextMode)
 	require.Equal(t, conversation, resumed.HarnessSessionReference)
 	require.Equal(t, "Answer with the conclusion first.", resumed.Soul)
+	require.Equal(t, "Run make check before you push.", resumed.WorkspaceInstructions)
 	require.Equal(t, "2", resumed.Capabilities.Plugins[0].Release.Version)
 	require.Equal(t, before.Prompt, resumed.Capabilities.Prompt, "the Soul is not part of the Capability Snapshot")
 
-	// A recovered delivery of the same start keeps the Soul it took up.
+	// A recovered delivery of the same start keeps the Soul and Workspace
+	// Instructions it took up.
 	_, err := work.RecoverExecution()
 	require.NoError(t, err)
 	require.Equal(t, "Answer with the conclusion first.", port.launch().Soul)
+	require.Equal(t, "Run make check before you push.", port.launch().WorkspaceInstructions)
 }
 
 // A Plugin with no current release keeps the declarations the Work last took

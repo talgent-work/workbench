@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -110,6 +111,11 @@ func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *exec
 			output = append(output, frame.Data...)
 		case "exit":
 			report := latestReport(output, *frame.ExitCode, snapshot, plan)
+			if report.Instructions == instructionsFailed {
+				// The Harness still starts, without the Workspace Instructions
+				// this start took up; only the operator learns of it.
+				slog.Default().WarnContext(ctx, "workspace instructions not placed", slog.String("work_id", launch.WorkID), slog.String("execution_id", record.ID))
+			}
 			if report.Repositories == nil {
 				report.Repositories = settledCheckouts(output, plan)
 			}
@@ -129,9 +135,16 @@ func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *exec
 
 // preparationReport is the preparation process's report of one run.
 type preparationReport struct {
+	// Instructions is how the Workspace Instructions ended: placed, removed,
+	// absent or failed.
+	Instructions string                     `json:"instructions"`
 	Results      []pluginInstallationResult `json:"results"`
 	Repositories []checkoutReport           `json:"repositories"`
 }
+
+// instructionsFailed reports Workspace Instructions the preparation could not
+// place or remove.
+const instructionsFailed = "failed"
 
 type checkoutReport struct {
 	RepositoryID string `json:"repositoryId"`

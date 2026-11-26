@@ -36,6 +36,9 @@ type agentDefinitionDO struct {
 	ID               string `xorm:"id pk varchar(36)"`
 	Capabilities     string `xorm:"capabilities text"`
 	Soul             string `xorm:"soul text"`
+	// WorkspaceInstructions are what each Work places at its Session
+	// Workspace root at its next start.
+	WorkspaceInstructions string `xorm:"workspace_instructions text"`
 	// ApplicationRemoved records that the owning Application was removed.
 	ApplicationRemoved bool  `xorm:"application_removed"`
 	Version            int   `xorm:"'version' int"`
@@ -140,6 +143,7 @@ type harnessProcessRecord struct {
 	DeskWaiting            bool             `json:"desk_waiting,omitempty"`
 	StartWithdrawn         bool             `json:"start_withdrawn,omitempty"`
 	Soul                   string           `json:"soul,omitempty"`
+	WorkspaceInstructions  string           `json:"workspace_instructions,omitempty"`
 	// Ready records the run's readiness its AgentExecution reported.
 	Ready            bool                  `json:"ready"`
 	Exited           bool                  `json:"exited"`
