@@ -10,7 +10,7 @@ import (
 // maxFileNameBytes bounds a name to what one directory entry holds.
 const maxFileNameBytes = 255
 
-// FilePosition is a file's identity: its Directory and its name, one path
+// FilePosition is where a file is: its Directory and its name, one path
 // element directly in the Directory. It compares by value.
 type FilePosition struct {
 	Directory DirectoryID
@@ -83,3 +83,8 @@ func cleanRelative(raw string) bool {
 	return raw != "" && !strings.ContainsAny(raw, "\\\x00") && !path.IsAbs(raw) && path.Clean(raw) == raw &&
 		raw != "." && raw != ".." && !strings.HasPrefix(raw, "../")
 }
+
+// FileID is a file's identity in its Directory, independent of its File
+// position. Each Create gives the new file a File ID no earlier file of its
+// Directory had; Rename and Replace keep it (File identity).
+type FileID string

@@ -22,7 +22,7 @@ type shareLinkDO struct {
 	Token         string `xorm:"token pk"`
 	OwnerKey      string `xorm:"owner_key"`
 	DirectoryName string `xorm:"directory_name"`
-	TargetName    string `xorm:"target_name"`
+	FileID        string `xorm:"file_id"`
 	CreatedBy     string `xorm:"created_by"`
 	// CreatedByApplication is the Application that created the link, when
 	// no person did.

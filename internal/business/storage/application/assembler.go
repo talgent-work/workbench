@@ -6,7 +6,7 @@ import "github.com/talgent-work/workbench/internal/business/storage/domain"
 
 func (a *Application) directoryFile(directory *domain.Directory, stored StoredFile) DirectoryFile {
 	file := DirectoryFile{StoredFile: stored}
-	for _, link := range directory.ActiveShareLinks(stored.Position) {
+	for _, link := range directory.ActiveShareLinks(stored.FileID) {
 		file.ShareLinks = append(file.ShareLinks, a.shareLinkView(link))
 	}
 	return file

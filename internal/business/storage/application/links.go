@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
@@ -56,20 +57,20 @@ func (a *Application) ReadAccess(ctx context.Context, token string) (OpenedFile,
 }
 
 // CreateShareLink shares an existing Attachment or Artifact, also after the
-// work its Directory serves has ended.
+// work its Directory serves has ended. The link names the file's File ID, so
+// a rename or deletion meanwhile needs no coordination with it.
 func (a *Application) CreateShareLink(ctx context.Context, at Position, createdBy domain.Actor) (ShareLinkView, error) {
 	_, backend, position, err := a.existingFile(ctx, at)
 	if err != nil {
 		return ShareLinkView{}, err
 	}
+	file, err := a.identifyFile(ctx, backend, position)
+	if err != nil {
+		return ShareLinkView{}, err
+	}
 	var created *domain.ShareLink
 	_, err = a.changeDirectory(ctx, position.Directory, func(directory *domain.Directory) error {
-		// Checked on every attempt: a rename or deletion recorded meanwhile
-		// conflicts with this change, and its retry must see the file gone.
-		if _, err := backend.Stat(ctx, position); err != nil {
-			return err
-		}
-		created, err = directory.CreateShareLink(position, createdBy, a.now())
+		created, err = directory.CreateShareLink(file, createdBy, a.now())
 		return err
 	})
 	if err != nil {
@@ -78,23 +79,51 @@ func (a *Application) CreateShareLink(ctx context.Context, at Position, createdB
 	return a.shareLinkView(created), nil
 }
 
-// RevokeShareLinks ends a file's active Share Links, every one when createdBy
-// names no one, or only those createdBy made. Like creating one, it is no file write, so
-// the owner's context alone decides it, also after the work has ended.
+// identifyFile is the File ID of the file at the position, taken under the
+// Directory's lock so that a Replace carries over the one given.
+func (a *Application) identifyFile(ctx context.Context, backend DirectoryBackendPort, position domain.FilePosition) (domain.FileID, error) {
+	unlock, err := backend.Lock(ctx, position.Directory)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	return backend.IdentifyFile(ctx, position)
+}
+
+// RevokeShareLinks ends the active Share Links of the file at a position,
+// every one when createdBy names no one, or only those createdBy made. Like
+// creating one, it is no file write, so the owner's context alone decides it,
+// also after the work has ended. A position without a file has no links to
+// end: those of a deleted file already answer that it is gone.
 func (a *Application) RevokeShareLinks(ctx context.Context, at Position, createdBy domain.Actor) (revoked, remaining int, err error) {
 	position, err := at.position()
 	if err != nil {
 		return 0, 0, err
 	}
+	directory, err := a.directories.Get(ctx, position.Directory)
+	if err != nil {
+		return 0, 0, err
+	}
+	backend, err := a.backends.of(directory)
+	if err != nil {
+		return 0, 0, err
+	}
+	stored, err := backend.Stat(ctx, position)
+	if errors.Is(err, ErrFileNotFound) {
+		return 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, err
+	}
 	_, err = a.changeDirectory(ctx, position.Directory, func(directory *domain.Directory) error {
-		revoked, remaining = directory.RevokeShareLinks(position, createdBy)
+		revoked, remaining = directory.RevokeShareLinks(stored.FileID, createdBy)
 		return nil
 	})
 	return revoked, remaining, err
 }
 
-// ReadShared opens the current content at an active Share Link's position;
-// a file gone from it answers ErrFileNotFound.
+// ReadShared opens the current content of an active Share Link's file,
+// wherever it is in its Directory; a file gone answers ErrFileNotFound.
 func (a *Application) ReadShared(ctx context.Context, token string) (OpenedFile, error) {
 	directory, err := a.directories.GetByShareToken(ctx, token)
 	if err != nil {
@@ -114,5 +143,5 @@ func (a *Application) ReadShared(ctx context.Context, token string) (OpenedFile,
 	if err != nil {
 		return OpenedFile{}, err
 	}
-	return backend.Open(ctx, link.Target)
+	return backend.Find(ctx, directory.ID, link.File)
 }

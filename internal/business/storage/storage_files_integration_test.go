@@ -67,27 +67,36 @@ func TestWritesStateWhetherTheyReplaceAndShareLinksFollowThem(t *testing.T) {
 	require.Contains(t, header.Get("Content-Disposition"), `filename=brief.md`)
 	require.Len(t, f.files(caseInputs)["brief.md"].ShareLinks, 1)
 
-	// Rename moves the link; a taken target is refused.
+	// The link follows a rename; a taken target is refused, and a later file
+	// at the freed name is a different file.
 	_, err = f.app.RenameFile(t.Context(), at(caseInputs, "brief.md"), token, "late.md", domain.Actor{UserID: "user-1"})
 	require.ErrorIs(t, err, application.ErrNameTaken)
 	renamed, err := f.app.RenameFile(t.Context(), at(caseInputs, "brief.md"), token, "final brief.md", domain.Actor{UserID: "user-1"})
 	require.NoError(t, err)
 	require.Len(t, renamed.ShareLinks, 1)
-	status, body, _ = f.get(share.URL)
+	require.Equal(t, http.StatusOK, f.upload(caseInputs, token, "brief.md", "newcomer", false).StatusCode)
+	require.Empty(t, f.files(caseInputs)["brief.md"].ShareLinks)
+	status, body, header = f.get(share.URL)
 	require.Equal(t, http.StatusOK, status)
 	require.Equal(t, "v2", body)
+	require.Contains(t, header.Get("Content-Disposition"), `filename="final brief.md"`)
+	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "brief.md"), token, domain.Actor{UserID: "user-1"}))
 
-	// A file gone without Storage says so through its link; Delete ends it.
+	// A file gone without Storage says so through its link, as one Storage
+	// deleted does, also once a later file takes its name.
 	require.NoError(t, os.Remove(filepath.Join(f.folder(fileSpace(caseInputs)), "late.md")))
 	lateShare, err := f.app.CreateShareLink(t.Context(), at(caseInputs, "final brief.md"), domain.Actor{UserID: "user-1"})
 	require.NoError(t, err)
 	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "final brief.md"), token, domain.Actor{UserID: "user-1"}))
 	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "final brief.md"), token, domain.Actor{UserID: "user-1"}), "deleting an absent file succeeds")
+	require.Equal(t, http.StatusOK, f.upload(caseInputs, token, "final brief.md", "later", false).StatusCode)
 	for _, link := range []string{share.URL, lateShare.URL} {
 		status, _, _ = f.get(link)
-		require.Equal(t, http.StatusGone, status)
+		require.Equal(t, http.StatusNotFound, status, "the file is gone; the link is not revoked")
 	}
-	require.Empty(t, f.files(caseInputs))
+	revoked, remaining, err := f.app.RevokeShareLinks(t.Context(), at(caseInputs, "final brief.md"), domain.Actor{})
+	require.NoError(t, err)
+	require.Zero(t, revoked+remaining, "the later file has no links")
 }
 
 // Content is staged outside the Directory until it is complete.
@@ -208,7 +217,7 @@ func TestPublicationIsExplicitAndMeetsRetriesByItsOwnSemantics(t *testing.T) {
 	require.NoError(t, f.app.DeleteArtifact(t.Context(), token, "report.md", "work-1"), "a retried delete finds nothing left")
 	require.NotContains(t, f.files(artifacts), "report.md")
 	status, _, _ := f.get(share.URL)
-	require.Equal(t, http.StatusGone, status)
+	require.Equal(t, http.StatusNotFound, status, "a deleted Artifact is gone")
 	_, err = f.app.PublishArtifact(t.Context(), application.ArtifactSource{SpaceToken: "forged", WorkID: "work-1", WorkDirectory: "workspace", Path: "dist/report.md"}, "x.md", false)
 	require.ErrorIs(t, err, domain.ErrSpaceTokenRejected, "the Space Token alone names the File Space")
 }
@@ -289,6 +298,34 @@ func TestFilesKeepTheirOriginOnTheFileItself(t *testing.T) {
 	n, err := unix.Getxattr(filepath.Join(f.folder(fileSpace(caseInputs)), "brief.md"), "user.talgent.uploader", buf)
 	require.NoError(t, err)
 	require.Equal(t, "user-1", string(buf[:n]))
+}
+
+// A file Storage wrote before it kept File IDs gets one when first shared,
+// and keeps it through a Replace.
+func TestAFileWithoutAFileIDGetsOneWhenShared(t *testing.T) {
+	f := newFixture(t)
+	token := f.open(fileSpace(caseInputs))
+	f.upload(caseInputs, token, "old.md", "v1", false)
+	path := filepath.Join(f.folder(fileSpace(caseInputs)), "old.md")
+	require.NoError(t, unix.Removexattr(path, "user.talgent.file_id"))
+	require.Empty(t, f.files(caseInputs)["old.md"].FileID)
+
+	share, err := f.app.CreateShareLink(t.Context(), at(caseInputs, "old.md"), domain.Actor{UserID: "user-1"})
+	require.NoError(t, err)
+	given := f.files(caseInputs)["old.md"].FileID
+	require.NotEmpty(t, given)
+	again, err := f.app.CreateShareLink(t.Context(), at(caseInputs, "old.md"), domain.Actor{UserID: "user-2"})
+	require.NoError(t, err)
+	require.Equal(t, given, f.files(caseInputs)["old.md"].FileID, "a file is given its File ID once")
+
+	require.Equal(t, http.StatusOK, f.upload(caseInputs, token, "old.md", "v2", true).StatusCode)
+	replaced := f.files(caseInputs)["old.md"]
+	require.Equal(t, given, replaced.FileID)
+	require.Len(t, replaced.ShareLinks, 2)
+	for _, link := range []string{share.URL, again.URL} {
+		_, body, _ := f.get(link)
+		require.Equal(t, "v2", body)
+	}
 }
 
 // Each committed change Storage carries out is published with its Directory

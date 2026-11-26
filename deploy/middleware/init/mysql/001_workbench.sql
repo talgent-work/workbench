@@ -535,7 +535,7 @@ CREATE TABLE IF NOT EXISTS `storage_share_link` (
   `token` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Unguessable Share Link token',
   `owner_key` varchar(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Owner of the Directory holding the link',
   `directory_name` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Name of the Directory holding the link',
-  `target_name` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Target File position name',
+  `file_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'File ID of the file the link reaches, kept with the file as an extended attribute',
   `created_by` varchar(64) NOT NULL DEFAULT '' COMMENT 'Person who created the link; empty when an Application did',
   `created_by_application` varchar(64) NOT NULL DEFAULT '' COMMENT 'Application that created the link; empty when a person did',
   `state` varchar(16) NOT NULL DEFAULT '' COMMENT 'Lifecycle: active|revoked',
