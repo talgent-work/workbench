@@ -9,7 +9,7 @@ GitHub release page.
 
 Apply
 [`20261126-workspace-instructions.sql`](../deploy/middleware/migrations/20261126-workspace-instructions.sql)
-to the database named by `WORKBENCH_MYSQL_DATABASE`, then deploy `controlplane` of this release;
+to the database named by `AGENT_MYSQL_DATABASE`, then deploy `controlplane` of this release;
 an earlier `controlplane` keeps running against the new column. An Agent's owners now write its
 Workspace Instructions, from Profile for a person's Work Agent, and every start of its Works writes
 them into the Harness's instructions file at the Session Workspace root. A Work's selected
