@@ -52,11 +52,13 @@ func NewSandboxCredentials(locks *database.AdvisoryLocks, db *jimuxorm.DB, lifec
 	return c, nil
 }
 
-// withLock serializes preparation with reclamation across controlplane replicas.
+// withLock serializes preparation with reclamation across controlplane
+// replicas. It never waits: a step that finds the lock held is busy, not in
+// conflict, and its execution takes it again on its next attempt.
 func (c *SandboxCredentials) withLock(ctx context.Context, id string, work func() error) error {
 	err := c.locks.Hold(ctx, "vault:"+storageKey(id)[:48], work)
 	if errors.Is(err, database.ErrLockHeld) {
-		return errEnvironmentConflict
+		return errEnvironmentBusy
 	}
 	return err
 }
