@@ -13,6 +13,10 @@ import (
 
 var errEnvironmentConflict = errors.New("agent: execution environment conflicts with its recorded execution")
 
+// errEnvironmentBusy means another step holds the environment's lock now;
+// the step is taken again on the execution's next attempt.
+var errEnvironmentBusy = errors.New("agent: execution environment is busy with another step")
+
 func validateStartRequest(request domain.LaunchSpecification) error {
 	if err := request.WorkModel.Validate(); err != nil {
 		return err

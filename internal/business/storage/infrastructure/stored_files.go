@@ -86,9 +86,10 @@ func (f *DirectoryFiles) Discard(staged application.StagedContent) {
 	discard(f.layout.Root, f.private(pendingArea), string(staged))
 }
 
-// Commit renames the staged content to the position. A replacement first
-// removes the replaced file's links from the mapped paths; the committed
-// file is linked there once it is in place.
+// Commit renames the staged content to the position. Staged content holds
+// a new File ID, which a Create keeps; a Replace first writes the replaced
+// file's File ID onto it and removes the replaced file's links from the
+// mapped paths. The committed file is linked there once it is in place.
 func (f *DirectoryFiles) Commit(ctx context.Context, content application.StagedContent, position domain.FilePosition, replace bool, mappings []domain.MappedPath) (application.StoredFile, error) {
 	if err := ctx.Err(); err != nil {
 		return application.StoredFile{}, err
@@ -113,6 +114,9 @@ func (f *DirectoryFiles) Commit(ctx context.Context, content application.StagedC
 	}
 	defer unix.Close(target)
 	if replace {
+		if err := carryFileID(target, position.Name, pending, staged); err != nil {
+			return application.StoredFile{}, err
+		}
 		// The exchange fails on an absent target, and the previous content
 		// stays in place until the new one has taken its position.
 		err = unix.Renameat2(pending, staged, target, position.Name, unix.RENAME_EXCHANGE)
@@ -300,6 +304,9 @@ func writeStaged(ctx context.Context, file *os.File, content io.Reader, attribut
 	if err := writeAttributes(int(file.Fd()), attributes); err != nil {
 		return oops.With("operation", "storage.stage_attributes").Wrap(err)
 	}
+	if err := writeFileID(int(file.Fd()), newFileID(), 0); err != nil {
+		return oops.With("operation", "storage.stage_file_id").Wrap(err)
+	}
 	return oops.With("operation", "storage.stage").Wrap(file.Sync())
 }
 
@@ -358,7 +365,12 @@ func describe(fd int, position domain.FilePosition) (application.StoredFile, err
 	if err != nil {
 		return application.StoredFile{}, oops.With("operation", "storage.read_attributes").Wrap(err)
 	}
+	file, err := readFileID(fd)
+	if err != nil {
+		return application.StoredFile{}, oops.With("operation", "storage.read_file_id").Wrap(err)
+	}
 	return application.StoredFile{
+		FileID:     file,
 		Position:   position,
 		SizeBytes:  stat.Size,
 		ModifiedAt: time.Unix(stat.Mtim.Unix()).UTC(),

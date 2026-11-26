@@ -144,11 +144,10 @@ func TestOnlyAWorkDirectoryIsReclaimedAndReclamationIsFinal(t *testing.T) {
 	require.NoError(t, workDirectory(t).Open())
 }
 
-func TestShareLinksFollowRenameAndEndWithDeletion(t *testing.T) {
+func TestShareLinksBelongToOneFileUntilRevoked(t *testing.T) {
 	d := workDirectory(t)
 	now := time.Now()
-	report, _ := NewFilePosition(d.ID, "report.md")
-	renamed, _ := report.Renamed("final.md")
+	report, later := FileID("file-report"), FileID("file-later")
 
 	link, err := d.CreateShareLink(report, Actor{UserID: "u1"}, now)
 	require.NoError(t, err)
@@ -161,40 +160,25 @@ func TestShareLinksFollowRenameAndEndWithDeletion(t *testing.T) {
 	byApplication, err := d.CreateShareLink(report, Actor{ApplicationID: " a1 "}, now)
 	require.NoError(t, err)
 	require.Equal(t, Actor{ApplicationID: "a1"}, byApplication.CreatedBy)
-	elsewhere, _ := NewFilePosition(workDirectory(t).ID, "report.md")
-	elsewhere.Directory.Name = "other"
-	_, err = d.CreateShareLink(elsewhere, Actor{UserID: "u1"}, now)
-	require.ErrorIs(t, err, ErrShareLinkNotFound, "a link points into its own Directory")
+	_, err = d.CreateShareLink("", Actor{UserID: "u1"}, now)
+	require.ErrorIs(t, err, ErrShareLinkNotFound, "a link names the file it reaches")
+	require.Equal(t, []*ShareLink{link, other, byApplication}, d.ActiveShareLinks(report))
+	require.Empty(t, d.ActiveShareLinks(later), "a later file has none of them")
+	require.Empty(t, d.ActiveShareLinks(""), "a file without a File ID has none")
 
-	d.RecordRename(report, renamed)
-	require.Equal(t, renamed, link.Target)
-	require.Equal(t, []string{link.Token, other.Token, byApplication.Token}, d.ShareLinkTokens(renamed))
-	require.Empty(t, d.ActiveShareLinks(report))
-
-	revoked, remaining := d.RevokeShareLinks(renamed, Actor{UserID: "u2"})
+	revoked, remaining := d.RevokeShareLinks(report, Actor{UserID: "u2"})
 	require.Equal(t, 1, revoked)
 	require.Equal(t, 2, remaining)
-	revoked, remaining = d.RevokeShareLinks(renamed, Actor{ApplicationID: "a1"})
+	revoked, remaining = d.RevokeShareLinks(report, Actor{ApplicationID: "a1"})
 	require.Equal(t, 1, revoked, "an Application ends the links it created")
 	require.Equal(t, 1, remaining)
 	require.False(t, other.Active())
-	other.Retarget(report)
-	require.Equal(t, renamed, other.Target, "a revoked link never moves again")
-
-	d.RecordDeletion(renamed)
+	revoked, remaining = d.RevokeShareLinks(report, Actor{})
+	require.Equal(t, 1, revoked, "no creator named ends every one")
+	require.Zero(t, remaining)
 	require.False(t, link.Active())
 	require.Same(t, link, d.ShareLink(link.Token), "a revoked link stays known")
 	require.Nil(t, d.ShareLink("unknown"))
-}
-
-func TestStaleShareLinksNeverReachANewFile(t *testing.T) {
-	d := workDirectory(t)
-	position, _ := NewFilePosition(d.ID, "a.md")
-	stale, _ := d.CreateShareLink(position, Actor{UserID: "u1"}, time.Now())
-	fresh, _ := d.CreateShareLink(position, Actor{UserID: "u1"}, time.Now())
-	d.RevokeStaleShareLinks(position, []string{stale.Token})
-	require.False(t, stale.Active())
-	require.True(t, fresh.Active(), "a link not found stale stays")
 }
 
 func TestFileWriterNamesExactlyOneWriter(t *testing.T) {

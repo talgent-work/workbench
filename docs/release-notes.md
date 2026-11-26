@@ -5,6 +5,18 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that lets a Share Link follow its file by identity
+
+Stop `controlplane`, apply
+[`20261125-share-link-file-id.sql`](../deploy/middleware/migrations/20261125-share-link-file-id.sql)
+to the database named by `WORKBENCH_MYSQL_DATABASE`, then deploy `controlplane` of this release.
+The script replaces `storage_share_link.target_name` with `file_id` and revokes every active
+Share Link: a stored link names no file identity, so share those files again. A Share Link now
+reaches its file by a File ID kept with the file as the extended attribute
+`user.talgent.file_id`: it follows renames and replacements, and a link to a deleted file answers
+`404 not_found`, never reaching a later file of the same name. A rollback restores the column as
+the script's header describes; revoked links stay revoked.
+
 ## The release that takes the Cloud's Capacity from its quota
 
 ResourceQuota `agent-executions` in the sandbox namespace is now the Cloud's Capacity: controlplane

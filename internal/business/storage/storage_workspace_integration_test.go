@@ -178,10 +178,10 @@ func TestContentReplacementExpectingAContentSwitchesOnlyOverIt(t *testing.T) {
 	require.Equal(t, b, read.Files, "a refused replacement changes nothing")
 }
 
-// A rename whose record fails is moved back, so its Share Links keep
-// reaching the file; links left by an unrecorded deletion never reach a
-// later file at that name.
-func TestInterruptedFileOperationsLeaveNoLinkReachingTheWrongFile(t *testing.T) {
+// A Share Link reaches its file by File ID, so renames and deletions record
+// nothing: they complete while the Directory's record cannot change, and a
+// later file at a freed name is never reached through an earlier link.
+func TestRenamesAndDeletionsLeaveNoLinkReachingTheWrongFile(t *testing.T) {
 	f := newFixture(t)
 	token := f.open(fileSpace(caseInputs))
 	f.upload(caseInputs, token, "a.md", "a", false)
@@ -190,17 +190,20 @@ func TestInterruptedFileOperationsLeaveNoLinkReachingTheWrongFile(t *testing.T) 
 
 	f.directories.failing.Store(true)
 	_, err = f.app.RenameFile(t.Context(), at(caseInputs, "a.md"), token, "b.md", domain.Actor{UserID: "user-1"})
-	require.ErrorIs(t, err, errInterrupted)
-	require.ErrorIs(t, f.app.DeleteFile(t.Context(), at(caseInputs, "a.md"), token, domain.Actor{UserID: "user-1"}), errInterrupted)
-	f.directories.failing.Store(false)
-	require.NotContains(t, f.files(caseInputs), "b.md", "the unrecorded rename was moved back")
-	require.NotContains(t, f.files(caseInputs), "a.md", "the file is gone though its deletion was not recorded")
-
+	require.NoError(t, err, "a rename records nothing")
 	require.Equal(t, http.StatusOK, f.upload(caseInputs, token, "a.md", "someone else's", false).StatusCode)
-	status, _, _ := f.get(share.URL)
-	require.Equal(t, http.StatusGone, status, "a stale link does not reach the later file")
-	require.Empty(t, f.files(caseInputs)["a.md"].ShareLinks)
+	status, body, _ := f.get(share.URL)
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, "a", body, "the link follows the renamed file, not the later one at its old name")
+	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "b.md"), token, domain.Actor{UserID: "user-1"}), "a deletion records nothing")
+	f.directories.failing.Store(false)
 
-	// The interrupted deletion published once; the rename published nothing.
-	require.Eventually(t, func() bool { return len(f.published.all()) == 3 }, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, http.StatusOK, f.upload(caseInputs, token, "b.md", "another", false).StatusCode)
+	status, _, _ = f.get(share.URL)
+	require.Equal(t, http.StatusNotFound, status, "a link to a deleted file answers that it is gone, never reaching a later file at its name")
+	require.Empty(t, f.files(caseInputs)["a.md"].ShareLinks)
+	require.Empty(t, f.files(caseInputs)["b.md"].ShareLinks)
+
+	// Two uploads, the rename, the deletion and the last upload published.
+	require.Eventually(t, func() bool { return len(f.published.all()) == 5 }, 5*time.Second, 10*time.Millisecond)
 }

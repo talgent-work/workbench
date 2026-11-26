@@ -26,11 +26,10 @@ const (
 
 // Directory is one owner's space under a name, kept on one backend for one
 // lifetime, with the Share Links into it and the mapped paths it is mapped
-// at. Where it is mounted and what it is for belong to its caller. Renames,
-// deletions and Share Link changes of one Directory are serialized here, so
-// every active Share Link points at the File position its file was last
-// moved to through Storage; a read-write grant and a mapping exclude each
-// other here.
+// at. Where it is mounted and what it is for belong to its caller. A Share
+// Link names its file's File ID, so renames and deletions leave the
+// Directory unchanged; a read-write grant and a mapping exclude each other
+// here.
 type Directory struct {
 	ID         DirectoryID
 	Backend    Backend
@@ -237,64 +236,27 @@ func (d *Directory) Reclaim() error {
 	return nil
 }
 
-// RecordRename moves the active Share Links at a renamed file's old position
-// to the new one, on the fact that the rename was carried out.
-func (d *Directory) RecordRename(from, to FilePosition) {
-	for _, link := range d.ActiveShareLinks(from) {
-		link.Retarget(to)
-	}
-}
-
-// RecordDeletion revokes the active Share Links at a deleted position, on the
-// fact that the deletion was carried out.
-func (d *Directory) RecordDeletion(position FilePosition) {
-	for _, link := range d.ActiveShareLinks(position) {
-		link.Revoke()
-	}
-}
-
-// RevokeStaleShareLinks revokes the supplied links still active at a
-// position the caller found free before a file took it. Such a link was left
-// by a deletion that was never recorded; it must not reach the new file.
-// Links not supplied, created once the new file existed, stay active.
-func (d *Directory) RevokeStaleShareLinks(position FilePosition, stale []string) {
-	for _, link := range d.ActiveShareLinks(position) {
-		if slices.Contains(stale, link.Token) {
-			link.Revoke()
-		}
-	}
-}
-
-// ShareLinkTokens are the tokens of the active links at a position.
-func (d *Directory) ShareLinkTokens(position FilePosition) []string {
-	var tokens []string
-	for _, link := range d.ActiveShareLinks(position) {
-		tokens = append(tokens, link.Token)
-	}
-	return tokens
-}
-
-// CreateShareLink adds an active Share Link to a position the caller found
-// holding an Attachment or Artifact, also after the work the Directory
-// serves has ended.
-func (d *Directory) CreateShareLink(target FilePosition, createdBy Actor, now time.Time) (*ShareLink, error) {
-	if target.Directory != d.ID || ValidateFileName(target.Name) != nil {
+// CreateShareLink adds an active Share Link to the file with the supplied
+// File ID, which the caller found to be an Attachment or Artifact of this
+// Directory, also after the work the Directory serves has ended.
+func (d *Directory) CreateShareLink(file FileID, createdBy Actor, now time.Time) (*ShareLink, error) {
+	if file == "" {
 		return nil, ErrShareLinkNotFound
 	}
 	if err := createdBy.Validate(); err != nil {
 		return nil, err
 	}
-	link := &ShareLink{Token: newSecret(), Target: target, CreatedBy: createdBy.trimmed(), CreatedAt: now.UTC(), State: ShareLinkActive}
+	link := &ShareLink{Token: newSecret(), File: file, CreatedBy: createdBy.trimmed(), CreatedAt: now.UTC(), State: ShareLinkActive}
 	d.ShareLinks = append(d.ShareLinks, link)
 	return link, nil
 }
 
-// RevokeShareLinks revokes the active Share Links at a position, every one
-// when createdBy names no one, or only those createdBy made, and reports how
-// many it revoked and how many stay active.
-func (d *Directory) RevokeShareLinks(target FilePosition, createdBy Actor) (revoked, remaining int) {
+// RevokeShareLinks revokes the active Share Links of the file with the
+// supplied File ID, every one when createdBy names no one, or only those
+// createdBy made, and reports how many it revoked and how many stay active.
+func (d *Directory) RevokeShareLinks(file FileID, createdBy Actor) (revoked, remaining int) {
 	createdBy = createdBy.trimmed()
-	for _, link := range d.ActiveShareLinks(target) {
+	for _, link := range d.ActiveShareLinks(file) {
 		if createdBy != (Actor{}) && link.CreatedBy != createdBy {
 			remaining++
 			continue
@@ -315,11 +277,15 @@ func (d *Directory) ShareLink(token string) *ShareLink {
 	return nil
 }
 
-// ActiveShareLinks returns the active links at a position.
-func (d *Directory) ActiveShareLinks(position FilePosition) []*ShareLink {
+// ActiveShareLinks returns the active links of the file with the File ID; a
+// file without one has none.
+func (d *Directory) ActiveShareLinks(file FileID) []*ShareLink {
+	if file == "" {
+		return nil
+	}
 	var links []*ShareLink
 	for _, link := range d.ShareLinks {
-		if link.Active() && link.Target == position {
+		if link.Active() && link.File == file {
 			links = append(links, link)
 		}
 	}
@@ -334,27 +300,21 @@ const (
 	ShareLinkRevoked ShareLinkState = "revoked"
 )
 
-// ShareLink is an unguessable link to the file at one position of its
-// Directory, readable by anyone holding it.
+// ShareLink is an unguessable link to one file of its Directory, readable by
+// anyone holding it. It names the file's File ID, so it reaches the file
+// wherever a rename moves it and never a later file at a freed name.
 type ShareLink struct {
-	Token  string
-	Target FilePosition
+	Token string
+	File  FileID
 	// CreatedBy is the person or Application that created it.
 	CreatedBy Actor
 	CreatedAt time.Time
 	State     ShareLinkState
 }
 
-// Active reports whether reading through the link returns the content at
-// Target, or answers that the file is gone.
+// Active reports whether reading through the link returns the current
+// content of its file, or answers that the file is gone.
 func (l *ShareLink) Active() bool { return l.State == ShareLinkActive }
-
-// Retarget follows a renamed file while the link is active.
-func (l *ShareLink) Retarget(target FilePosition) {
-	if l.Active() {
-		l.Target = target
-	}
-}
 
 // Revoke ends the link; revocation is terminal.
 func (l *ShareLink) Revoke() { l.State = ShareLinkRevoked }

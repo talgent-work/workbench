@@ -291,10 +291,11 @@ func (e *ExecutionEnvironment) ReconcileComputer(ctx context.Context, computerID
 }
 
 // recovering records whether a startup step's latest attempt left the start
-// recovering, which its startup progress shows. A conflict, or the execution
-// no longer admitting the step, says nothing about recovery.
+// recovering, which its startup progress shows. A conflict, another step
+// holding the environment, or the execution no longer admitting the step
+// says nothing about recovery.
 func (e *ExecutionEnvironment) recovering(ctx context.Context, record executionRecord, err error) error {
-	if errors.Is(err, errEnvironmentConflict) || errors.Is(err, command.ErrEnvironmentActionRefused) {
+	if errors.Is(err, errEnvironmentConflict) || errors.Is(err, errEnvironmentBusy) || errors.Is(err, command.ErrEnvironmentActionRefused) {
 		return err
 	}
 	return errors.Join(err, e.provisioning.recordRecovery(ctx, record, err != nil))

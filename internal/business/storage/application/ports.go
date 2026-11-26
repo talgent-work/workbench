@@ -68,6 +68,10 @@ func (a FileAttributes) Written() bool {
 
 // StoredFile is a file at its position as its backend holds it.
 type StoredFile struct {
+	// FileID is the identity Storage gave the file, which Share Links
+	// reach; a file Storage never identified, such as one a Harness wrote,
+	// has none.
+	FileID     domain.FileID
 	Position   domain.FilePosition
 	SizeBytes  int64
 	ModifiedAt time.Time
@@ -162,9 +166,10 @@ type DirectoryBackendPort interface {
 	// Discard removes staged content that was not committed.
 	Discard(staged StagedContent)
 	// Commit makes staged content visible at the position in one atomic
-	// step. A Create refuses a taken position with ErrNameTaken; a Replace
-	// refuses an absent one with ErrFileNotFound and keeps the previous
-	// content on failure.
+	// step. A Create refuses a taken position with ErrNameTaken and gives
+	// the file a new File ID; a Replace refuses an absent one with
+	// ErrFileNotFound, keeps the replaced file's File ID and keeps the
+	// previous content on failure.
 	//
 	// Every file command and content replacement takes the mapped paths of
 	// its Directory, whose lock the caller holds, and follows them there:
@@ -173,11 +178,19 @@ type DirectoryBackendPort interface {
 	// fewer files, never more. A change carried out whose new link was not
 	// made returns its result with ErrMappedViewBehind.
 	Commit(ctx context.Context, staged StagedContent, position domain.FilePosition, replace bool, mappings []domain.MappedPath) (StoredFile, error)
+	// Rename moves the file to a free position, keeping its File ID.
 	Rename(ctx context.Context, from, to domain.FilePosition, mappings []domain.MappedPath) (StoredFile, error)
 	// Remove deletes the file and reports whether this call removed one; an
 	// absent file is already removed.
 	Remove(ctx context.Context, position domain.FilePosition, mappings []domain.MappedPath) (bool, error)
 	Open(ctx context.Context, position domain.FilePosition) (OpenedFile, error)
+	// IdentifyFile is the File ID of the file at the position, giving one to
+	// a file Storage wrote before it kept File IDs. The caller holds the
+	// Directory's lock, so a Replace carries over the File ID given.
+	IdentifyFile(ctx context.Context, position domain.FilePosition) (domain.FileID, error)
+	// Find opens the file with the File ID in the Directory, wherever it is;
+	// no file with it answers ErrFileNotFound.
+	Find(ctx context.Context, directory domain.DirectoryID, file domain.FileID) (OpenedFile, error)
 	// Inspect finds the content structure Preview Policy judges, with the
 	// facts of the same content.
 	Inspect(ctx context.Context, position domain.FilePosition) (StoredFile, domain.ContentStructure, error)

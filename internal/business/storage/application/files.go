@@ -221,9 +221,8 @@ func (a *Application) Upload(ctx context.Context, token string, content io.Reade
 }
 
 // writeFile stages the content, then commits it at its position under the
-// Directory's lock, following its mapped paths. A create first revokes the
-// links an unrecorded deletion left at the free name, so they never reach
-// the new file; a replace keeps the position's links.
+// Directory's lock, following its mapped paths. A create gives the file a
+// new File ID; a replace keeps the file's, and with it its Share Links.
 func (a *Application) writeFile(ctx context.Context, backend DirectoryBackendPort, position domain.FilePosition, content io.Reader, attributes FileAttributes, replace bool) (StoredFile, error) {
 	staged, err := backend.Stage(ctx, content, attributes)
 	if err != nil {
@@ -234,11 +233,6 @@ func (a *Application) writeFile(ctx context.Context, backend DirectoryBackendPor
 	defer backend.Discard(staged)
 	var stored StoredFile
 	err = a.fileChange(ctx, backend, position.Directory, func(directory *domain.Directory) error {
-		if !replace {
-			if err := a.clearStaleShareLinks(ctx, backend, position); err != nil {
-				return err
-			}
-		}
 		var commitErr error
 		stored, commitErr = backend.Commit(ctx, staged, position, replace, directory.Mappings)
 		return a.carriedOut(ctx, position.Directory, commitErr)
@@ -284,32 +278,9 @@ func (a *Application) carriedOut(ctx context.Context, id domain.DirectoryID, err
 	return err
 }
 
-// clearStaleShareLinks revokes, before a create commits, the links active at
-// its position while the name is free. Only the links seen before the name
-// was found free are revoked: one created later reaches a file that exists.
-func (a *Application) clearStaleShareLinks(ctx context.Context, backend DirectoryBackendPort, position domain.FilePosition) error {
-	directory, err := a.directories.Get(ctx, position.Directory)
-	if err != nil {
-		return err
-	}
-	stale := directory.ShareLinkTokens(position)
-	if len(stale) == 0 {
-		return nil
-	}
-	if _, err := backend.Stat(ctx, position); !errors.Is(err, ErrFileNotFound) {
-		// Taken: the create is refused and the links stay.
-		return err
-	}
-	_, err = a.changeDirectory(ctx, position.Directory, func(directory *domain.Directory) error {
-		directory.RevokeStaleShareLinks(position, stale)
-		return nil
-	})
-	return err
-}
-
 // RenameFile moves a file to a free name for the person or the Application
-// the owner's context admitted; its active Share Links follow once the rename
-// is carried out.
+// the owner's context admitted; it keeps its File ID, so its Share Links
+// follow it.
 func (a *Application) RenameFile(ctx context.Context, at Position, token, newName string, actor domain.Actor) (DirectoryFile, error) {
 	writer, err := domain.AdmittedWriter(actor)
 	if err != nil {
@@ -328,39 +299,18 @@ func (a *Application) RenameFile(ctx context.Context, at Position, token, newNam
 		return DirectoryFile{}, err
 	}
 	var stored StoredFile
-	var recorded *domain.Directory
+	var renamed *domain.Directory
 	err = a.fileChange(ctx, backend, from.Directory, func(directory *domain.Directory) error {
-		// A rename only succeeds onto a free name, so the links active there
-		// now were left by an unrecorded deletion; links created once the
-		// renamed file is there stay.
-		stale := directory.ShareLinkTokens(to)
 		var renameErr error
 		stored, renameErr = backend.Rename(ctx, from, to, directory.Mappings)
-		if err := a.carriedOut(ctx, from.Directory, renameErr); err != nil {
-			return err
-		}
-		var recordErr error
-		recorded, recordErr = a.changeDirectory(ctx, from.Directory, func(directory *domain.Directory) error {
-			directory.RevokeStaleShareLinks(to, stale)
-			directory.RecordRename(from, to)
-			return nil
-		})
-		if recordErr != nil {
-			// Unrecorded, the links would still name the old position, where
-			// a later file could appear: move the file back so they keep
-			// reaching it. Should that fail too, the next create at the old
-			// name clears them before it commits.
-			if _, undoErr := backend.Rename(ctx, to, from, directory.Mappings); a.carriedOut(ctx, from.Directory, undoErr) != nil {
-				return errors.Join(recordErr, undoErr)
-			}
-		}
-		return recordErr
+		renamed = directory
+		return a.carriedOut(ctx, from.Directory, renameErr)
 	})
 	if err != nil {
 		return DirectoryFile{}, err
 	}
 	a.fileChanged(ctx, FileChange{Directory: from.Directory, Name: to.Name, PreviousName: from.Name, Operation: FileRenamed, Writer: writer})
-	return a.directoryFile(recorded, stored), nil
+	return a.directoryFile(renamed, stored), nil
 }
 
 // DeleteFile deletes a file for the person or the Application the owner's
@@ -384,28 +334,19 @@ func (a *Application) DeleteFile(ctx context.Context, at Position, token string,
 
 // deleteFile deletes the file, its links in the mapped paths first, and
 // publishes the deletion by writer; deleting an absent file changes nothing
-// and publishes nothing.
+// and publishes nothing. Its Share Links stay as they are: no later file has
+// its File ID, so reading through them answers that the file is gone.
 func (a *Application) deleteFile(ctx context.Context, backend DirectoryBackendPort, position domain.FilePosition, writer domain.FileWriter) error {
 	return a.fileChange(ctx, backend, position.Directory, func(directory *domain.Directory) error {
-		return a.removeFile(ctx, backend, directory, position, writer)
-	})
-}
-
-func (a *Application) removeFile(ctx context.Context, backend DirectoryBackendPort, directory *domain.Directory, position domain.FilePosition, writer domain.FileWriter) error {
-	removed, err := backend.Remove(ctx, position, directory.Mappings)
-	if err != nil {
-		return err
-	}
-	// The file is gone once removed, whether or not recording its deletion
-	// succeeds; a retry removes nothing and so publishes nothing again.
-	if removed {
-		a.fileChanged(ctx, FileChange{Directory: position.Directory, Name: position.Name, Operation: FileDeleted, Writer: writer})
-	}
-	_, err = a.changeDirectory(ctx, position.Directory, func(directory *domain.Directory) error {
-		directory.RecordDeletion(position)
+		removed, err := backend.Remove(ctx, position, directory.Mappings)
+		if err != nil {
+			return err
+		}
+		if removed {
+			a.fileChanged(ctx, FileChange{Directory: position.Directory, Name: position.Name, Operation: FileDeleted, Writer: writer})
+		}
 		return nil
 	})
-	return err
 }
 
 // admittedWrite loads the Directory and admits a write by writer on its
