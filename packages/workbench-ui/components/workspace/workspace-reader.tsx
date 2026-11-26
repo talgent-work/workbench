@@ -20,8 +20,6 @@ export type WorkspaceAttachmentView = ComponentType<{ name: string; toolbar: HTM
 
 type ReaderProps = {
   source: WorkspaceSource;
-  /** What the workspace belongs to, the path's first crumb. */
-  label: string;
   /** The Work runs: listings refresh on their own while the page shows. */
   running: boolean;
   /** Where a closed Work's Artifacts are, shown once its workspace is gone. */
@@ -33,7 +31,7 @@ type ReaderProps = {
 
 /** A Work's Session Workspace in the reading area: a floating directory card
  * over the open file, which keeps the reading area's full width. */
-export function WorkspaceReader({ source, label, running, artifactsNote, Attachment, location, tools }: ReaderProps) {
+export function WorkspaceReader({ source, running, artifactsNote, Attachment, location, tools }: ReaderProps) {
   const auto = useAutoRefresh(running);
   const root = useWorkspaceDirectory(source, "", auto);
   const [selected, setSelected] = useState<string>();
@@ -61,7 +59,7 @@ export function WorkspaceReader({ source, label, running, artifactsNote, Attachm
   const entry = unavailable ? undefined : listed;
   const download = useMutation({ mutationFn: (path: string) => downloadWorkspaceFile(source, path) });
   return <div className="wsb-host">
-    {location && createPortal(<PathCrumbs label={label} path={unavailable ? "" : selected ?? current} onNavigate={navigate} />, location)}
+    {location && createPortal(<PathCrumbs path={unavailable ? "" : selected ?? current} onNavigate={navigate} />, location)}
     {tools && createPortal(<>
       {!unavailable && <Tooltip><Button isIconOnly size="sm" variant={cardOpen ? "tertiary" : "ghost"} aria-pressed={cardOpen} aria-label="Folders" onPress={() => setCardOpen(!cardOpen)}><PanelRight size={16} /></Button><Tooltip.Content>Folders</Tooltip.Content></Tooltip>}
       <RefreshButton scope={source.scope} auto={auto} />
@@ -112,14 +110,14 @@ function RefreshButton({ scope, auto }: { scope: string; auto: boolean }) {
       <span>{auto ? "Refreshes every 10 seconds while the Work runs" : "Not refreshing on its own: the Work isn't running or the page is hidden"}</span></Tooltip.Content></Tooltip>;
 }
 
-// The page top bar's breadcrumbs: the label is plain text, ancestors are
+// The page top bar's breadcrumbs start at the workspace, not at what it
+// belongs to, which the conversation beside it already names: ancestors are
 // links, and a long path folds its middle into an ellipsis.
-function PathCrumbs({ label, path, onNavigate }: { label: string; path: string; onNavigate: (dir: string) => void }) {
+function PathCrumbs({ path, onNavigate }: { path: string; onNavigate: (dir: string) => void }) {
   const parts = path.split("/").filter(Boolean);
   const crumbs = [{ label: ROOT, path: "" }, ...parts.map((part, index) => ({ label: part, path: parts.slice(0, index + 1).join("/") }))];
   const shown = crumbs.length > 5 ? [crumbs[0], null, ...crumbs.slice(-3)] : crumbs;
   return <Breadcrumbs aria-label="Workspace path" className="p-location">
-    <Breadcrumbs.Item>{label}</Breadcrumbs.Item>
     {shown.map((crumb, index) => crumb === null
       ? <Breadcrumbs.Item key="gap"><span title={path}>…</span></Breadcrumbs.Item>
       : index === shown.length - 1

@@ -36,7 +36,7 @@ export function WorkWorkspaceReading({ content, location, toolbar }: { content: 
   const running = useAgentWork(content.workId).data?.work?.state === "working";
   const source = useMemo(() => workWorkspaceSource(content.workId), [content.workId]);
   const Attachment = useCallback(({ name, toolbar }: { name: string; toolbar: HTMLElement | null }) => <WorkAttachmentReading workId={content.workId} name={name} toolbar={toolbar} />, [content.workId]);
-  return <WorkspaceReader source={source} label={content.label} running={running} artifactsNote="Its Artifacts stay with the Work."
+  return <WorkspaceReader source={source} running={running} artifactsNote="Its Artifacts stay with the Work."
     Attachment={Attachment} location={location} tools={toolbar} />;
 }
 
