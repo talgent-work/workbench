@@ -79,7 +79,7 @@ func (s ComputerSeat) admitted() bool {
 // process is the Harness process an admitted start begins, with the Desk its
 // Computer admitted it to, seated or waiting in its line.
 func (a StartAdmission) process(mode ContextMode, waitingSince time.Time) *HarnessProcess {
-	return &HarnessProcess{ContextMode: mode, StartingSince: a.AdmittedAt.UTC(), DeskID: a.Seat.DeskID, DeskWaiting: a.Seat.Waiting, WaitingSince: waitingSince, Soul: a.Soul}
+	return &HarnessProcess{ContextMode: mode, StartingSince: a.AdmittedAt.UTC(), DeskID: a.Seat.DeskID, DeskWaiting: a.Seat.Waiting, WaitingSince: waitingSince, Soul: a.Soul, WorkspaceInstructions: a.WorkspaceInstructions}
 }
 
 // MayHoldEnvironment reports whether the Work's current run may still be in

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // The fixture Work selects the Plugin talgent at release 0.1.1 from the
@@ -293,7 +294,7 @@ func runPluginPreparationReport(t *testing.T, workspace, home, workCache, binary
 	t.Helper()
 	catalog := `{"name":"talgent","owner":{"name":"Talgent"},"plugins":[{"name":"talgent","version":"` + fixtureRelease + `","source":{"source":"url","url":"https://example.com/marketplace.git","sha":"0123456789abcdef0123456789abcdef01234567"}}]}`
 	receipt := storageKey(request().WorkID + ":" + allocation)[:32]
-	process := exec.Command("node", "-e", nativePreparation, binary, catalog, receipt, "", "600")
+	process := exec.Command("node", "-e", nativePreparation, binary, catalog, receipt, domain.ClaudeCode.InstructionsFile, "", "", "600")
 	process.Dir, process.Env = workspace, append(os.Environ(), "HOME="+home, "CLAUDE_CONFIG_DIR=", "CLAUDE_CODE_PLUGIN_CACHE_DIR="+workCache)
 	output, err := process.Output()
 	require.NoError(t, err)

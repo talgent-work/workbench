@@ -99,12 +99,13 @@ func (h workStartup) admit(ctx context.Context, request StartWork, operation sta
 	// model; admission refuses a withdrawn Model Configuration first.
 	_, provided := h.models.Option(session.WorkModel)
 	// Each start takes the current release declarations of the selected
-	// Plugins and the definition's current Soul (Agent model: Start upgrade).
+	// Plugins and the definition's current Soul and Workspace Instructions
+	// (Agent model: Start upgrade).
 	current, err := h.plugins.CurrentReleases(ctx, request.SubjectID, session.CapabilitySnapshot)
 	if err != nil {
 		return false, err
 	}
-	admission := domain.StartAdmission{AdmittedAt: h.now(), AgentID: agent.ID, ModelConfigurationProvided: provided, Soul: agent.Soul, CurrentPlugins: current}
+	admission := domain.StartAdmission{AdmittedAt: h.now(), AgentID: agent.ID, ModelConfigurationProvided: provided, Soul: agent.Soul, WorkspaceInstructions: agent.WorkspaceInstructions, CurrentPlugins: current}
 	if session.WorkModel.Available(provided) {
 		// Only a Work that may start now asks its Computer for room.
 		if err := operation.admit(session); err != nil {

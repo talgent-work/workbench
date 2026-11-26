@@ -4,13 +4,14 @@ import { PageLayout } from "../components/shell/page-layout";
 import { ProviderRows } from "../components/marketplace/provider-pages";
 import { useProviderAuthorizationCallback } from "../components/profile/provider-callback";
 import { WorkAgentAppearance } from "../components/profile/work-agent-appearance";
-import { WorkAgentSoul } from "../components/profile/work-agent-soul";
+import { WorkAgentGuidance } from "../components/profile/work-agent-guidance";
 import { useCurrentUser, useLogout } from "../lib/account-service";
 import { avatarInitial, safeAvatarUrl, safeDisplayName, safeEmail } from "../lib/user-display";
 import "../components/marketplace/marketplace.css";
 
 // Profile holds everything about the person: who they are, as GitHub
-// reports it; the Work Agent that represents them and its Soul; the Provider Authorizations
+// reports it; the Work Agent that represents them, its Soul and its Workspace
+// Instructions; the Provider Authorizations
 // their agents act with; and signing out of this device, beside who they are so
 // it stays in reach however many Providers follow.
 export function ProfilePage() {
@@ -51,7 +52,7 @@ export function ProfilePage() {
           </div>
         </header>
         <WorkAgentAppearance />
-        <WorkAgentSoul />
+        <WorkAgentGuidance />
         <section className="mk-section" aria-labelledby="pf-providers">
           <div className="flex items-center gap-2">
             <h3 id="pf-providers" className="mk-section-title">Providers</h3>

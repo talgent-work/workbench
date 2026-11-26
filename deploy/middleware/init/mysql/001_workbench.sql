@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS `agent_definition` (
   `visibility_public` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'New Works start public within their Project',
   `capabilities` json NOT NULL COMMENT 'Reusable prompt, plugin configuration and startup Agent',
   `soul` text NULL COMMENT 'Persona and working style its Owners write; each Work takes it up at its next start',
+  `workspace_instructions` text NULL COMMENT 'Workspace Instructions its Owners write; each Work places them at its Session Workspace root at its next start',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic aggregate version',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',

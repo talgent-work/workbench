@@ -25,10 +25,14 @@ type AgentHarness struct {
 	// StateVariable is the environment variable that points the program at
 	// its state mount.
 	StateVariable string
+	// InstructionsFile is the file in its working directory that the program
+	// reads as its project instructions, where a start places the Work's
+	// Workspace Instructions.
+	InstructionsFile string
 }
 
 // ClaudeCode is the one Agent Harness Agent provides, and the default.
-var ClaudeCode = AgentHarness{ID: "claude-code", StatePath: ".claude", StateDirectory: "claude-code", StateVariable: "CLAUDE_CONFIG_DIR"}
+var ClaudeCode = AgentHarness{ID: "claude-code", StatePath: ".claude", StateDirectory: "claude-code", StateVariable: "CLAUDE_CONFIG_DIR", InstructionsFile: "CLAUDE.md"}
 
 var agentHarnesses = []AgentHarness{ClaudeCode}
 

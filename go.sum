@@ -320,8 +320,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/syndtr/goleveldb v1.0.0 h1:fBdIW9lB4Iz0n9khmH8w27SJ3QEJ7+IgjPEwGSZiFdE=
 github.com/syndtr/goleveldb v1.0.0/go.mod h1:ZVVdQEZoIme9iO1Ch2Jdy24qqXrMMOU6lpPAyBWyWuQ=
-github.com/talgent-work/contracts v0.10.0 h1:nY3sF6vRNNcAZ7mitktJlY3XPnuqzfaebW7u1BJl/rY=
-github.com/talgent-work/contracts v0.10.0/go.mod h1:dwq89uUFAHjxXlq/yc6j3TlEJ58n06C3d8ygENkxizE=
+github.com/talgent-work/contracts v0.10.2 h1:6gftoIQNoU+wHroQS0KPZuiKAQyL5+0DRhFzgO7vORk=
+github.com/talgent-work/contracts v0.10.2/go.mod h1:dwq89uUFAHjxXlq/yc6j3TlEJ58n06C3d8ygENkxizE=
 github.com/testcontainers/testcontainers-go v0.45.0 h1:ss9Stm9KDX6JLgGL4jr2fC5dwpabTbCBsRcGadBPR9k=
 github.com/testcontainers/testcontainers-go v0.45.0/go.mod h1:VMJZ7M+qhgfEHWNbtjm596OyEOraULSTDaus/h0hmJI=
 github.com/tidwall/pretty v1.0.0/go.mod h1:XNkn88O1ChpSDQmQeStsy+sBenx6DDtFZJxhVysOjyk=
