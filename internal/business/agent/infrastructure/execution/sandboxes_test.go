@@ -7,7 +7,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -29,19 +28,8 @@ import (
 
 const sandboxID = "a4147254-fb69-4e47-b96b-57c0e3d76fcf"
 
-// fixturePlatformAPIAddress is the entry every fixture sandbox reaches; it
-// resolves through fixtureLookup without DNS.
+// fixturePlatformAPIAddress is the entry every fixture sandbox reaches.
 const fixturePlatformAPIAddress = "http://controlplane.talgent.svc.cluster.local"
-
-func init() {
-	resolve := lookupHost
-	lookupHost = func(ctx context.Context, host string) ([]netip.Addr, error) {
-		if strings.HasSuffix(host, ".svc.cluster.local") {
-			return []netip.Addr{netip.MustParseAddr("10.43.0.9")}, nil
-		}
-		return resolve(ctx, host)
-	}
-}
 
 func config() SandboxConfig {
 	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Lease: fixtureLease, CreationTimeout: fixtureCreationTimeout, CreationWait: fixtureCreationWait, Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{

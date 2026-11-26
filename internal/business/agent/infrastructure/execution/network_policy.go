@@ -11,14 +11,20 @@ import (
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 )
 
-// lookupHost resolves a platform endpoint the sandbox may reach.
+// lookupHost resolves the telemetry collector's Service name.
 var lookupHost = func(ctx context.Context, host string) ([]netip.Addr, error) {
 	return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 }
 
-// networkPolicy subtracts necessary service addresses before emitting nft deny
-// rules: native nft rejects deny before allow, including a more-specific allow.
-// CNI independently limits the resulting address exceptions to approved ports.
+// networkPolicy subtracts the in-cluster Services a sandbox reaches before
+// emitting nft deny rules: native nft rejects deny before allow, including a
+// more-specific allow, and a domain allow cannot open a denied range either.
+// Those Services are the ones the CNI policy admits, the cluster DNS
+// (NetworkAllow) and the telemetry collector; CNI independently limits the
+// resulting address exceptions to approved ports. The platform addresses
+// need no exception: a sandbox reaches them at the entry's public origin,
+// which no deny rule covers, and CNI closes the private ranges to them
+// whatever this policy opens.
 func (s *Sandboxes) networkPolicy(ctx context.Context) (*sdk.NetworkPolicy, error) {
 	allowed := []netip.Addr{}
 	for _, raw := range s.config.NetworkAllow {
@@ -28,27 +34,17 @@ func (s *Sandboxes) networkPolicy(ctx context.Context) (*sdk.NetworkPolicy, erro
 		}
 		allowed = append(allowed, ip.Unmap())
 	}
-	// A sandbox reaches the platform addresses it is given; telemetry goes to
-	// the collector.
-	addresses, err := platformAddresses(s.config.Environment)
-	if err != nil {
-		return nil, err
-	}
-	hosts := make([]string, 0, len(addresses)+1)
-	for _, address := range addresses {
-		hosts = append(hosts, address.origin.Hostname())
-	}
+	// The collector's name resolves once, at creation, to its Service's
+	// ClusterIP, which holds for the Service's life: a recreated collector
+	// Service leaves running sandboxes without telemetry until they end.
 	if raw := s.config.Environment["OTEL_EXPORTER_OTLP_ENDPOINT"]; raw != "" {
 		u, err := url.Parse(raw)
 		if err != nil || u.Hostname() == "" {
-			return nil, errors.New("agent: invalid native network endpoint")
+			return nil, errors.New("agent: invalid telemetry collector endpoint")
 		}
-		hosts = append(hosts, u.Hostname())
-	}
-	for _, host := range hosts {
-		ips, err := lookupHost(ctx, host)
+		ips, err := lookupHost(ctx, u.Hostname())
 		if err != nil || len(ips) == 0 {
-			return nil, errors.New("agent: native network endpoint resolution failed")
+			return nil, errors.New("agent: telemetry collector resolution failed")
 		}
 		for _, ip := range ips {
 			allowed = append(allowed, ip.Unmap())

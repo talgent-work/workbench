@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"testing"
@@ -191,37 +192,46 @@ func TestSandboxConfigRefusesAnUninjectablePlatformAddress(t *testing.T) {
 	}
 }
 
-// The sandbox's egress reaches every platform address it was given: the
-// entry, the Gateway where one is deployed, and the telemetry
-// collector; every other private address stays denied.
-func TestSandboxEgressReachesThePlatformAddresses(t *testing.T) {
-	addresses := map[string]netip.Addr{
-		"controlplane.talgent.svc.cluster.local":   netip.MustParseAddr("10.43.0.21"),
-		"connector.talgent.svc.cluster.local":      netip.MustParseAddr("10.43.0.22"),
-		"otel-collector.talgent.svc.cluster.local": netip.MustParseAddr("10.43.0.23"),
-	}
+// The sandbox's egress reaches the in-cluster Services the CNI policy
+// admits, the cluster DNS and the telemetry collector, and no other private
+// address. The platform addresses are public origins no deny rule covers, so
+// the policy neither resolves them nor depends on resolving them.
+func TestSandboxEgressReachesTheClusterDNSAndCollector(t *testing.T) {
+	collector := netip.MustParseAddr("10.43.0.23")
 	resolve := lookupHost
-	lookupHost = func(_ context.Context, host string) ([]netip.Addr, error) { return []netip.Addr{addresses[host]}, nil }
-	t.Cleanup(func() { lookupHost = resolve })
-	denied := func(environment map[string]string) func(netip.Addr) bool {
-		sandboxes := &Sandboxes{config: SandboxConfig{Environment: environment}}
-		policy, err := sandboxes.networkPolicy(context.Background())
-		require.NoError(t, err)
-		return func(ip netip.Addr) bool {
-			for _, rule := range policy.Egress {
-				if prefix, err := netip.ParsePrefix(rule.Target); err == nil && rule.Action == "deny" && prefix.Contains(ip) {
-					return true
-				}
-			}
-			return false
+	lookupHost = func(_ context.Context, host string) ([]netip.Addr, error) {
+		if host == "otel-collector.talgent.svc.cluster.local" {
+			return []netip.Addr{collector}, nil
 		}
+		return nil, errors.New("only the collector is resolved")
 	}
-	withGateway := denied(map[string]string{platformAPIAddressEnv: "http://controlplane.talgent.svc.cluster.local", gatewayAddressEnv: "http://connector.talgent.svc.cluster.local", "OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel-collector.talgent.svc.cluster.local:4318"})
-	for host, ip := range addresses {
-		require.False(t, withGateway(ip), host)
+	t.Cleanup(func() { lookupHost = resolve })
+	sandboxes := &Sandboxes{config: SandboxConfig{NetworkAllow: []string{"10.43.0.10"}, Environment: map[string]string{
+		platformAPIAddressEnv: "https://workbench.example.com", gatewayAddressEnv: "https://connector.example.com",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel-collector.talgent.svc.cluster.local:4318"}}}
+	policy, err := sandboxes.networkPolicy(context.Background())
+	require.NoError(t, err)
+	denied := func(ip netip.Addr) bool {
+		for _, rule := range policy.Egress {
+			if prefix, err := netip.ParsePrefix(rule.Target); err == nil && rule.Action == "deny" && prefix.Contains(ip) {
+				return true
+			}
+		}
+		return false
 	}
-	require.True(t, withGateway(netip.MustParseAddr("10.43.0.24")), "another Service stays unreachable")
-	alone := denied(map[string]string{platformAPIAddressEnv: "http://controlplane.talgent.svc.cluster.local"})
-	require.False(t, alone(addresses["controlplane.talgent.svc.cluster.local"]))
-	require.True(t, alone(addresses["connector.talgent.svc.cluster.local"]), "without a Gateway its address stays denied")
+	require.False(t, denied(collector), "the collector stays reachable")
+	require.False(t, denied(netip.MustParseAddr("10.43.0.10")), "cluster DNS stays reachable")
+	require.True(t, denied(netip.MustParseAddr("10.43.0.24")), "another Service stays unreachable")
+}
+
+// A collector that does not resolve fails the policy, rather than leaving
+// the sandbox's telemetry silently denied.
+func TestSandboxEgressRefusesAnUnresolvedCollector(t *testing.T) {
+	resolve := lookupHost
+	lookupHost = func(context.Context, string) ([]netip.Addr, error) { return nil, errors.New("no such host") }
+	t.Cleanup(func() { lookupHost = resolve })
+	sandboxes := &Sandboxes{config: SandboxConfig{Environment: map[string]string{
+		platformAPIAddressEnv: "https://workbench.example.com", "OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel-collector.talgent.svc.cluster.local:4318"}}}
+	_, err := sandboxes.networkPolicy(context.Background())
+	require.Error(t, err)
 }
