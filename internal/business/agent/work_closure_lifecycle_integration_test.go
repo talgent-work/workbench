@@ -11,6 +11,7 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -74,7 +75,7 @@ func TestRecoveryAppliesAKeptClose(t *testing.T) {
 	m := newLifecycleModule(t)
 	work := seedWork(t, m.db, seedDefinition(t, m.db), workSeed{subject: "work-a", state: domain.WorkStopped, closeRequest: "close"}).ID
 	m.start()
-	require.NoError(t, application.NewRecovery(m.app, nil, nil, nil, nil, nil, nil).RecoverWork(m.ctx, work))
+	require.NoError(t, application.NewRecovery(m.app, nil, &commandtest.ObjectTasks{}, nil, nil, nil, nil, nil).RecoverWork(m.ctx, work))
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_CLOSED, m.state(work))
 }
 

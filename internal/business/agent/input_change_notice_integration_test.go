@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
@@ -40,7 +41,7 @@ type inputChanges struct {
 
 func newInputChanges(m *lifecycleModule, logger *slog.Logger) *inputChanges {
 	queued := &queuedTasks{}
-	recovery := application.NewRecovery(m.app, queued, nil, m.app.ExecutionQueries, nil, nil, nil)
+	recovery := application.NewRecovery(m.app, queued, &commandtest.ObjectTasks{}, nil, m.app.ExecutionQueries, nil, nil, nil)
 	changes := &inputChanges{m: m, queued: queued, handler: messagehandler.NewFileChangedHandler(recovery)}
 	for _, processor := range taskprocessor.RecoveryProcessors(recovery, logger) {
 		if processor.TaskType() == agenttask.DeliverInputChangeNoticeType {

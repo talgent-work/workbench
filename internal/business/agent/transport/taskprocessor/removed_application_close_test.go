@@ -11,6 +11,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
@@ -33,7 +34,7 @@ func TestARemovedApplicationsWorkCloseEndsAtItsCeilingAsAnObservableFailure(t *t
 		Commands:    application.Commands{CloseWork: command.NewCloseWorkHandler(nil, nil, nil, nil)},
 	}
 	var logs bytes.Buffer
-	recovery := application.NewRecovery(app, nil, nil, nil, nil, nil, nil)
+	recovery := application.NewRecovery(app, nil, &commandtest.ObjectTasks{}, nil, nil, nil, nil, nil)
 	processor := processorFor(t, taskprocessor.RecoveryProcessors(recovery, slog.New(slog.NewJSONHandler(&logs, nil))), agenttask.CloseRemovedApplicationWorkType)
 	task, err := agenttask.NewCloseRemovedApplicationWork("work-1", "app-1")
 	require.NoError(t, err)

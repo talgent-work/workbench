@@ -1,8 +1,12 @@
 // Package task defines Agent's internal recovery task contracts.
 //
-// Every task is keyed by the one object it recovers, so a task already waiting,
-// retrying or running for that object absorbs further wakes: the running
-// attempt reads current state, and the periodic sweep covers a change it missed.
+// Every task concerns the one object it recovers. An obligation's tasks
+// (Reconcile execution, its long step, Recover Work) are coalesced by that
+// object: a wake collapses only into a task for it that has not started, and
+// a wake meeting a running attempt runs again after it, so a change committed
+// while an attempt runs is never left to the periodic sweep. Deliveries are
+// keyed by their object, so a task already waiting, retrying or running for it
+// absorbs a repeated one.
 package task
 
 import (
@@ -90,20 +94,30 @@ const (
 	DeliverInputChangeNoticeType taskqueue.TaskType = "agent.work.deliver-input-change-notice.v1"
 )
 
-// NewReconcileExecution wakes the execution's short steps.
+// NewReconcileExecution wakes the execution's short steps; ExecutionObject
+// coalesces it.
 func NewReconcileExecution(executionID string) (taskqueue.Task, error) {
-	return keyed(ReconcileExecutionType, RecoveryQueue, "execution", executionID, &agenttaskv1.ReconcileExecutionTaskV1{ExecutionId: executionID})
+	return coalesced(ReconcileExecutionType, RecoveryQueue, executionID, &agenttaskv1.ReconcileExecutionTaskV1{ExecutionId: executionID})
 }
 
 // NewRunLongExecutionStep wakes the execution's long step on the preparation
-// queue, whose workers short steps never wait for.
+// queue, whose workers short steps never wait for; LongStepObject coalesces
+// it.
 func NewRunLongExecutionStep(executionID string) (taskqueue.Task, error) {
-	return keyed(RunLongExecutionStepType, PreparationQueue, "execution-long-step", executionID, &agenttaskv1.RunLongExecutionStepTaskV1{ExecutionId: executionID})
+	return coalesced(RunLongExecutionStepType, PreparationQueue, executionID, &agenttaskv1.RunLongExecutionStepTaskV1{ExecutionId: executionID})
 }
 
+// NewRecoverWork wakes the Work's own obligations; WorkObject coalesces it.
 func NewRecoverWork(workID string) (taskqueue.Task, error) {
-	return keyed(RecoverWorkType, RecoveryQueue, "work", workID, &agenttaskv1.RecoverWorkTaskV1{WorkId: workID})
+	return coalesced(RecoverWorkType, RecoveryQueue, workID, &agenttaskv1.RecoverWorkTaskV1{WorkId: workID})
 }
+
+// ExecutionObject, LongStepObject and WorkObject name the objects whose
+// tasks are coalesced: an execution's short steps, its long step, which runs
+// beside them, and a Work's own obligations.
+func ExecutionObject(executionID string) string { return "agent:execution:" + executionID }
+func LongStepObject(executionID string) string  { return "agent:execution-long-step:" + executionID }
+func WorkObject(workID string) string           { return "agent:work:" + workID }
 
 // NewRequestWorkReclamation queues a Closed Work's Work Reclamation Request,
 // keyed by the Work. A request naming no Work is refused: Storage would have
@@ -138,8 +152,21 @@ func NewSweepRecovery() (taskqueue.Task, error) {
 	return taskqueue.New(taskqueue.Definition{Type: SweepRecoveryType, Queue: RecoveryQueue}, payload)
 }
 
+// coalesced builds a task without a provider identity; its object coalesces
+// its wakes.
+func coalesced(kind taskqueue.TaskType, queue, id string, payload proto.Message) (taskqueue.Task, error) {
+	if strings.TrimSpace(id) == "" {
+		return taskqueue.Task{}, taskqueue.ErrNilPayload
+	}
+	encoded, err := proto.Marshal(payload)
+	if err != nil {
+		return taskqueue.Task{}, err
+	}
+	return taskqueue.New(taskqueue.Definition{Type: kind, Queue: queue}, encoded)
+}
+
 // keyed builds a task whose provider identity is its kind and object, so
-// duplicate wakes for one object collapse into one task.
+// duplicate deliveries for one object collapse into one task.
 func keyed(kind taskqueue.TaskType, queue, object, id string, payload proto.Message) (taskqueue.Task, error) {
 	if strings.TrimSpace(id) == "" {
 		return taskqueue.Task{}, taskqueue.ErrNilPayload

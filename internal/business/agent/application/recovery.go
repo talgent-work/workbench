@@ -19,8 +19,10 @@ import (
 // re-wakes every unfinished object, and the deliveries it queues once, such as
 // a Work Reclamation Request or an input change notice.
 type Recovery struct {
-	app        *Application
-	enqueuer   taskqueue.Enqueuer
+	app      *Application
+	enqueuer taskqueue.Enqueuer
+	// objects queues and runs the obligations' tasks, coalesced by object.
+	objects    ObjectTasks
 	executions domain.AgentExecutionRepository
 	lookups    query.ExecutionQueryRepository
 	// reconciliation fulfils the steps each execution decides.
@@ -33,14 +35,26 @@ type Recovery struct {
 	reconnection OwedResumes
 }
 
+// ObjectTasks queues and runs tasks that each recover one object from its
+// current state. A wake collapses only into a task for the object that has
+// not started; the attempts for one object run one at a time, and a wake
+// meeting a running attempt is handed to it, which calls rerun once it ends,
+// so a change committed elsewhere during an attempt is recovered without
+// waiting for the periodic sweep. A wake under the running attempt itself,
+// from a change it committed, queues nothing.
+type ObjectTasks interface {
+	Wake(ctx context.Context, object string, task taskqueue.Task, opts ...taskqueue.EnqueueOption) error
+	Run(ctx context.Context, object string, run, rerun func(context.Context) error) error
+}
+
 // OwedResumes retries the Resume a Work marked ReachResumeDue is owed once
 // its Managed Computer is reachable (Retry on reconnection).
 type OwedResumes interface {
 	RetryOwedResume(ctx context.Context, workID string) error
 }
 
-func NewRecovery(app *Application, enqueuer taskqueue.Enqueuer, executions domain.AgentExecutionRepository, lookups query.ExecutionQueryRepository, reconciliation *command.ReconcileExecutionHandler, storage command.StoragePort, reconnection OwedResumes) *Recovery {
-	return &Recovery{app: app, enqueuer: enqueuer, executions: executions, lookups: lookups, reconciliation: reconciliation, storage: storage, reconnection: reconnection}
+func NewRecovery(app *Application, enqueuer taskqueue.Enqueuer, objects ObjectTasks, executions domain.AgentExecutionRepository, lookups query.ExecutionQueryRepository, reconciliation *command.ReconcileExecutionHandler, storage command.StoragePort, reconnection OwedResumes) *Recovery {
+	return &Recovery{app: app, enqueuer: enqueuer, objects: objects, executions: executions, lookups: lookups, reconciliation: reconciliation, storage: storage, reconnection: reconnection}
 }
 
 // SendWorkReclamation delivers a queued Work Reclamation Request through
@@ -55,19 +69,19 @@ const preparationAttemptTimeout = domain.StartupDeadline + time.Minute
 // environment authority's report of a change to one of its sandboxes, or a
 // change fact that marked it.
 func (r *Recovery) WakeExecution(ctx context.Context, executionID string) error {
-	return r.enqueue(ctx, agenttask.RecoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID))
+	return r.wake(ctx, agenttask.ExecutionObject(executionID), agenttask.RecoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID))
 }
 
 // wakeLongStep wakes the execution's long step, whose attempt may last until
 // the Startup Deadline.
 func (r *Recovery) wakeLongStep(ctx context.Context, executionID string) error {
-	return r.enqueue(ctx, preparationAttemptTimeout)(agenttask.NewRunLongExecutionStep(executionID))
+	return r.wake(ctx, agenttask.LongStepObject(executionID), preparationAttemptTimeout)(agenttask.NewRunLongExecutionStep(executionID))
 }
 
 // WakeWork wakes the Work's own obligations and those of its current
 // execution, whose execution requests follow the Work's lifecycle.
 func (r *Recovery) WakeWork(ctx context.Context, workID string) error {
-	err := r.enqueue(ctx, agenttask.RecoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
+	err := r.wakeWorkOnly(ctx, workID)
 	execution, lookupErr := r.executions.Latest(ctx, workID)
 	if errors.Is(lookupErr, domain.ErrExecutionNotFound) || (lookupErr == nil && execution.State == domain.ExecutionReleased) {
 		return err
@@ -113,7 +127,7 @@ func SweepPolicy(interval time.Duration) []taskqueue.EnqueueOption {
 	return []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(0), taskqueue.WithTimeout(interval), taskqueue.WithUnique(max(interval*9/10, time.Second))}
 }
 
-func (r *Recovery) enqueue(ctx context.Context, timeout time.Duration) func(taskqueue.Task, error) error {
+func (r *Recovery) wake(ctx context.Context, object string, timeout time.Duration) func(taskqueue.Task, error) error {
 	return func(task taskqueue.Task, err error) error {
 		if err != nil {
 			return err
@@ -124,23 +138,27 @@ func (r *Recovery) enqueue(ctx context.Context, timeout time.Duration) func(task
 		if err := taskqueue.NewEnqueueOptions(options...).Validate(); err != nil {
 			return err
 		}
-		return r.enqueuer.Enqueue(ctx, task, options...)
+		return r.objects.Wake(ctx, object, task, options...)
 	}
 }
 
 // ReconcileExecution takes the short steps the execution decides and wakes
 // its long step when one is due, even when a short step failed.
 func (r *Recovery) ReconcileExecution(ctx context.Context, executionID string) error {
-	long, err := r.reconciliation.Reconcile(ctx, executionID)
-	if long {
-		err = errors.Join(err, r.wakeLongStep(ctx, executionID))
-	}
-	return err
+	return r.objects.Run(ctx, agenttask.ExecutionObject(executionID), func(ctx context.Context) error {
+		long, err := r.reconciliation.Reconcile(ctx, executionID)
+		if long {
+			err = errors.Join(err, r.wakeLongStep(ctx, executionID))
+		}
+		return err
+	}, func(ctx context.Context) error { return r.WakeExecution(ctx, executionID) })
 }
 
 // RunLongExecutionStep takes the long step the execution decides now.
 func (r *Recovery) RunLongExecutionStep(ctx context.Context, executionID string) error {
-	return r.reconciliation.RunLongStep(ctx, executionID)
+	return r.objects.Run(ctx, agenttask.LongStepObject(executionID), func(ctx context.Context) error {
+		return r.reconciliation.RunLongStep(ctx, executionID)
+	}, func(ctx context.Context) error { return r.wakeLongStep(ctx, executionID) })
 }
 
 // CredentialChanged follows Marketplace's fact that an authorization's
@@ -172,6 +190,12 @@ func (r *Recovery) CredentialChanged(ctx context.Context, authorizationID string
 // outcome, and every failure is returned together. Accepted input needs no retry here:
 // Dispatcher's input buffer delivers it.
 func (r *Recovery) RecoverWork(ctx context.Context, workID string) error {
+	return r.objects.Run(ctx, agenttask.WorkObject(workID), func(ctx context.Context) error {
+		return r.recoverWork(ctx, workID)
+	}, func(ctx context.Context) error { return r.wakeWorkOnly(ctx, workID) })
+}
+
+func (r *Recovery) recoverWork(ctx context.Context, workID string) error {
 	commands := r.app.Commands
 	// The Work's execution requests and its execution's reports are passed again, so a
 	// lost Domain Event is repaired, and native feedback lost on the way is
@@ -206,9 +230,10 @@ func (r *Recovery) Sweep(ctx context.Context) error {
 	)
 }
 
-// The sweep wakes executions on their own, so a Work wake needs no lookup.
+// wakeWorkOnly wakes the Work's own obligations, not its execution's, which
+// the sweep wakes on their own.
 func (r *Recovery) wakeWorkOnly(ctx context.Context, workID string) error {
-	return r.enqueue(ctx, agenttask.RecoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
+	return r.wake(ctx, agenttask.WorkObject(workID), agenttask.RecoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
 }
 
 func pageOf(list func(context.Context, string) ([]string, error)) func(context.Context, string, int) ([]string, error) {

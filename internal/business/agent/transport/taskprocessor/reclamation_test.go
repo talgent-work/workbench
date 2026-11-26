@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
 )
@@ -38,7 +39,7 @@ func TestAReclamationRequestEndsAtItsCeilingAsAnObservableFailure(t *testing.T) 
 	storage := &refusingStorage{}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	recovery := application.NewRecovery(&application.Application{}, nil, nil, nil, nil, storage, nil)
+	recovery := application.NewRecovery(&application.Application{}, nil, &commandtest.ObjectTasks{}, nil, nil, nil, storage, nil)
 	processor := processorFor(t, taskprocessor.RecoveryProcessors(recovery, logger), agenttask.RequestWorkReclamationType)
 	task, err := agenttask.NewRequestWorkReclamation("work-1")
 	require.NoError(t, err)

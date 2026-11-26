@@ -4,7 +4,8 @@ import type { ToolPreview } from "../work/work-message-flow";
 import type { WorkCaller } from "../../lib/work-caller";
 
 /** What the reading area can show, by kind. `label` names what the reading
- * belongs to, the first crumb of its location. An extension adds its own
+ * belongs to, the first crumb of a location the reading does not name itself
+ * (`ownLocation`). An extension adds its own
  * kinds by augmenting this interface and renders them with its own
  * ReadingRenderer. */
 export interface ReadingKinds {

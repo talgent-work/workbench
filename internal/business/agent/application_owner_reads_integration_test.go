@@ -17,6 +17,7 @@ import (
 	agentpublicv2 "github.com/talgent-work/contracts/gen/go/agent/public/v2"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
 )
 
@@ -115,7 +116,7 @@ func TestTheApplicationOwnerReadsButNeverDrivesTheApplicationsWork(t *testing.T)
 	_, err = files.ListWorkFiles(stranger.ctx, &agentpublicv1.ListWorkFilesRequest{WorkId: work})
 	denied(err)
 
-	recovery := application.NewRecovery(m.app, &queuedTasks{}, nil, nil, nil, nil, nil)
+	recovery := application.NewRecovery(m.app, &queuedTasks{}, &commandtest.ObjectTasks{}, nil, nil, nil, nil, nil)
 	payload := &accountintegrationv1.ApplicationRemovedV1{EventId: uuid.NewString(), ApplicationId: supportDesk}
 	fact, err := integrationmessage.New(integrationmessage.KindOf(payload), payload, integrationmessage.WithKey(supportDesk))
 	require.NoError(t, err)

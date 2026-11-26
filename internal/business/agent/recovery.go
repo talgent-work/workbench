@@ -60,6 +60,9 @@ var RecoveryModule = fx.Module("agent.recovery",
 	pkgtaskqueue.Bind(RecoveryQueue),
 	// Module's clock is private to it; reconciliation reads its own.
 	fx.Provide(func() func() time.Time { return time.Now }, fx.Private),
+	// The obligations' tasks are coalesced on the recovery lane's Redis,
+	// which the preparation lane shares.
+	fx.Provide(func(coalescing *pkgtaskqueue.Coalescing) application.ObjectTasks { return coalescing }, fx.Private),
 	fx.Provide(
 		// A Managed Computer's return of reach, for Computer Became Reachable
 		// and for the recovery of each Work owed a Resume.

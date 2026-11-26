@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
@@ -25,7 +25,7 @@ function source(state = State.AVAILABLE): WorkspaceSource & { [K in "browse" | "
   };
 }
 
-function renderReader(reading: WorkspaceSource, close = vi.fn()) {
+function renderReader(reading: WorkspaceSource, close = vi.fn(), location: HTMLElement | null = null) {
   const tools = document.createElement("div");
   tools.setAttribute("data-testid", "tools");
   document.body.append(tools);
@@ -33,8 +33,22 @@ function renderReader(reading: WorkspaceSource, close = vi.fn()) {
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={new QueryClient()}>
     <ReadingContext.Provider value={{ content: null, open: vi.fn(), close, contextToolbar: null, contextToggleToolbar: null, workStatusToolbar: null, toolbar: null }}>{children}</ReadingContext.Provider>
   </QueryClientProvider>;
-  render(<WorkspaceReader source={reading} label="Draft report" running={false} artifactsNote="Its Artifacts stay with the Work." Attachment={Attachment} location={null} tools={tools} />, { wrapper });
+  render(<WorkspaceReader source={reading} running={false} artifactsNote="Its Artifacts stay with the Work." Attachment={Attachment} location={location} tools={tools} />, { wrapper });
 }
+
+// The conversation beside the reading area already names the Work, so the
+// top bar's path starts at the workspace.
+it("names the open path from the workspace, not from what it belongs to", async () => {
+  const location = document.createElement("div");
+  document.body.append(location);
+  renderReader(source(), vi.fn(), location);
+
+  const path = await screen.findByRole("list", { name: "Workspace path" });
+  expect(within(path).getAllByRole("listitem").map(item => item.textContent)).toEqual(["workspace"]);
+  await userEvent.click(await screen.findByRole("button", { name: "notes.md" }));
+  await waitFor(() => expect(within(path).getAllByRole("listitem").map(item => item.textContent)).toEqual(["workspace", "notes.md"]));
+  location.remove();
+});
 
 it("browses folders, previews a file and downloads it through its source", async () => {
   const reading = source();
