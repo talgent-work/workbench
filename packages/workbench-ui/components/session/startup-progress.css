@@ -36,8 +36,6 @@
 .wlp-request-content dl > div { display: flex; gap: 14px; }
 .wlp-request-content dt { width: 90px; flex-shrink: 0; color: var(--wlp-secondary); }
 .wlp-request-content dd { min-width: 0; overflow-wrap: anywhere; }
-/* A name moves to the next line whole; only one wider than the line breaks. */
-.wlp-request-content .wlp-name { display: inline-block; max-width: 100%; }
 .wlp-footer { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin: 0 -28px; padding: 10px 20px 10px 28px; border-radius: 0 0 28px 28px; background: color-mix(in oklch, var(--foreground) 3%, var(--surface)); }
 .wlp-footer p { display: flex; align-items: center; gap: 6px; color: var(--wlp-secondary); font-size: 12px; }
 .wlp-footer button { flex-shrink: 0; }

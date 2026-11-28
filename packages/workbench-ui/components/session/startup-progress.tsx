@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Button, Spinner } from "@heroui/react";
 import { Check, ChevronDown, CircleAlert, Cloud, Monitor, RotateCcw, Square, X } from "lucide-react";
 import type { StartupProgress } from "@talgent/contracts/agent/public/v1/startup_pb";
@@ -6,6 +6,7 @@ import type { WorkStartupRequest } from "@talgent/contracts/agent/public/v1/work
 import type { WorkModelOption } from "@talgent/contracts/agent/public/v1/model_pb";
 import { modelVendors } from "../../lib/model-vendors";
 import type { WorkComputer } from "../../lib/computer-service";
+import { VariableNames } from "../profile/variable-names";
 import "./startup-progress.css";
 
 const stages: Record<string, { name: string; detail: string }> = {
@@ -89,7 +90,7 @@ function StartupProgressView({ computer, progress, workTitle, request, model, on
           <div><dt>Plugins</dt><dd>{request.plugins.length ? request.plugins.join(", ") : "None"}</dd></div>
           {/* Names only, shown to the person whose variables they are: a failure
               these explain is theirs to fix in Profile, not the platform's. */}
-          {request.replacedVariables.length > 0 && <div><dt>Your variables</dt><dd>Replaced the platform’s{request.replacedVariables.map((name, index, names) => <Fragment key={name}> <span className="wlp-name">{breakable(name)}{index < names.length - 1 && ","}</span></Fragment>)}</dd></div>}
+          {request.replacedVariables.length > 0 && <div><dt>Your variables</dt><dd>Replaced the platform’s <VariableNames names={request.replacedVariables} /></dd></div>}
         </dl></div>
       </details>}
       {retryError && <Alert className="wlp-error" status="danger" role="alert"><Alert.Indicator /><Alert.Content><Alert.Description>{retryError}</Alert.Description></Alert.Content></Alert>}
@@ -97,9 +98,6 @@ function StartupProgressView({ computer, progress, workTitle, request, model, on
     </div>
   </section>;
 }
-
-// A variable name too wide for its line breaks after an underscore, not mid-word.
-const breakable = (name: string) => name.split(/(?<=_)/).map((part, index) => <Fragment key={index}>{index > 0 && <wbr />}{part}</Fragment>);
 
 // A Managed Computer is the person's own machine, already online when a start
 // reaches it; its sandbox stage readies the Work there.

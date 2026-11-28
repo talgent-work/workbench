@@ -1,14 +1,12 @@
 import { useState } from "react";
 import { Button } from "@heroui/react";
 import { Braces } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ManageVariablesLink } from "../profile/variable-names";
 import { enabledVariables } from "../../lib/work-start-loadout";
 import { CheckRow, ScopeNote, Search, TrayPopover } from "./work-start-tray";
 
 // From this many variables the card offers a search.
 const SEARCH_FROM = 7;
-
-const ManageLink = () => <Link to="/profile" className="text-[13px] text-muted underline-offset-2 hover:underline">Manage variables in Profile</Link>;
 
 const countLabel = (enabled: number, total: number) => total === 0 ? "Variables" : enabled === total ? `${total} ${total === 1 ? "variable" : "variables"}` : `${enabled} of ${total} ${total === 1 ? "variable" : "variables"}`;
 
@@ -26,7 +24,7 @@ export function VariablesMenu({ variables, loading, failed, off, disabled, open,
   return <TrayPopover label="Variables" value={countLabel(enabled.length, variables.length)} icon={<Braces size={16} />} attention={failed} disabled={disabled} open={open} onOpenChange={value => { onOpenChange(value); if (value) setQuery(""); }}>
     {loading ? <p className="wpb-empty" role="status">Loading variables…</p>
       : failed ? <p className="wpb-empty" role="alert">Variables couldn’t be loaded. <Button size="sm" variant="ghost" onPress={onRetry}>Retry</Button></p>
-      : variables.length === 0 ? <div className="wst-picker-empty"><p>No variables yet. Variables you add in Profile show here for every new Work.</p><ManageLink /></div>
+      : variables.length === 0 ? <div className="wst-picker-empty"><p>No variables yet. Variables you add in Profile show here for every new Work.</p><ManageVariablesLink className="text-[13px]" /></div>
       : <>
         {variables.length >= SEARCH_FROM && <Search label="Search variables" value={query} onChange={setQuery} />}
         <div className="wst-scroll">
@@ -36,7 +34,7 @@ export function VariablesMenu({ variables, loading, failed, off, disabled, open,
             {shown.length === 0 && <p className="wpb-empty" role="status">No variables match.</p>}
           </div>
         </div>
-        <div className="px-3 pb-2"><ManageLink /></div>
+        <div className="px-3 pb-2"><ManageVariablesLink className="text-[13px]" /></div>
         <ScopeNote />
       </>}
   </TrayPopover>;

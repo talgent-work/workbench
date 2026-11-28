@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Popover, Tooltip } from "@heroui/react";
 import { Lock } from "lucide-react";
 import type { WorkModelOption } from "@talgent/contracts/agent/public/v1/model_pb";
-import { ModelTrigger, ModelVendorIcon, ThinkingEffort } from "../composer/prompt-bar-controls";
+import { ModelTrigger, ModelVendorIcon, PopoverFootnote, ThinkingEffort } from "../composer/prompt-bar-controls";
+import { ManageVariablesLink, VariableNames } from "../profile/variable-names";
 import { agentWorkClient } from "../../lib/client";
 import { modelVendors } from "../../lib/model-vendors";
 import { thinkingLevelName } from "../../lib/thinking-levels";
@@ -16,7 +17,11 @@ type ThinkingLevel = { level: string };
 // itself; a withdrawn configuration has no option and offers no levels. The
 // level is read from the Harness once and cached: a change shows at once and
 // returns to the previous level if the Harness refuses it.
-export function WorkThinkingControl({ sessionId, option, initialLevel = "", canAdjust }: { sessionId: string; option?: WorkModelOption; initialLevel?: string; canAdjust: boolean }) {
+// When the person's own Personal Variables replaced platform variables at
+// start, such as the model endpoint, the model named here may not be the one
+// their Harness talks to, so the card names what their variables replaced.
+// Agent returns those names only to the person the Work represents.
+export function WorkThinkingControl({ sessionId, option, initialLevel = "", canAdjust, replacedVariables = [] }: { sessionId: string; option?: WorkModelOption; initialLevel?: string; canAdjust: boolean; replacedVariables?: string[] }) {
   const [open, setOpen] = useState(false);
   const cache = useQueryClient();
   const key = ["work-thinking-level", sessionId];
@@ -47,6 +52,7 @@ export function WorkThinkingControl({ sessionId, option, initialLevel = "", canA
       {levels.length > 0 && <ThinkingEffort levels={levels} value={level} disabled={!canAdjust || current.isError || change.isPending} onChange={next => change.mutate(next)} />}
       {change.error && <p className="wpb-popover-error" role="alert">Thinking effort wasn’t changed: {change.error.message}</p>}
       {current.isError && <p className="wpb-popover-error" role="alert">Thinking effort couldn’t be read. <Button size="sm" variant="ghost" onPress={() => void current.refetch()}>Retry</Button></p>}
+      {replacedVariables.length > 0 && <PopoverFootnote><span className="wpb-replaced-note">Your variables replace the platform’s <VariableNames names={replacedVariables} />.<ManageVariablesLink className="mt-1 block w-fit" /></span></PopoverFootnote>}
     </Popover.Dialog></Popover.Content>
   </Popover>;
 }
