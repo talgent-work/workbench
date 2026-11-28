@@ -178,7 +178,7 @@ func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
 	prepare := command.NewPrepareWorkExecutionHandler(sessions, auth, models)
-	_, err = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, lostCreationAnswer{sessions}, auth, models, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{}), prepare).Handle(ctx, request)
+	_, err = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agents, lostCreationAnswer{sessions}, auth, models, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{}), prepare).Handle(ctx, request)
 	require.ErrorIs(t, err, errCreationAnswerLost)
 	committed, err := sessions.FindByWorkKey(ctx, definition.ID, request.WorkKey)
 	require.NoError(t, err)

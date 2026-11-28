@@ -3,20 +3,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "./account-service";
 import { personalVariableClient } from "./client";
 
-// The signed-in person's Personal Variables: named values every Work their
-// Work Agent does for them receives as environment variables at its next
-// start. Listing gives names only; a value is read one at a time, on request,
-// and never kept in the query or mutation cache.
+// The signed-in person's Personal Variables: named values each Work their
+// Work Agent does for them enables at its creation and receives as
+// environment variables at every start. Listing gives names only; a value is
+// read one at a time, on request, and never kept in the query or mutation
+// cache.
 
 const variablesKey = (userId: string | undefined) => ["personal-variables", userId];
 
 /** The names of the person's variables, ordered as the core orders them. */
-export function usePersonalVariables() {
+export function usePersonalVariables(enabled = true) {
   const userId = useCurrentUser().data?.user?.id;
   return useQuery({
     queryKey: variablesKey(userId),
     queryFn: async () => (await personalVariableClient.listPersonalVariables({})).variables.map(variable => variable.name),
-    enabled: Boolean(userId),
+    enabled: Boolean(userId) && enabled,
     retry: false,
     refetchOnWindowFocus: false,
   });

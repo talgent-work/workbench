@@ -54,6 +54,9 @@ type CreateWork struct {
 	AgentHarness string
 	// WorkLabels are the starter's Work Labels for a new Work.
 	WorkLabels domain.WorkLabels
+	// PersonalVariables is the starter's choice of the Personal Variables a
+	// new Work enables; a reused Work keeps its own.
+	PersonalVariables domain.PersonalVariableChoice
 }
 
 // CreateWorkHandler creates at most one Work per caller request identity: the
@@ -64,6 +67,7 @@ type CreateWork struct {
 type CreateWorkHandler struct {
 	now           func() time.Time
 	builtIns      domain.BuiltInPlugins
+	variables     domain.PersonalVariableSetRepository
 	catalog       MarketplacePort
 	computers     ComputerPort
 	models        query.ModelConfigurations
@@ -73,8 +77,8 @@ type CreateWorkHandler struct {
 	prepare       *PrepareWorkExecutionHandler
 }
 
-func NewCreateWorkHandler(now func() time.Time, builtIns domain.BuiltInPlugins, agents domain.AgentDefinitionRepository, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog MarketplacePort, computers ComputerPort, prepare *PrepareWorkExecutionHandler) *CreateWorkHandler {
-	return &CreateWorkHandler{now: now, builtIns: builtIns, catalog: catalog, computers: computers, agents: agents, sessions: sessions, authorization: authorization, models: models, prepare: prepare}
+func NewCreateWorkHandler(now func() time.Time, builtIns domain.BuiltInPlugins, variables domain.PersonalVariableSetRepository, agents domain.AgentDefinitionRepository, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog MarketplacePort, computers ComputerPort, prepare *PrepareWorkExecutionHandler) *CreateWorkHandler {
+	return &CreateWorkHandler{now: now, builtIns: builtIns, variables: variables, catalog: catalog, computers: computers, agents: agents, sessions: sessions, authorization: authorization, models: models, prepare: prepare}
 }
 
 // creationAttempts bounds retries after a competing change of the

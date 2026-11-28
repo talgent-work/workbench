@@ -109,3 +109,6 @@ export function connectorChoices(rows: ConnectorRow[]) {
   return rows.filter(row => !row.unavailable && (row.difference === "removed" || (row.difference === "added" && row.included)))
     .map(row => ({ connectorId: row.id, include: row.included }));
 }
+
+/** The Personal Variables a Work enables: every listed one not turned off. */
+export const enabledVariables = (variables: string[], off: string[]) => variables.filter(name => !off.includes(name));

@@ -15,15 +15,17 @@ running against them. Its `apply.sh` creates, once and never replacing it, the S
 `agent-personal-variable-key`, the Agent key that seals Personal Variables. A deployment that
 manages its own Secrets creates that Secret with key `key`, 32 random bytes base64-encoded, before
 deploying; `controlplane` does not start without it. A person now keeps Personal Variables on
-Profile, and every start of a Work their Agent does for them gives its Harness their current
-values, in place of platform variables of the same name. On a Managed Computer this takes this
-release's Talgent Computer, to which machines upgrade on connecting: a machine still on an earlier one
-never starts the Harness of a run with Personal Variables, whose start fails at its Startup Deadline,
-naming the outdated Talgent Computer, until it upgrades. Raising `COMPUTER_MINIMUM_VERSION` to this
-release refuses every new run on such a machine at Start Work, with or without Personal Variables. A
-rollback drops the columns as the script's header describes; the table and the Secret may stay. A
-machine downgraded to an earlier Talgent Computer ignores that a reserved Harness process was created
-with Personal Variables and would start it without them, so stop the Works starting on it first.
+Profile and chooses, when starting a Work, which of them it enables, all by default; every start of
+a Work their Agent does for them gives its Harness the current values of those it enabled, in place
+of platform variables of the same name. Works created before this release enable none. On a Managed
+Computer this takes this release's Talgent Computer, to which machines upgrade on connecting: a
+machine still on an earlier one never starts the Harness of a run with Personal Variables, whose start
+fails at its Startup Deadline, naming the outdated Talgent Computer, until it upgrades. Raising
+`COMPUTER_MINIMUM_VERSION` to this release refuses every new run on such a machine at Start Work, with
+or without Personal Variables. A rollback drops the columns as the script's header describes; the
+table and the Secret may stay. A machine downgraded to an earlier Talgent Computer ignores that a
+reserved Harness process was created with Personal Variables and would start it without them, so stop
+the Works starting on it first.
 
 ## The release that gives an Agent its Workspace Instructions
 

@@ -69,7 +69,7 @@ func TestWorkListsSelectAdmittedWorksByWorkCaller(t *testing.T) {
 		creation.InitialExecution = &preparation
 		creation.RequestID = preparation.RequestID
 		creation.WorkKey, creation.WorkCaller = domain.WorkKey{Kind: "case", ID: uuid.NewString()}, domain.WorkCaller{Kind: "project", ID: projectID}
-		id, e := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels())).Handle(ctx, creation)
+		id, e := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels())).Handle(ctx, creation)
 		require.NoError(t, e)
 		if stopped {
 			require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))

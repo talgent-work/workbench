@@ -46,7 +46,7 @@ func (c *ExecutionCoordination) Coordinate(ctx context.Context, workID string) e
 // BeginExecution begins the AgentExecution of the Work's admitted start
 // (Begin execution), with the LaunchSpecification taken from the Work, where
 // its Computer realizes it and the current values of the Personal Variables
-// of the person its Agent represents (Personal Variables at start). An
+// its Work Variable Selection names (Personal Variables at start). An
 // earlier execution still unretired, whose retirement request was lost,
 // retires first (Superseded execution). A start that has its execution
 // already changes nothing, so a concurrent beginning that won is taken as
@@ -112,18 +112,19 @@ func (c *ExecutionCoordination) begin(ctx context.Context, work *domain.AgentWor
 	return c.executions.Save(ctx, execution)
 }
 
-// personalVariables are the current values a start of the Work takes: every
-// Personal Variable of the person its Agent represents. A Work representing
-// no person, such as an Application's, takes none.
+// personalVariables are the current values a start of the Work takes: those
+// of the Personal Variables its Work Variable Selection names, from the set of
+// the person its Agent represents. A Work that enabled none, such as an
+// Application's, takes none.
 func (c *ExecutionCoordination) personalVariables(ctx context.Context, work *domain.AgentWork) ([]domain.PersonalVariable, error) {
-	if work.RepresentedPerson == "" {
+	if work.RepresentedPerson == "" || len(work.VariableSelection.Names) == 0 {
 		return nil, nil
 	}
 	set, err := c.variables.Get(ctx, work.RepresentedPerson)
 	if err != nil {
 		return nil, err
 	}
-	return set.CurrentValues(), nil
+	return set.CurrentValues(work.VariableSelection), nil
 }
 
 // RequestProcessExit records the Work's request that its process exit on the

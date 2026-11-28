@@ -85,7 +85,7 @@ func newBuiltInFixture(t *testing.T, builtIns domain.BuiltInPlugins, catalog com
 	lookup := infrastructure.NewAgentDefinitionQueryRepository(jdb)
 	sessions := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners)
-	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, sessions, authorizer, options, start, computertest.Checked(startupAuthority{}), creationPreparation(jdb, options))
+	create := command.NewCreateWorkHandler(time.Now, builtIns, &commandtest.PersonalVariables{}, definitions, sessions, authorizer, options, start, computertest.Checked(startupAuthority{}), creationPreparation(jdb, options))
 	app := &application.Application{Queries: application.Queries{GetWork: agentquery.NewGetWorkHandler(definitions, sessions, authorizer, application.AssembleAgentWorkEntity, nil)},
 		Definitions: definitions, DefinitionQueries: lookup, Works: sessions, WorkQueries: infrastructure.NewWorkQueryRepository(jdb), Catalog: start, Models: options, BuiltInPlugins: builtIns,
 		Commands: application.Commands{EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup), CreateWork: create}}
