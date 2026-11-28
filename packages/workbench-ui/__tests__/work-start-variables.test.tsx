@@ -90,6 +90,24 @@ it("strikes through a variable turned off, counts it and leaves it out of the Wo
   expect(sentNames()).toEqual(["ANTHROPIC_MODEL"]);
 });
 
+it("turns variables off for the started Work only", async () => {
+  const user = userEvent.setup();
+  keepVariables(["ANTHROPIC_MODEL", "API_TOKEN"]);
+  renderForm();
+
+  await user.click(await screen.findByRole("button", { name: "Variables: 2 variables" }));
+  await user.click(screen.getByRole("checkbox", { name: "Enable API_TOKEN for this Work" }));
+  await user.keyboard("{Escape}");
+  await start(user);
+  await vi.waitFor(() => expect(startWork).toHaveBeenCalledOnce());
+  expect(sentNames()).toEqual(["ANTHROPIC_MODEL"]);
+
+  expect(await screen.findByRole("button", { name: "Variables: 2 variables" })).toBeInTheDocument();
+  await start(user);
+  await vi.waitFor(() => expect(startWork).toHaveBeenCalledTimes(2));
+  expect(sentNames()).toEqual(["ANTHROPIC_MODEL", "API_TOKEN"]);
+});
+
 it("searches the variables once more than six exist", async () => {
   const user = userEvent.setup();
   keepVariables(["A_ONE", "B_TWO", "C_THREE", "D_FOUR", "E_FIVE", "F_SIX", "G_TOKEN"]);

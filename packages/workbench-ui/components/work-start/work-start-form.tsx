@@ -125,7 +125,8 @@ export function WorkStartForm({ source, disabled: blocked = false, unavailable, 
         personalVariables: { names: enabledVariables(variables.data, draft.variablesOff) },
         ...(choices.plugins.length || connectorsChanged.length || draft.agent ? { creationCapabilities: { plugins: choices.plugins, connectors: connectorsChanged, ...(draft.agent ? { startupAgent: draft.agent } : {}) } } : {}),
       });
-      update({ files: [] });
+      // Turned-off variables apply to the started Work only; the next one starts with every variable enabled.
+      update({ files: [], variablesOff: [] });
     } catch (cause) { setError(startWorkErrorMessage(cause, computer)); }
     finally { setUploading(""); update({ submitting: false }); }
   }

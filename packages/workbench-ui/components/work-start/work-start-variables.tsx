@@ -5,12 +5,12 @@ import { Link } from "react-router-dom";
 import { enabledVariables } from "../../lib/work-start-loadout";
 import { CheckRow, ScopeNote, Search, TrayPopover } from "./work-start-tray";
 
-// Past this many variables the card offers a search.
+// From this many variables the card offers a search.
 const SEARCH_FROM = 7;
 
 const ManageLink = () => <Link to="/profile" className="text-[13px] text-muted underline-offset-2 hover:underline">Manage variables in Profile</Link>;
 
-const countLabel = (enabled: number, total: number) => total === 0 ? "Variables" : enabled === total ? `${total} ${total === 1 ? "variable" : "variables"}` : `${enabled} of ${total} variables`;
+const countLabel = (enabled: number, total: number) => total === 0 ? "Variables" : enabled === total ? `${total} ${total === 1 ? "variable" : "variables"}` : `${enabled} of ${total} ${total === 1 ? "variable" : "variables"}`;
 
 // Which of the person's Personal Variables this Work enables, grouped by where
 // they come from (today only Personal). Every variable starts enabled; the
@@ -36,7 +36,7 @@ export function VariablesMenu({ variables, loading, failed, off, disabled, open,
             {shown.length === 0 && <p className="wpb-empty" role="status">No variables match.</p>}
           </div>
         </div>
-        <div className="flex items-center justify-between gap-3 px-3 pb-2"><ManageLink /></div>
+        <div className="px-3 pb-2"><ManageLink /></div>
         <ScopeNote />
       </>}
   </TrayPopover>;
