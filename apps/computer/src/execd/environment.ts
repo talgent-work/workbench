@@ -27,8 +27,12 @@ export function deleteVariable(env: NodeJS.ProcessEnv, name: string, platform: N
   for (const key of keysNamed(env, name, platform)) delete env[key]
 }
 
+// Whether two variable names name the same variable on the machine.
+export function sameName(a: string, b: string, platform: NodeJS.Platform): boolean {
+  return platform === 'win32' ? a.toUpperCase() === b.toUpperCase() : a === b
+}
+
 function keysNamed(env: NodeJS.ProcessEnv, name: string, platform: NodeJS.Platform): string[] {
   if (platform !== 'win32') return name in env ? [name] : []
-  const upper = name.toUpperCase()
-  return Object.keys(env).filter((key) => key.toUpperCase() === upper)
+  return Object.keys(env).filter((key) => sameName(key, name, platform))
 }

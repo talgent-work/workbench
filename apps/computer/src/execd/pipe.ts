@@ -51,6 +51,9 @@ function controlFrame(value: unknown): string {
 export async function openPipe(target: PipeTarget, sink: PipeSink): Promise<{ status: number } | PipeInput> {
   const { table, workId, id } = target
   if (!(await table.exists(workId, id))) return { status: 404 }
+  // A process whose Personal Variables a restart lost before it ever ran
+  // waits for them, neither started nor failed.
+  if (await table.awaitsVariables(workId, id)) return { status: 412 }
   if (!table.acquire(workId, id)) return { status: 409 }
   const deleted = table.entry(workId, id).deleted.signal
   const pump = new Pump(target, sink, deleted)

@@ -11,9 +11,10 @@ import { LogAppender, STDERR, STDOUT } from './output-log.ts'
 // and delivers signals through the machine's ProcessHost.
 
 export const SHIM_ARG = '__shim'
-// The command's environment, handed over as JSON so variables meant for the
-// command (NODE_OPTIONS, say) never configure the shim's own node.
-export const SHIM_ENV = 'TALGENT_SHIM_ENV'
+// The command's environment reaches the shim as JSON on its stdin, which
+// Talgent Computer writes and closes: no variable meant for the command
+// (NODE_OPTIONS, say) configures the shim's own node, no single environment
+// string bounds its size, and nothing of it rests on disk.
 // Bytes the command may still write after its shell exited, while
 // descendants hold its stdout; execd does not wait for them either.
 const DRAIN_AFTER_EXIT_MS = 100
@@ -81,7 +82,6 @@ function renameAtomic(from: string, to: string): void {
 
 export function runShim(stateDir: string, run: number, host: ProcessHost): void {
   const spec = JSON.parse(readFileSync(join(stateDir, stateFiles.spec), 'utf8')) as ProcessSpec
-  const env = JSON.parse(process.env[SHIM_ENV] ?? '{}') as NodeJS.ProcessEnv
   const log = new LogAppender(join(stateDir, stateFiles.log))
   const append = (stream: number, chunk: Buffer) => log.append(stream, chunk)
   let recorded = false
@@ -109,11 +109,44 @@ export function runShim(stateDir: string, run: number, host: ProcessHost): void 
     finish(-1)
   }
 
-  try {
-    command = host.startCommand(spec, env, stateDir, run)
-  } catch (error) {
-    return failed(error instanceof Error ? error.message : String(error))
-  }
+  readEnvironment(process.stdin).then(
+    (env) => {
+      try {
+        command = host.startCommand(spec, env, stateDir, run)
+        follow(command, append, started, failed, finish)
+      } catch (error) {
+        failed(error instanceof Error ? error.message : String(error))
+      }
+    },
+    (error: unknown) => failed(`its environment did not arrive: ${error instanceof Error ? error.message : String(error)}`),
+  )
+}
+
+// Reads the command's environment, all of stdin as one JSON object of
+// strings. Errors name no variable or value.
+function readEnvironment(stdin: NodeJS.ReadableStream): Promise<NodeJS.ProcessEnv> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    stdin.on('data', (chunk: Buffer) => chunks.push(chunk))
+    stdin.once('error', reject)
+    stdin.once('end', () => {
+      let env: unknown
+      try {
+        env = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      } catch {
+        return reject(new Error('not JSON'))
+      }
+      if (typeof env !== 'object' || env === null || Array.isArray(env) || Object.values(env).some((value) => typeof value !== 'string')) {
+        return reject(new Error('not an object of strings'))
+      }
+      resolve(env as NodeJS.ProcessEnv)
+    })
+  })
+}
+
+// Follows the started command: its output into the log, its start and exit
+// into the state directory.
+function follow(command: CommandRun, append: (stream: number, chunk: Buffer) => void, started: (pid: number) => void, failed: (message: string) => void, finish: (exitCode: number) => void): void {
   const { child } = command
   const { stdout, stderr } = child
   if (stdout === null || stderr === null) throw new Error('the command has no output pipes')

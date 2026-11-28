@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { openPipe, type PipeInput, type PipeSink } from '../src/execd/pipe.ts'
 import { ProcessTable } from '../src/execd/processes.ts'
+import { ExecdService } from '../src/execd/service.ts'
+import { Works } from '../src/execd/works.ts'
+import { CredentialStore } from '../src/proxy/credentials.ts'
 import { findGitBash, namedPipe, WindowsHost } from '../src/execd/windows-host.ts'
 import { windowsLikeHost } from './support/windows-like-host.ts'
 import { removeScratch } from './support/platform.ts'
@@ -115,6 +118,34 @@ describe('Windows processes', () => {
     await until(() => second.ended())
   })
 
+  test('the Harness alone has its Personal Variables, replacing variables as Windows compares names', async () => {
+    const service = new ExecdService({
+      works: new Works({ worksDir: join(dir, 'works'), recordsDir: join(dir, 'records') }),
+      processes: table,
+      credentials: new CredentialStore({ dir: join(dir, 'credentials') }),
+      proxyOrigin: () => 'http://127.0.0.1:1',
+      baseEnv: { ...process.env, MACHINE: 'machine' },
+      home: dir,
+      log: () => {},
+      platform: 'win32',
+    })
+    const call = (method: string, path: string, body: unknown) => service.request({ workId: 'w-1', method, path, token: 'tok', body })
+    assert.equal((await call('PUT', '/', { access_token: 'tok', environment: {} })).status, 200)
+    const command = 'echo "${Machine-unset}|${MACHINE-unset}|${talgent_work_root-unset}|$TALGENT_WORK_ROOT"'
+    const harness = await call('POST', '/pty', { cwd: '/workspace', command, personal_variables: { Machine: 'person', talgent_work_root: 'elsewhere' } })
+    assert.equal(harness.status, 201)
+    const preparation = await call('POST', '/pty', { cwd: '/workspace', command })
+    const output = async (id: string) => {
+      const pipe = attachTo(service, id)
+      await pipe.opened
+      await until(pipe.ended)
+      return pipe.stdout()
+    }
+    const root = join(dir, 'works', 'w-1')
+    assert.equal(await output((harness.body as { session_id: string }).session_id), `person|unset|unset|${root}\n`, 'Machine replaces MACHINE; TALGENT_ stays Talgent Computer\'s')
+    assert.equal(await output((preparation.body as { session_id: string }).session_id), `unset|machine|unset|${root}\n`, 'another process keeps the machine\'s')
+  })
+
   test('a deleted process ends with its tree and is forgotten', async () => {
     const id = await table.reserve('w-1', { cwd: dir, command: 'echo held; exec sleep 30' })
     const pipe = attach(id)
@@ -126,6 +157,16 @@ describe('Windows processes', () => {
     assert.equal(await table.phase('w-1', id), undefined)
   })
 })
+
+// Attaches to a process through the service, as the relay does.
+function attachTo(service: ExecdService, id: string) {
+  const closed = new AbortController()
+  const out: Buffer[] = []
+  let ended = false
+  const sink: PipeSink = { closed: closed.signal, text: () => {}, binary: (frame) => out.push(frame), end: () => { ended = true }, writable: async () => {} }
+  const stdout = () => out.filter((frame) => frame[0] === 1).map((frame) => frame.subarray(1).toString()).join('')
+  return { opened: service.openStream({ workId: 'w-1', processId: id, since: 0, token: 'tok' }, sink), stdout, ended: () => ended }
+}
 
 function alive(pid: number): boolean {
   try {

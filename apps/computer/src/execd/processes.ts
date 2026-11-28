@@ -11,7 +11,7 @@ import { currentHost, type ProcessHost } from './host.ts'
 import { LogAppender, LogCursor, STDERR } from './output-log.ts'
 import type { PersonalVariables } from './personal-variables.ts'
 import { RunTokens } from './run-tokens.ts'
-import { SHIM_ENV, stateFiles, writeJsonAtomic, type ExitRecord, type ProcessSpec, type StartedRecord, type UsesRecord } from './shim.ts'
+import { stateFiles, writeJsonAtomic, type ExitRecord, type ProcessSpec, type StartedRecord, type UsesRecord } from './shim.ts'
 
 // How a Work process stands, read from its state directory so it holds across
 // Talgent Computer restarts. A reservation has never started; execd starts
@@ -78,7 +78,8 @@ export class ProcessTable {
   // "<work>/<process>", held in memory only so no value rests on disk. A
   // process whose spec says it has them, but whose values this run of
   // Talgent Computer does not hold, as one created before a restart, never
-  // runs without them (launch).
+  // runs without them: one that never ran awaits them (awaitsVariables), and
+  // one that ran is refused (launch).
   private readonly personal = new Map<string, PersonalVariables>()
 
   constructor(options: { stateRoot: string; shim: string[]; uses?: string[]; host?: ProcessHost }) {
@@ -99,9 +100,32 @@ export class ProcessTable {
     const id = randomUUID()
     const dir = this.dir(workId, id)
     await mkdir(dir, { recursive: true, mode: 0o700 })
-    if (personal !== undefined) this.personal.set(`${workId}/${id}`, personal)
     writeJsonAtomic(join(dir, stateFiles.spec), personal === undefined ? spec : { ...spec, personalVariables: true } satisfies ProcessSpec)
+    if (personal !== undefined) this.personal.set(`${workId}/${id}`, personal)
     return id
+  }
+
+  // Whether the process was created with Personal Variables that this run
+  // of Talgent Computer does not hold, an earlier run having held them, and
+  // has never run: it neither starts nor fails until they are given again
+  // (restoreVariables).
+  async awaitsVariables(workId: string, id: string): Promise<boolean> {
+    if (this.personal.has(`${workId}/${id}`)) return false
+    const dir = this.dir(workId, id)
+    const spec = await readJson<ProcessSpec>(join(dir, stateFiles.spec))
+    return spec?.personalVariables === true && (await readJson<StartedRecord>(join(dir, stateFiles.started))) === undefined
+  }
+
+  // Gives a process created with Personal Variables that has never run its
+  // variables again, as after a restart lost them: 'unknown' for a process
+  // it does not know, 'refused' for one created without them or that ran.
+  async restoreVariables(workId: string, id: string, personal: PersonalVariables): Promise<'restored' | 'unknown' | 'refused'> {
+    const phase = await this.phase(workId, id)
+    if (phase === undefined) return 'unknown'
+    const spec = await readJson<ProcessSpec>(join(this.dir(workId, id), stateFiles.spec))
+    if (phase.kind !== 'reserved' || spec?.personalVariables !== true) return 'refused'
+    this.personal.set(`${workId}/${id}`, personal)
+    return 'restored'
   }
 
   async exists(workId: string, id: string): Promise<boolean> {
@@ -315,12 +339,20 @@ export class ProcessTable {
         cwd: dir,
         detached: true,
         windowsHide: true,
-        stdio: ['ignore', output, output],
-        env: { PATH: process.env.PATH ?? '', ...this.host.shimEnv(), [SHIM_ENV]: JSON.stringify(env) },
+        stdio: ['pipe', output, output],
+        env: { PATH: process.env.PATH ?? '', ...this.host.shimEnv() },
       })
       child.once('exit', () => { shimExited = true })
       child.once('error', () => { shimExited = true })
+      // The environment travels on the shim's stdin (shim.ts); a shim that
+      // died before reading it is found exited below.
+      child.stdin?.on('error', () => {})
+      child.stdin?.end(JSON.stringify(env))
       child.unref()
+    } catch (error) {
+      // A shim the machine refuses to start, as for too few resources, is
+      // a run that failed to start, whose reader sees why and its end.
+      return this.refuse(dir, run, `cannot start the process shim: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       closeSync(output)
     }
@@ -331,7 +363,7 @@ export class ProcessTable {
       if (shimExited) {
         const again = await readJson<StartedRecord>(join(dir, stateFiles.started))
         if (again?.run === run) return run
-        throw new Error('the process shim exited before starting the command')
+        return this.refuse(dir, run, 'the process shim exited before starting the command')
       }
       if (Date.now() > deadline) throw new Error('the process shim did not start the command in time')
       await delay(10)

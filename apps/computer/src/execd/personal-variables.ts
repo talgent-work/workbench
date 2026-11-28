@@ -1,4 +1,4 @@
-import { mergeEnvironment } from './environment.ts'
+import { mergeEnvironment, sameName } from './environment.ts'
 
 // A run's Personal Variables: the person's own environment variables, which
 // the platform sends with the creation of a Work's Harness process only, never
@@ -32,9 +32,16 @@ export function parsePersonalVariables(value: unknown): PersonalVariables {
   return variables
 }
 
-// Layers the variables over env, last: each replaces env's variable of the
-// same name, as the machine compares names, except a reserved one.
+// Layers the variables, as parsePersonalVariables read them, over env, last:
+// each replaces env's variable of the same name, as the machine compares
+// names.
 export function layerPersonalVariables(env: NodeJS.ProcessEnv, variables: PersonalVariables, platform: NodeJS.Platform): NodeJS.ProcessEnv {
-  const allowed = Object.fromEntries(Object.entries(variables).filter(([name]) => !RESERVED.test(name)))
-  return mergeEnvironment(platform, env, allowed)
+  return mergeEnvironment(platform, env, variables)
+}
+
+// The names of the variables that replace one of owned, those the platform
+// and Talgent Computer set, as the machine compares names, in name order.
+export function replacedVariables(variables: PersonalVariables, owned: Iterable<string>, platform: NodeJS.Platform): string[] {
+  const set = [...owned]
+  return Object.keys(variables).filter((name) => set.some((own) => sameName(name, own, platform))).sort()
 }

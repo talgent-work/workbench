@@ -157,16 +157,17 @@ Under it, the execd API (`internal/pkg/execd`) with the Work's execd access toke
 | Call | Meaning |
 |---|---|
 | `GET /ping` | `200` while the machine is connected |
-| `POST /pty` `{cwd, command, personal_variables?}` | reserve a process; `{session_id}`, with `"personal_variables": true` when it took them |
-| `GET /pty/<id>` | `{session_id, running}`; `404` when unknown |
+| `POST /pty` `{cwd, command, personal_variables?}` | reserve a process; `{session_id}`, with `"personal_variables": true` and `replaced_variables` when it took them |
+| `GET /pty/<id>` | `{session_id, running}`, with `"awaiting_personal_variables": true` for a process awaiting them; `404` when unknown |
 | `DELETE /pty/<id>` | kill the process group and forget it; `404` when unknown |
 | `GET /pty/<id>/ws?pty=0&since=<offset>` | WebSocket pipe, below |
 
-and one call that is not execd's:
+and calls that are not execd's:
 
 | Call | Meaning |
 |---|---|
 | `PUT /` with `X-Talgent-Control-Token` | open or update the Work's environment, below |
+| `PUT /pty/<id>/personal_variables` `{personal_variables}` | give a process awaiting its Personal Variables them again; `204` |
 
 `POST /pty` answers `409` `{"code":"RECONCILIATION_PENDING"}` while the connection's reconciliation round
 is not decided (Reconciliation).
@@ -177,13 +178,30 @@ without it. Talgent Computer gives that process, on every run of it, the variabl
 environment (Work environment): each replaces the variable of the same name, the machine's, the Work's
 and Talgent Computer's own alike, as the machine compares names, except a name starting with `TALGENT_`
 in any case, which it leaves out. A name that is not `[A-Za-z_][A-Za-z0-9_]*` or a value that is not a
-string or holds NUL answers `400` naming neither. It keeps the values in memory only, never in the
-process's state directory or a log: a process created with them that a later Talgent Computer run would
-start, its values gone with the earlier run, exits `-1` with the reason on stderr instead of starting
-without them. The answer's `"personal_variables": true` tells the platform the machine took them; an answer
-without it, from a Talgent Computer that predates them, makes the platform delete the process and retry the
-launch, so the Harness never starts without them. A Work's Harness launch whose request would exceed the
-relay's 1 MiB body fails its start.
+string or holds NUL answers `400` naming neither. The answer's `"personal_variables": true` tells the
+platform the machine took them; an answer without it, from a Talgent Computer that predates them, makes the
+platform delete the process and retry the launch, so the Harness never starts without them, and the start's
+setback says the machine must be upgraded. The answer's `replaced_variables` names, in name order and as
+the Personal Variables spell them, those that replace a variable the Work's environment or Talgent Computer
+itself sets or removes: the Work's `environment`, `HOME`, `PATH` with the bundled Claude Code put first,
+the model proxy's variables and the removed `ANTHROPIC_API_KEY`, and the telemetry variables. A machine's
+own variable is never named, and on Windows names compare without case. A person's `PATH` takes the place
+of `PATH` as it is, without the bundled Claude Code, and is named. The platform records these names, with
+the launch command's own exports that the Personal Variables replace, as the start's report.
+
+Talgent Computer keeps the values in memory only, never in the process's state directory or a log; the
+process shim that runs the command takes the command's environment on its stdin, never in its own
+environment or a file. A process created with
+them whose Talgent Computer restarted before it ever ran awaits them: its status says so, an attach to it
+answers `412` and leaves it reserved, and `PUT /pty/<id>/personal_variables` gives them again, `400` for
+an invalid body as on creation, `409` for a process created without them or that has run. The platform
+gives them again from the run's sealed values before it connects the Harness. A process created with them
+that ran and that a later Talgent Computer run would start again, its values gone with the earlier run,
+exits `-1` with the reason on stderr instead of starting without them. A Work's Harness launch whose
+request would exceed the relay's 1 MiB body fails its start.
+
+A run whose process the machine cannot start, as when it refuses to start the command's process shim,
+exits `-1` at once with the reason on stderr, so the reader of its pipe sees it end.
 
 The machine itself, naming no Work, is reached at `http://computer-gateway.<namespace>.svc:8085/relay/<computer-id>/reconciliation`
 with `X-Talgent-Control-Token` (Reconciliation).
