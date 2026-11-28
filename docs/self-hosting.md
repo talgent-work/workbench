@@ -104,7 +104,7 @@ Switches in the environment change what the base renders:
 | Key | Default | Set it when |
 |---|---|---|
 | `AGENT_CORE_API_ACCESS` | `enabled`: Agents call the core's public APIs at `WORKBENCH_ORIGIN` | `disabled`: Agents reach the platform only through a platform Connector; set that Connector's addresses in a controlplane profile |
-| `ADDITIONAL_ENTRY_HOST` | empty | A second host name must serve the `web-api`, `auth` and `computer` routes |
+| `ADDITIONAL_ENTRY_HOST` | empty | A second host name must serve the `web-api`, `agent-api`, `auth` and `computer` routes |
 | `CONTROLPLANE_PROFILE` | empty | controlplane must read overrides from `controlplane_<profile>.yml` in ConfigMap `controlplane-profile`, which the operator provides; maps merge over the defaults, lists replace |
 
 ### Enterprise networks

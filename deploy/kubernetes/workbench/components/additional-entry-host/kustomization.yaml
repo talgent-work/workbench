@@ -8,7 +8,7 @@ kind: Component
 patches:
   - target:
       kind: HTTPRoute
-      name: web-api|auth|computer
+      name: web-api|agent-api|auth|computer
     patch: |-
       - op: add
         path: /spec/hostnames/-
@@ -21,6 +21,6 @@ replacements:
     targets:
       - select:
           kind: HTTPRoute
-          name: web-api|auth|computer
+          name: web-api|agent-api|auth|computer
         fieldPaths:
           - spec.hostnames.1

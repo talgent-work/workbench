@@ -27,6 +27,10 @@ table and the Secret may stay. A machine downgraded to an earlier Talgent Comput
 reserved Harness process was created with Personal Variables and would start it without them, so stop
 the Works starting on it first.
 
+The Agent context's public API rules move from the HTTPRoute `web-api` into a new HTTPRoute
+`agent-api`, since one route holds at most 16 rules: a deployment that applies objects one by one
+applies `web-api`, `agent-api` and the SecurityPolicy `web-auth` together.
+
 ## The release that gives an Agent its Workspace Instructions
 
 Apply

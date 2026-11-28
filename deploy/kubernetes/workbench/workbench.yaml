@@ -1479,123 +1479,6 @@ spec:
       backendRefs:
         - name: controlplane
           port: 8080
-    - name: agent-work-api
-      matches:
-        - path:
-            type: PathPrefix
-            value: /api/agent.public.v1.AgentWorkService
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /agent.public.v1.AgentWorkService
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            set:
-              - name: x-talgent-authenticated-by
-                value: envoy
-      backendRefs:
-        - name: controlplane
-          port: 8080
-    - name: work-api
-      matches:
-        - path:
-            type: PathPrefix
-            value: /api/agent.public.v2.WorkService
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /agent.public.v2.WorkService
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            set:
-              - name: x-talgent-authenticated-by
-                value: envoy
-      backendRefs:
-        - name: controlplane
-          port: 8080
-    - name: work-file-api
-      matches:
-        - path:
-            type: PathPrefix
-            value: /api/agent.public.v1.WorkFileService
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /agent.public.v1.WorkFileService
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            set:
-              - name: x-talgent-authenticated-by
-                value: envoy
-      backendRefs:
-        - name: controlplane
-          port: 8080
-    # A Work's readers browse its workspace.
-    - name: work-workspace-api
-      matches:
-        - path:
-            type: PathPrefix
-            value: /api/agent.public.v1.WorkWorkspaceService
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /agent.public.v1.WorkWorkspaceService
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            set:
-              - name: x-talgent-authenticated-by
-                value: envoy
-      backendRefs:
-        - name: controlplane
-          port: 8080
-    # A person keeps their own Personal Variables.
-    - name: personal-variable-api
-      matches:
-        - path:
-            type: PathPrefix
-            value: /api/agent.public.v1.PersonalVariableService
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /agent.public.v1.PersonalVariableService
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            set:
-              - name: x-talgent-authenticated-by
-                value: envoy
-      backendRefs:
-        - name: controlplane
-          port: 8080
-    # A Work's Agent asks who it is.
-    - name: agent-identity-api
-      matches:
-        - path:
-            type: PathPrefix
-            value: /api/agent.public.v1.IdentityService
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /agent.public.v1.IdentityService
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            set:
-              - name: x-talgent-authenticated-by
-                value: envoy
-      backendRefs:
-        - name: controlplane
-          port: 8080
     # A Work's Agent publishes and deletes its Artifacts, with its Space Token;
     # a publication carries up to 64 MiB.
     - name: storage-artifact-api
@@ -1757,6 +1640,140 @@ spec:
         - name: controlplane
           port: 8080
 ---
+# The Agent context's public APIs: a person's or an Application's Works and
+# Agents, Work files and workspaces, Personal Variables, and the identity a
+# Work's Agent asks for. A route holds at most 16 rules, so they have their own.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agent-api
+  namespace: talgent
+spec:
+  parentRefs:
+    - name: public
+      namespace: envoy-gateway-system
+      sectionName: http
+  hostnames:
+    - workbench.example.com
+  rules:
+    - name: agent-work-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.AgentWorkService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.AgentWorkService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: work-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v2.WorkService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v2.WorkService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: work-file-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.WorkFileService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.WorkFileService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # A Work's readers browse its workspace.
+    - name: work-workspace-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.WorkWorkspaceService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.WorkWorkspaceService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # A person keeps their own Personal Variables.
+    - name: personal-variable-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.PersonalVariableService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.PersonalVariableService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # A Work's Agent asks who it is.
+    - name: agent-identity-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.IdentityService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.IdentityService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy
 metadata:
@@ -1774,23 +1791,23 @@ spec:
       sectionName: application-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
-      name: web-api
+      name: agent-api
       sectionName: agent-work-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
-      name: web-api
+      name: agent-api
       sectionName: work-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
-      name: web-api
+      name: agent-api
       sectionName: work-file-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
-      name: web-api
+      name: agent-api
       sectionName: work-workspace-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
-      name: web-api
+      name: agent-api
       sectionName: personal-variable-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
@@ -1810,7 +1827,7 @@ spec:
       sectionName: trace-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
-      name: web-api
+      name: agent-api
       sectionName: agent-identity-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
