@@ -246,4 +246,3 @@ func (m *machineRelay) set(change func(*machineRelay)) {
 	defer m.mu.Unlock()
 	change(m)
 }
-

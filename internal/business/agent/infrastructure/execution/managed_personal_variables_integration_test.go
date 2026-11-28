@@ -37,7 +37,9 @@ var managedVariables = []domain.PersonalVariable{
 func TestTheManagedHarnessLaunchAloneCarriesTheRunsPersonalVariables(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
-	f.relay.set(func(m *machineRelay) { m.replacedByMachine = []string{"ANTHROPIC_BASE_URL", "DISABLE_AUTOUPDATER", "HOME"} })
+	f.relay.set(func(m *machineRelay) {
+		m.replacedByMachine = []string{"ANTHROPIC_BASE_URL", "DISABLE_AUTOUPDATER", "HOME"}
+	})
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
 
