@@ -107,8 +107,10 @@
 .wpb-bar:has(.wpb-input[data-focus-visible="true"]) { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* Every Prompt Bar card — model, "+", tray — shares the slash menu's floating surface and one row anatomy. */
-.wpb-popover { max-width: calc(100vw - 24px); border-radius: 16px; border: 1px solid var(--separator); box-shadow: 0 10px 30px -12px oklch(0 0 0 / 0.15); }
-.wpb-popover [data-slot="popover-dialog"] { padding: 6px; max-height: min(520px, 70dvh); overflow-y: auto; }
+/* React Aria bounds the popover by the room beside its trigger (an inline
+   max-height); as a column, the card shrinks into that bound as well as its own. */
+.wpb-popover { display: flex; flex-direction: column; max-width: calc(100vw - 24px); border-radius: 16px; border: 1px solid var(--separator); box-shadow: 0 10px 30px -12px oklch(0 0 0 / 0.15); }
+.wpb-popover [data-slot="popover-dialog"] { padding: 6px; max-height: min(520px, 70dvh); min-height: 0; overflow-y: auto; }
 /* Grows to fit a model's thinking levels side by side; five do not fit 264px. */
 .wpb-popover-narrow { width: max-content; min-width: 264px; }
 .wpb-popover-tray { width: 340px; }

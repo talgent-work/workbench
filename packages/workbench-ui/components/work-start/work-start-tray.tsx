@@ -14,7 +14,7 @@ import { PopoverFootnote } from "../composer/prompt-bar-controls";
 export function TrayPopover({ label, value, icon, disabled, attention, open, onOpenChange, wide, children }: { label: string; value: string; icon: ReactNode; disabled: boolean; attention?: boolean; open: boolean; onOpenChange: (open: boolean) => void; wide?: boolean; children: ReactNode }) {
   return <Popover isOpen={open} onOpenChange={onOpenChange}>
     <Button size="sm" variant="ghost" className="wpb-config-trigger" isDisabled={disabled} aria-label={`${label}: ${value}`}>{icon}<span>{value}</span>{attention && <AlertTriangle size={13} className="text-warning" aria-label="Needs attention" />}</Button>
-    <Popover.Content placement="bottom start" className={`wpb-popover ${wide ? "wpb-popover-wide" : "wpb-popover-tray"}`}><Popover.Dialog aria-label={`${label} for this Work`}>{children}</Popover.Dialog></Popover.Content>
+    <Popover.Content placement="bottom start" className={`wpb-popover ${wide ? "wpb-popover-wide" : "wpb-popover-tray"}`}><Popover.Dialog aria-label={`${label} for this Work`} className="wst-card">{children}</Popover.Dialog></Popover.Content>
   </Popover>;
 }
 

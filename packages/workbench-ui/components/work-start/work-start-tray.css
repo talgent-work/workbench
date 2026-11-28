@@ -1,5 +1,10 @@
 /* Start Work tray cards: per-Work choices as check rows, and Plugins and
    Connectors browsed by catalog category beside a rail. */
+/* A card keeps its header, search and note in view: when the popover has less
+   room than the card wants, only its list gives way and scrolls. */
+.wst-card { display: flex; flex-direction: column; }
+.wst-card > * { flex-shrink: 0; }
+.wst-card > :is(.wst-scroll, .wst-catalog, .wst-params, .list-box) { flex-shrink: 1; min-height: 44px; overflow-y: auto; }
 .wst-rows { display: grid; gap: 1px; align-content: start; }
 .wst-scroll { max-height: 320px; overflow-y: auto; margin-top: 4px; }
 .wst-group-title { padding: 8px 10px 2px; font-size: 11px; font-weight: 500; color: var(--muted); }
