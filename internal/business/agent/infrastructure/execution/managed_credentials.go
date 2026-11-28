@@ -26,8 +26,9 @@ import (
 // workCredentials is the body of the relay's credentials PUT. It carries
 // secrets: it is never logged, recorded or echoed.
 type workCredentials struct {
-	// Model is absent on the machine's own Claude login, and when KeepModel
-	// asks the machine to keep the model it holds.
+	// Model is absent on the machine's own Claude login and on a Model
+	// Template without an endpoint, and when KeepModel asks the machine to
+	// keep the model it holds.
 	Model     *workModelCredential  `json:"model,omitempty"`
 	KeepModel bool                  `json:"keep_model,omitempty"`
 	Gateway   workGatewayCredential `json:"gateway"`
@@ -118,7 +119,10 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord,
 		credentials.API = &workAPICredential{URL: spec.APIAddress}
 	}
 	model := renewalCredential(m.models, admitted.WorkModel, spec.ModelEndpoint)
-	if !admitted.WorkModel.MachineLogin {
+	// A Work realized without a model endpoint, on the machine's own Claude
+	// login or a Model Template that names none, has no model credential: its
+	// Harness uses whatever credential its environment provides.
+	if spec.ModelEndpoint != "" {
 		switch {
 		case model.Key == "" && redelivery:
 			credentials.KeepModel = true

@@ -98,12 +98,12 @@ func NewCatalog(templates []command.ModelTemplate, configurations []command.Mode
 		if strings.TrimSpace(configuration.Name) == "" {
 			return nil, fmt.Errorf("agent: model configuration %q needs a name", configuration.ID)
 		}
-		if strings.TrimSpace(configuration.APIKey) == "" || strings.ContainsAny(configuration.APIKey, "\x00\r\n") {
-			return nil, fmt.Errorf("agent: model configuration %q needs an api key", configuration.ID)
-		}
 		template, ok := byID[configuration.Template]
 		if !ok {
 			return nil, fmt.Errorf("agent: model configuration %q uses unknown template %q", configuration.ID, configuration.Template)
+		}
+		if err := validateKey(configuration, template); err != nil {
+			return nil, err
 		}
 		catalog.provided = append(catalog.provided, command.ProvidedModel{Configuration: configuration, Template: template})
 	}
@@ -117,13 +117,8 @@ func validateTemplate(t command.ModelTemplate) error {
 	if !slices.Contains(query.ModelVendors, t.Vendor) {
 		return fmt.Errorf("agent: model template %q has unknown vendor %q", t.ID, t.Vendor)
 	}
-	for _, model := range []string{t.OpusModel, t.SonnetModel, t.HaikuModel, t.FableModel, t.SubagentModel} {
-		if !validModelName(model) {
-			return fmt.Errorf("agent: model template %q needs opus, sonnet, haiku, fable and subagent models", t.ID)
-		}
-	}
-	if t.MainModel != "" && !validModelName(t.MainModel) {
-		return fmt.Errorf("agent: model template %q main model is invalid", t.ID)
+	if err := validateModels(t); err != nil {
+		return err
 	}
 	for i, level := range t.ThinkingLevels {
 		if !slices.Contains(domain.ThinkingLevels, level) || slices.Contains(t.ThinkingLevels[:i], level) {
@@ -132,6 +127,42 @@ func validateTemplate(t command.ModelTemplate) error {
 	}
 	if t.DefaultThinkingLevel != "" && !slices.Contains(t.ThinkingLevels, t.DefaultThinkingLevel) {
 		return fmt.Errorf("agent: model template %q default thinking level is not one of its levels", t.ID)
+	}
+	return nil
+}
+
+// validateModels checks a template's shape: an endpoint named together with
+// every tier and subagent model, or neither, leaving both to the Harness.
+func validateModels(t command.ModelTemplate) error {
+	models := []string{t.MainModel, t.OpusModel, t.SonnetModel, t.HaikuModel, t.FableModel, t.SubagentModel}
+	if !t.NamesEndpoint() {
+		if slices.ContainsFunc(models, func(model string) bool { return model != "" }) {
+			return fmt.Errorf("agent: model template %q names models without an endpoint", t.ID)
+		}
+		return nil
+	}
+	for _, model := range models[1:] {
+		if !validModelName(model) {
+			return fmt.Errorf("agent: model template %q needs opus, sonnet, haiku, fable and subagent models", t.ID)
+		}
+	}
+	if t.MainModel != "" && !validModelName(t.MainModel) {
+		return fmt.Errorf("agent: model template %q main model is invalid", t.ID)
+	}
+	return nil
+}
+
+// validateKey checks that a configuration carries a key exactly when its
+// template names an endpoint the key pays for.
+func validateKey(configuration command.ModelConfiguration, template command.ModelTemplate) error {
+	if !template.NamesEndpoint() {
+		if configuration.APIKey != "" {
+			return fmt.Errorf("agent: model configuration %q has an api key but its template names no endpoint", configuration.ID)
+		}
+		return nil
+	}
+	if strings.TrimSpace(configuration.APIKey) == "" || strings.ContainsAny(configuration.APIKey, "\x00\r\n") {
+		return fmt.Errorf("agent: model configuration %q needs an api key", configuration.ID)
 	}
 	return nil
 }

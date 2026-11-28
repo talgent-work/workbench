@@ -91,8 +91,8 @@ var sandboxLayout = launchLayout{
 //     instead of coreutils timeout, which macOS lacks.
 //
 // The Work's Connectors are declared by machineServer, and a Model
-// Configuration is reached through Talgent Computer's local proxy, which sets
-// the run's ANTHROPIC_BASE_URL. User-level settings stay excluded by
+// Template's endpoint is reached through Talgent Computer's local proxy, which
+// sets the run's ANTHROPIC_BASE_URL. User-level settings stay excluded by
 // --setting-sources as on a Cloud.
 var machineLayout = launchLayout{
 	prefix:        managedRootName,

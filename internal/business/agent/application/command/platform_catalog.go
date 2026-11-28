@@ -13,16 +13,18 @@ type PlatformCatalogPort interface {
 	ProvidedModel(configurationID string) (ProvidedModel, bool)
 }
 
-// ModelTemplate describes how the Harness reaches one Model Vendor's models.
-// A changed model is a new template.
+// ModelTemplate describes how the Harness reaches one Model Vendor's models:
+// through an endpoint with a model for each tier and subagents, or, naming
+// neither, through the Harness's own defaults. A changed model is a new
+// template.
 type ModelTemplate struct {
 	ID      string
 	Vendor  string
 	BaseURL string
 	// Claude Code's model tiers and subagent model, as the vendor's
-	// documentation maps them. MainModel is optional: when set, such as a
-	// vendor's routing alias "auto", the Work starts on it; when empty, Claude
-	// Code picks its own default tier.
+	// documentation maps them, named together with BaseURL. MainModel is
+	// optional: when set, such as a vendor's routing alias "auto", the Work
+	// starts on it; when empty, Claude Code picks its own default tier.
 	MainModel            string
 	OpusModel            string
 	SonnetModel          string
@@ -35,7 +37,15 @@ type ModelTemplate struct {
 	Environment map[string]string
 }
 
-// ModelConfiguration is one selectable model choice. Its APIKey is only ever
+// NamesEndpoint reports whether the template names an endpoint and its
+// models; one that does not leaves the Work to the Harness's default models
+// and to whatever credential the Work's environment provides.
+func (t ModelTemplate) NamesEndpoint() bool {
+	return t.BaseURL != ""
+}
+
+// ModelConfiguration is one selectable model choice. It carries an APIKey
+// exactly when its template names an endpoint, and the key is only ever
 // written to a run's credential store.
 type ModelConfiguration struct {
 	ID       string

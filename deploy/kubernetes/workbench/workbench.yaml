@@ -44,8 +44,10 @@ data:
 # Model Templates: how the Harness reaches each vendor's models. Adding or
 # changing one needs no release: edit this ConfigMap, then
 # `kubectl -n talgent rollout restart deployment/controlplane`. A changed model
-# is published as a new template id. Model Configurations (name, template,
-# api key) live in Secret agent-model-configurations, key configurations.yml.
+# is published as a new template id. A template names an endpoint with every
+# tier and subagent model, or neither. Model Configurations (name, template,
+# and an api key exactly when the template names an endpoint) live in Secret
+# agent-model-configurations, key configurations.yml.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -187,6 +189,12 @@ data:
         environment:
           ANTHROPIC_BETAS: oauth-2025-04-20
           CLAUDE_CODE_PROMPT_CACHE_TTL: 1h
+      # Claude Code's own default models: no endpoint and no models, so the platform sets no model
+      # variables and supplies no model credential. A configuration on it carries no api-key; the
+      # Work uses whatever credential its environment provides, such as a person's Personal Variables.
+      - id: claude-code-default
+        vendor: anthropic
+        thinking-levels: [low, medium, high, xhigh, max]
 ---
 apiVersion: v1
 kind: ConfigMap

@@ -35,7 +35,8 @@ func credentialURL(raw string) (*url.URL, error) {
 
 // modelCredential is the Work's Model Configuration key for the endpoint its
 // sandbox was created with. An empty Key keeps the credential already
-// delivered: a withdrawn configuration leaves a running Work unaffected.
+// delivered: a withdrawn configuration leaves a running Work unaffected. A
+// sandbox created on a Model Template without an endpoint has neither.
 type modelCredential struct{ Endpoint, Key string }
 
 // digest identifies the key without revealing it, so a rotated key changes the
@@ -80,16 +81,17 @@ var modelVaultEntries = []string{"model", "model-messages"}
 
 // credentialPlan supplies only the Work's Model Configuration key, bound to the
 // sandbox's model endpoint, beside the Work's repository and service access.
+// A sandbox created without a model endpoint has no key to bind.
 func credentialPlan(model modelCredential, repositories []command.RepositoryAccessMaterial, services []command.ServiceAccessMaterial, now time.Time) (sdk.CredentialVaultCreateRequest, error) {
-	u, err := credentialURL(model.Endpoint)
-	if err != nil {
-		return sdk.CredentialVaultCreateRequest{}, err
-	}
 	result := sdk.CredentialVaultCreateRequest{}
 	bind := func(name, host, method string, paths []string, credential string, auth sdk.CredentialAuthType) {
 		result.Bindings = append(result.Bindings, sdk.CredentialBinding{Name: name, Match: sdk.CredentialMatch{Schemes: []sdk.CredentialScheme{sdk.CredentialSchemeHTTPS}, Hosts: []string{strings.ToLower(host)}, Methods: []string{method}, Paths: paths}, Auth: sdk.CredentialAuth{Type: auth, Credential: credential}})
 	}
 	if model.Key != "" {
+		u, err := credentialURL(model.Endpoint)
+		if err != nil {
+			return sdk.CredentialVaultCreateRequest{}, err
+		}
 		result.Credentials = append(result.Credentials, sdk.Credential{Name: "model", Source: sdk.InlineCredentialSource{Value: model.Key}})
 		prefix := strings.TrimSuffix(u.Path, "/")
 		bind("model-messages", u.Hostname(), "POST", []string{prefix + "/v1/messages", prefix + "/v1/messages/count_tokens"}, "model", sdk.CredentialAuthBearer)

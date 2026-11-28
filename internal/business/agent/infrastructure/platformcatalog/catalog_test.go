@@ -80,7 +80,16 @@ func TestCatalogRejectsInvalidPlatformData(t *testing.T) {
 		"missing name":             func(_ *command.ModelTemplate, c *command.ModelConfiguration) { c.Name = "" },
 		"invalid configuration id": func(_ *command.ModelTemplate, c *command.ModelConfiguration) { c.ID = "GLM 5.3" },
 		"missing haiku model":      func(m *command.ModelTemplate, _ *command.ModelConfiguration) { m.HaikuModel = "" },
-		"invalid main model":       func(m *command.ModelTemplate, _ *command.ModelConfiguration) { m.MainModel = " auto" },
+		"models without endpoint":  func(m *command.ModelTemplate, _ *command.ModelConfiguration) { m.BaseURL = "" },
+		"endpoint without models": func(m *command.ModelTemplate, _ *command.ModelConfiguration) {
+			m.OpusModel, m.SonnetModel, m.HaikuModel, m.FableModel, m.SubagentModel = "", "", "", "", ""
+		},
+		"key without endpoint": func(m *command.ModelTemplate, _ *command.ModelConfiguration) { *m = harnessDefaultTemplate() },
+		"main model without endpoint": func(m *command.ModelTemplate, c *command.ModelConfiguration) {
+			*m, c.APIKey = harnessDefaultTemplate(), ""
+			m.MainModel = "auto"
+		},
+		"invalid main model": func(m *command.ModelTemplate, _ *command.ModelConfiguration) { m.MainModel = " auto" },
 		"unknown thinking level": func(m *command.ModelTemplate, _ *command.ModelConfiguration) {
 			m.ThinkingLevels = []string{"low", "ultra"}
 		},
@@ -102,6 +111,43 @@ func TestCatalogRejectsInvalidPlatformData(t *testing.T) {
 	require.ErrorContains(t, err, "declared twice")
 	_, err = NewCatalog([]command.ModelTemplate{validTemplate()}, nil)
 	require.Error(t, err, "a platform without model configurations cannot start Works")
+}
+
+// harnessDefaultTemplate names no endpoint and no models, leaving both to the
+// Harness's own defaults.
+func harnessDefaultTemplate() command.ModelTemplate {
+	return command.ModelTemplate{ID: "glm-5.3-coding-plan", Vendor: "anthropic", ThinkingLevels: []string{"low", "medium", "high"}, DefaultThinkingLevel: "medium", Environment: map[string]string{"API_TIMEOUT_MS": "3000000"}}
+}
+
+// A Model Template without an endpoint and models pairs with a Model
+// Configuration without a key: a Work on it runs on the Harness's own default
+// models with whatever credential its environment provides.
+func TestCatalogAcceptsAConfigurationLeftToTheHarnessDefaults(t *testing.T) {
+	dir := t.TempDir()
+	templates := filepath.Join(dir, "templates.yml")
+	configurations := filepath.Join(dir, "configurations.yml")
+	require.NoError(t, os.WriteFile(templates, []byte(`templates:
+  - id: claude-code-default
+    vendor: anthropic
+    thinking-levels: [low, medium, high, xhigh, max]
+`), 0600))
+	require.NoError(t, os.WriteFile(configurations, []byte(`configurations:
+  - id: claude-code
+    name: Claude Code default
+    template: claude-code-default
+`), 0600))
+	catalog, err := Load(Config{TemplatesPath: templates, ConfigurationsPath: configurations})
+	require.NoError(t, err)
+	provided, ok := catalog.ProvidedModel("claude-code")
+	require.True(t, ok)
+	require.False(t, provided.Template.NamesEndpoint())
+	require.Empty(t, provided.Configuration.APIKey)
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, provided.Template.ThinkingLevels)
+
+	keyless := validConfiguration()
+	keyless.APIKey = ""
+	_, err = NewCatalog([]command.ModelTemplate{harnessDefaultTemplate()}, []command.ModelConfiguration{keyless})
+	require.NoError(t, err, "the template's thinking levels and Harness settings apply as with an endpoint")
 }
 
 func TestCatalogReadErrorsNeverQuoteTheSecret(t *testing.T) {

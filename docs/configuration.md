@@ -133,7 +133,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `sandbox-creation-timeout` | `${SANDBOX_CREATION_TIMEOUT:5m}` | Must equal the OpenSandbox server's `sandbox_create_timeout_seconds` (`deploy/opensandbox/server.yaml`); a create waits 30 seconds longer for its answer. Below 14m30s |
 | `credential-transport` | `encrypted-network` | How credentials reach a sandbox's Vault: `https`, or `encrypted-network` (plain HTTP inside a cluster whose pod network is encrypted) |
 | `models.templates-path` | `${MODEL_TEMPLATES_PATH:/etc/talgent/models/templates.yml}` | Model Templates; base: ConfigMap `agent-models` |
-| `models.configurations-path` | `${MODEL_CONFIGURATIONS_PATH:/etc/talgent/model-configurations/configurations.yml}` | Model Configurations with their keys; base: Secret `agent-model-configurations`. At least one is required. |
+| `models.configurations-path` | `${MODEL_CONFIGURATIONS_PATH:/etc/talgent/model-configurations/configurations.yml}` | Model Configurations, each with a key exactly when its template names an endpoint; base: Secret `agent-model-configurations`. At least one is required. |
 | `network-allow` | `[${K8S_DNS_SERVICE_IP:10.43.0.10}]` | IP addresses a sandbox may reach despite the private-range denial; the telemetry collector of `environment.OTEL_EXPORTER_OTLP_ENDPOINT` is added, resolved at creation to its Service's ClusterIP |
 | `network-deny` | `[]` | Further egress targets denied beside the private ranges and all IPv6 |
 | `enterprise-networks` | `${ENTERPRISE_NETWORKS:}` | The enterprise networks a sandbox reaches, `CIDR:PORT[,PORT...]` separated by whitespace; the deploy renders the sandbox NetworkPolicy from the same value ([Enterprise networks](self-hosting.md#enterprise-networks)) |

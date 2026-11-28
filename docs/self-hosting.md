@@ -192,7 +192,17 @@ configurations:
     name: <shown name>
     template: <template id from agent-models>
     api-key: <key>
+  # Claude Code's own default models, paid for by a credential each person supplies,
+  # such as a Personal Variable ANTHROPIC_API_KEY
+  - id: claude-code
+    name: Claude Code default
+    template: claude-code-default
 ```
+
+A template names an endpoint with every tier and subagent model, or neither; a configuration has an
+`api-key` exactly when its template names an endpoint. On a template without an endpoint the platform
+sets no `ANTHROPIC_BASE_URL`, tier, main or subagent model and no model credential, on a Cloud or a
+Managed Computer.
 
 controlplane refuses to start without a valid one and names the bad entry. After changing either,
 `kubectl -n talgent rollout restart deployment/controlplane`. Removing a configuration leaves the

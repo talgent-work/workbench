@@ -330,10 +330,14 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpec
 	// The sandbox reaches the in-cluster Collector the configured
 	// environment names, which takes its telemetry as sent.
 	telemetryEnvironment(ctx, env, attributes)
-	env["ANTHROPIC_AUTH_TOKEN"] = "opensandbox-credential-proxy"
 	// Native clients require a nonempty token to attempt an authenticated request.
 	// These public placeholders convey no authority; the egress Vault injects
-	// current material only for the Work's selected, supported target contracts.
+	// current material only for the Work's selected, supported target contracts
+	// and the endpoint its Model Template names. Without an endpoint the
+	// Harness uses whatever credential its environment provides.
+	if model.Template.NamesEndpoint() {
+		env["ANTHROPIC_AUTH_TOKEN"] = "opensandbox-credential-proxy"
+	}
 	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN"} {
 		env[name] = "opensandbox-credential-proxy"
 	}

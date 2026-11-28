@@ -104,3 +104,37 @@ func TestSandboxesRefuseAModelTemplateThatOverridesItsConfiguration(t *testing.T
 	settings.Models = catalog([]command.ModelTemplate{budget}, configuration)
 	require.NoError(t, settings.Validate(), "a token budget is not a credential")
 }
+
+// harnessDefaultModels provides configuration "default" through a template
+// that names no endpoint and no models, so its Works run on the Harness's own
+// default models with whatever credential their environment provides.
+func harnessDefaultModels() *platformcatalog.Catalog {
+	template := command.ModelTemplate{ID: "claude-code-default", Vendor: "anthropic", ThinkingLevels: []string{"low", "medium", "high"}, DefaultThinkingLevel: "medium", Environment: map[string]string{"API_TIMEOUT_MS": "3000000"}}
+	return catalog([]command.ModelTemplate{template}, command.ModelConfiguration{ID: "default", Name: "Claude Code default", Template: template.ID})
+}
+
+// harnessModelEnvironment is every variable through which the platform
+// chooses a Work's endpoint, models or model credential.
+var harnessModelEnvironment = []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
+	"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"}
+
+// A Work whose Model Template names no endpoint gets no endpoint, models or
+// credential placeholder; the template's default thinking level and Harness
+// settings still apply.
+func TestNativeSandboxLeavesTheModelToTheHarnessWithoutAnEndpoint(t *testing.T) {
+	base, _, fixture := sandboxClient(t)
+	settings := config()
+	settings.Models = harnessDefaultModels()
+	require.NoError(t, settings.Validate())
+	provider, err := NewSandboxes(base.client, base.pods, settings)
+	require.NoError(t, err)
+	_, err = provider.submitRequest(t.Context(), request(), "execution-token-fixture")
+	require.NoError(t, err)
+	env := fixture.create.Env
+	for _, name := range harnessModelEnvironment {
+		require.NotContains(t, env, name, "the Harness chooses its own model and credential")
+	}
+	require.Equal(t, "medium", env["CLAUDE_CODE_EFFORT_LEVEL"], "the template default seeds the initial effort")
+	require.Equal(t, "3000000", env["API_TIMEOUT_MS"])
+	require.Equal(t, "opensandbox-credential-proxy", env["GH_TOKEN"], "Provider placeholders stay")
+}

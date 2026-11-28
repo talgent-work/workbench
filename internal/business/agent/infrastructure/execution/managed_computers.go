@@ -102,8 +102,8 @@ type managedSpecification struct {
 	AccessToken string `json:"accessToken"`
 	// ModelEndpoint is the Model Template's endpoint the start was realized
 	// with, where the local proxy sends the Work's model requests; empty on
-	// the machine's own Claude login. A Work with one opens its environment
-	// with model_proxy.
+	// the machine's own Claude login and on a Model Template that names none.
+	// A Work with one opens its environment with model_proxy.
 	ModelEndpoint string `json:"modelEndpoint,omitempty"`
 	// APIAddress is the entry's public API address the start was realized
 	// with; empty where the platform serves Managed Works none. A Work with
@@ -144,7 +144,9 @@ func decodeManagedSpecification(record executionRecord) (managedSpecification, e
 // Configuration it holds the Model Template's environment except its
 // endpoint: Talgent Computer's local proxy sets ANTHROPIC_BASE_URL to itself,
 // and the run's proxy token in place of the key, for each process, and sends
-// the requests on to the endpoint recorded here.
+// the requests on to the endpoint recorded here. A template that names no
+// endpoint records none, so the Harness uses its own default models and
+// whatever credential its environment provides.
 func managedSpecificationFor(request domain.LaunchSpecification, models command.PlatformCatalogPort, token string) (managedSpecification, error) {
 	if strings.TrimSpace(request.ComputerID) == "" || strings.TrimSpace(token) == "" {
 		return managedSpecification{}, domain.ErrExecutionRequest
@@ -187,9 +189,9 @@ var errWorkUnknown = errors.New("agent: the Managed Computer holds nothing of th
 // open opens, or repeats opening, the Work's environment on its machine. The
 // machine keeps the Work's directory and replaces the token and environment.
 func (m *ManagedComputers) open(ctx context.Context, spec managedSpecification, workID string) error {
-	// A Work on a Model Configuration has its model reached through the
-	// local proxy always, delivered or not, so it never falls back to the
-	// machine's own Claude login. With PlatformAPI the machine points the
+	// A Work on a Model Template's endpoint has its model reached through
+	// the local proxy always, delivered or not, so it never falls back to
+	// the machine's own Claude login. With PlatformAPI the machine points the
 	// Work's TALGENT_API_ADDRESS at its local proxy.
 	body, err := json.Marshal(struct {
 		AccessToken string            `json:"access_token"`

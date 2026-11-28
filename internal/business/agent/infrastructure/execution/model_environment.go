@@ -32,17 +32,19 @@ var modelManagedEnvironment = []string{
 var errModelConfigurationNotProvided = fmt.Errorf("%w: it is not provided", domain.ErrModelConfigurationWithdrawn)
 
 // validateModelTemplates checks what every provided Model Template brings
-// into a run's environment: an endpoint the credential Vault can bind its key
-// to, and settings that neither carry a credential nor override what the
-// Model Configuration decides.
+// into a run's environment: an endpoint, where it names one, that the
+// credential Vault can bind its key to, and settings that neither carry a
+// credential nor override what the Model Configuration decides.
 func validateModelTemplates(models command.PlatformCatalogPort) error {
 	if models == nil {
 		return errors.New("agent: the platform's model configurations are required")
 	}
 	for _, model := range models.ProvidedModels() {
 		template := model.Template
-		if _, err := credentialURL(template.BaseURL); err != nil {
-			return fmt.Errorf("agent: model template %q: %w", template.ID, err)
+		if template.NamesEndpoint() {
+			if _, err := credentialURL(template.BaseURL); err != nil {
+				return fmt.Errorf("agent: model template %q: %w", template.ID, err)
+			}
 		}
 		for key := range template.Environment {
 			if slices.Contains(modelManagedEnvironment, key) || slices.Contains(sandboxSecretEnvironment, key) || credentialName.MatchString(key) {
@@ -54,11 +56,18 @@ func validateModelTemplates(models command.PlatformCatalogPort) error {
 }
 
 // modelEnvironment expands the Model Template the Work's Model Configuration
-// uses at this start: its endpoint, Claude Code's model tiers, the Work's main
-// model when the template names one, the subagent model, the default effort and the
-// vendor's Harness settings.
+// uses at this start: the default effort, the vendor's Harness settings and,
+// where the template names an endpoint, that endpoint, Claude Code's model
+// tiers, the Work's main model when the template names one and the subagent
+// model. A template without an endpoint leaves the models to the Harness.
 func modelEnvironment(env map[string]string, template command.ModelTemplate) {
 	maps.Copy(env, template.Environment)
+	if template.DefaultThinkingLevel != "" {
+		env["CLAUDE_CODE_EFFORT_LEVEL"] = template.DefaultThinkingLevel
+	}
+	if !template.NamesEndpoint() {
+		return
+	}
 	env["ANTHROPIC_BASE_URL"] = template.BaseURL
 	env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = template.OpusModel
 	env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = template.SonnetModel
@@ -68,7 +77,4 @@ func modelEnvironment(env map[string]string, template command.ModelTemplate) {
 		env["ANTHROPIC_MODEL"] = template.MainModel
 	}
 	env["CLAUDE_CODE_SUBAGENT_MODEL"] = template.SubagentModel
-	if template.DefaultThinkingLevel != "" {
-		env["CLAUDE_CODE_EFFORT_LEVEL"] = template.DefaultThinkingLevel
-	}
 }
