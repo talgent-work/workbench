@@ -8,7 +8,7 @@ GitHub release page.
 ## The release that gives an Agent its Workspace Instructions
 
 Apply
-[`20261126-workspace-instructions.sql`](../deploy/middleware/migrations/20261126-workspace-instructions.sql)
+[`20261126-workspace-instructions.sql`](https://github.com/talgent-work/workbench/blob/v0.4.24/deploy/middleware/migrations/20261126-workspace-instructions.sql)
 to the database named by `AGENT_MYSQL_DATABASE`, then deploy `controlplane` of this release;
 an earlier `controlplane` keeps running against the new column. An Agent's owners now write its
 Workspace Instructions, from Profile for a person's Work Agent, and every start of its Works writes
@@ -20,7 +20,7 @@ the script's header describes; Works already started keep the file their last st
 ## The release that lets a Share Link follow its file by identity
 
 Stop `controlplane`, apply
-[`20261125-share-link-file-id.sql`](../deploy/middleware/migrations/20261125-share-link-file-id.sql)
+[`20261125-share-link-file-id.sql`](https://github.com/talgent-work/workbench/blob/v0.4.24/deploy/middleware/migrations/20261125-share-link-file-id.sql)
 to the database named by `WORKBENCH_MYSQL_DATABASE`, then deploy `controlplane` of this release.
 The script replaces `storage_share_link.target_name` with `file_id` and revokes every active
 Share Link: a stored link names no file identity, so share those files again. A Share Link now
@@ -53,7 +53,7 @@ together.
 ## The release that keeps entries sharing one sign-in signed in when they refresh at once
 
 Before deploying, apply
-[`20261125-login-session-refresh-replay.sql`](../deploy/middleware/migrations/20261125-login-session-refresh-replay.sql)
+[`20261125-login-session-refresh-replay.sql`](https://github.com/talgent-work/workbench/blob/v0.4.24/deploy/middleware/migrations/20261125-login-session-refresh-replay.sql)
 to the database named by `ACCOUNT_MYSQL_DATABASE`: it adds `login_session.replay_digest`,
 `replay_secret` and `replay_ends_at`. Within `account.session-refresh-replay` (default `30s`), a
 refresh secret Account just replaced gives back the same successor instead of revoking its Login
@@ -65,7 +65,7 @@ previous release ignores the new columns.
 ## The release that tells Works of changes to their inputs and stops copying them onto Managed Computers
 
 Before deploying, apply
-[`20261120-work-inputs-directory.sql`](../deploy/middleware/migrations/20261120-work-inputs-directory.sql)
+[`20261120-work-inputs-directory.sql`](https://github.com/talgent-work/workbench/blob/v0.4.24/deploy/middleware/migrations/20261120-work-inputs-directory.sql)
 to the database named by `AGENT_MYSQL_DATABASE`: it adds `agent_session.inputs_directory` with its
 index and fills it for every Work not Closed. Agent then finds the Works a file change concerns
 by it, and each such Work without a File Home receives a notice naming the changed file, the
@@ -76,7 +76,7 @@ the machine no inputs, and the Work's Agent downloads the inputs it needs. Remov
 `agent-computer.content-address` and `agent-recovery.inputs-refresh-interval` from your
 configuration, as the controlplane no longer reads them. Once every controlplane of this release
 runs, apply
-[`20261120-drop-input-copies.sql`](../deploy/middleware/migrations/20261120-drop-input-copies.sql)
+[`20261120-drop-input-copies.sql`](https://github.com/talgent-work/workbench/blob/v0.4.24/deploy/middleware/migrations/20261120-drop-input-copies.sql)
 to the same database: it drops `inputs_due`, `inputs_directory` with its index,
 `inputs_synced_at`, `inputs_sync_failures` and `inputs_sync_abandoned` from `agent_execution`. A
 rollback to the previous release needs those columns back first.
@@ -89,7 +89,7 @@ read-only and no longer updated, until the machine upgrades.
 ## The release that lets owners add and publish their own Connectors
 
 Before deploying, apply
-[`20261120-owner-connectors.sql`](../deploy/middleware/migrations/20261120-owner-connectors.sql)
+[`20261120-owner-connectors.sql`](https://github.com/talgent-work/workbench/blob/v0.4.24/deploy/middleware/migrations/20261120-owner-connectors.sql)
 to the database named by `WORKBENCH_MYSQL_DATABASE`: it gives each Connector an owner, a name unique
 per owner, an icon and a publication time, and turns existing Platform Connectors Published. The
 release changes the Connector contracts in step: every Connector request and Work Connector choice
@@ -122,7 +122,7 @@ reach ([configuration](configuration.md#marketplace)); the old keys are not read
 deploying:
 
 1. Apply
-   [`20261119-provider-target-credentials.sql`](../deploy/middleware/migrations/20261119-provider-target-credentials.sql)
+   [`20261119-provider-target-credentials.sql`](https://github.com/talgent-work/workbench/blob/v0.4.24/deploy/middleware/migrations/20261119-provider-target-credentials.sql)
    to the database named by `WORKBENCH_MYSQL_DATABASE`: it widens
    `scm_provider_authorization.provider`, adds `target_credentials_json`, and adds
    `credentials_expire_at`, which the renewal sweep now selects by.
@@ -166,7 +166,7 @@ measurements are not converted. Before deploying, in this order:
    `agent_account` replace their Project and Work Subject columns with `work_caller_*`,
    `work_key_*` and `file_home_*`. Recreate those tables; their rows are not migrated. Then
    apply
-   [`20261113-work-caller-locators.sql`](../deploy/middleware/migrations/20261113-work-caller-locators.sql)
+   [`20261113-work-caller-locators.sql`](https://github.com/talgent-work/workbench/blob/v0.4.24/deploy/middleware/migrations/20261113-work-caller-locators.sql)
    to the database named by `AGENT_MYSQL_DATABASE`: it renames the Locator conditions each
    AgentDefinition's Work Layout stores, `subject` to `file_home` and `project` to
    `work_caller`, without which no Work starts.
