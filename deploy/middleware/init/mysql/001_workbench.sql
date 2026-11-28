@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `capabilities` json NOT NULL COMMENT 'Resolved Work capabilities; initial Failed corrections retain releases',
   `authorization_selection` json NOT NULL DEFAULT (json_object()) COMMENT 'Creation-time personal authorization references; no credentials',
   `repository_selection` json NOT NULL DEFAULT (json_object()) COMMENT 'Creation-time repository identities and branches; no credentials',
-  `variable_selection` json DEFAULT NULL COMMENT 'Work Variable Selection: names of the Personal Variables the Work enabled at creation, never values; written once; NULL enables none',
+  `variable_selection` json NOT NULL DEFAULT (json_array()) COMMENT 'Work Variable Selection: names of the Personal Variables the Work enabled at creation, never values; written once; empty enables none',
   `repository_checkouts` json NOT NULL DEFAULT (json_array()) COMMENT 'Final checkout outcome of each selected repository; a repository without one is checked out by the next start',
   `initial_task_input` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT (_utf8mb4'') COMMENT 'JSON of the creating caller''s first task input until it reaches the Work''s input buffer; empty once handed off or when none was supplied',
   `model_configuration_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Model Configuration retained by the Work, whose current Model Template each start uses; empty with model_machine_login',

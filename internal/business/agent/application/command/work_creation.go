@@ -212,10 +212,11 @@ func (h *CreateWorkHandler) creationFacts(ctx context.Context, agent *domain.Age
 
 // variableInput offers a new Work the Personal Variables the represented
 // person keeps now, with the start's choice among them; a Work representing
-// no person is offered none.
+// no person is offered none. A choice that names none enables none whatever
+// the person keeps, so the person's set is not read for it.
 func (h *CreateWorkHandler) variableInput(ctx context.Context, person string, choice domain.PersonalVariableChoice) (domain.WorkVariableInput, error) {
 	input := domain.WorkVariableInput{Choice: choice}
-	if person == "" {
+	if person == "" || (choice.Chosen && len(choice.Names) == 0) {
 		return input, nil
 	}
 	set, err := h.variables.Get(ctx, person)

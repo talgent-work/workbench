@@ -67,7 +67,8 @@ type StartWork struct {
 	// Labels are the Work Labels the owner gives the Work, kept for its life.
 	Labels map[string]string
 	// PersonalVariables is the person's choice of the Personal Variables the
-	// Work enables; choosing none enables every one.
+	// Work enables; making no choice enables every one, and a choice with no
+	// names enables none.
 	PersonalVariables domain.PersonalVariableChoice
 }
 

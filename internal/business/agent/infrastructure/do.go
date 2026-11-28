@@ -56,9 +56,9 @@ type agentWorkDO struct {
 	RepositoryCheckouts    string `xorm:"repository_checkouts json"`
 	AuthorizationSelection string `xorm:"authorization_selection json"`
 	// VariableSelection is the JSON array of the Personal Variable names the
-	// Work enabled at creation, written once; NULL, for a Work created before
-	// Personal Variables, enables none.
-	VariableSelection []byte `xorm:"'variable_selection'"`
+	// Work enabled at creation, written once; empty, as for a Work created
+	// before Personal Variables, enables none.
+	VariableSelection string `xorm:"variable_selection json"`
 	ThinkingLevel     string `xorm:"thinking_level varchar(32)"`
 	PermissionMode    string `xorm:"permission_mode varchar(32)"`
 	WorkProgress      string `xorm:"work_progress mediumtext"`

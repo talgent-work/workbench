@@ -50,6 +50,10 @@ func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *agentp
 			return nil, mapAgentError(err)
 		}
 		create := creationFromProto(creation)
+		// The preparation's authenticated subject and its own request identity
+		// govern the creation it carries: the carried creation's subject is
+		// not trusted, and a carried request identity that differed from the
+		// preparation's would refuse the creation as a conflicting start.
 		create.SubjectID, create.RequestID, create.InitialExecution = input.SubjectID, "", &input
 		workID, err = h.application.Commands.CreateWork.Handle(ctx, create)
 	} else if err = h.application.AdmitDelegatedControl(ctx, input.WorkID); err == nil {

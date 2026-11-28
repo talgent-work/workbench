@@ -32,4 +32,4 @@ ALTER TABLE `agent_execution`
     ADD COLUMN `replaced_variables` json DEFAULT NULL COMMENT 'Names of the platform variables its Personal Variables replaced at its launch, never values; SQL NULL or JSON null until launched' AFTER `personal_variables`;
 
 ALTER TABLE `agent_session`
-    ADD COLUMN `variable_selection` json DEFAULT NULL COMMENT 'Work Variable Selection: names of the Personal Variables the Work enabled at creation, never values; written once; NULL enables none' AFTER `repository_selection`;
+    ADD COLUMN `variable_selection` json NOT NULL DEFAULT (json_array()) COMMENT 'Work Variable Selection: names of the Personal Variables the Work enabled at creation, never values; written once; empty enables none' AFTER `repository_selection`;

@@ -10,10 +10,10 @@ import (
 
 // Personal Variable limits: a person keeps at most MaxPersonalVariables, each
 // value at most MaxPersonalVariableValueBytes. A start may hand all of them,
-// when its Work enabled them all, to the Harness's environment, where Linux bounds a process's arguments and
-// environment together (about 2 MiB); MaxPersonalVariableBytes therefore
-// bounds every name and value together well below that, beside the launch's
-// own arguments.
+// when its Work enabled them all, to the Harness's environment, where Linux
+// bounds a process's arguments and environment together (about 2 MiB);
+// MaxPersonalVariableBytes therefore bounds every name and value together
+// well below that, beside the launch's own arguments.
 const (
 	MaxPersonalVariables          = 100
 	MaxPersonalVariableValueBytes = 32 << 10

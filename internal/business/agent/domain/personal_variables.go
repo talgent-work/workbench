@@ -79,7 +79,8 @@ func ReservedVariableName(name string) bool {
 }
 
 // PersonalVariableSet is one person's Personal Variables, which the person's
-// Works enable at creation and receive at every start. Only the person reads or changes it.
+// Works enable at creation and receive at every start. Only the person reads
+// or changes it.
 type PersonalVariableSet struct {
 	PersonID string
 	// Variables hold one value for each name, ordered by name.

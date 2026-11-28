@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	agentpublicv2 "github.com/talgent-work/contracts/gen/go/agent/public/v2"
 
@@ -78,9 +79,11 @@ func TestEachStartTakesTheCurrentValuesOfItsSelectedPersonalVariables(t *testing
 }
 
 // A new Work enables the Personal Variables its start chose among those its
-// person keeps, through either start: none chosen enables all, an empty
-// choice none, and a name the person does not keep is ignored. A creation
-// that reuses a Work by its Work Key keeps that Work's selection.
+// person keeps, through each start (a creation alone, a creation carried by
+// the preparation of its first execution, and a person's own start): a start
+// without a selection enables all, an empty selection none, and a name the
+// person does not keep is ignored. A creation that reuses a Work by its Work
+// Key keeps that Work's selection.
 func TestANewWorkEnablesThePersonalVariablesItsStartChose(t *testing.T) {
 	m := newLifecycleModule(t)
 	definition := seedDefinition(t, m.db)
@@ -118,6 +121,14 @@ func TestANewWorkEnablesThePersonalVariablesItsStartChose(t *testing.T) {
 	none := created("none", &agentpublicv1.PersonalVariableSelection{})
 	require.Empty(t, firstRun(none))
 	require.Empty(t, selection(none))
+
+	carried := subjectCreation(definition.ID, "prepared")
+	carried.PersonalVariables = &agentpublicv1.PersonalVariableSelection{Names: []string{"B_TOKEN"}}
+	prepared, err := m.client.PrepareWorkExecution(m.control(), &agentprivatev1.PrepareWorkExecutionRequest{SubjectId: workOwner, RequestId: carried.GetRequestId(),
+		InputId: uuid.NewString(), Input: "Review the change", Creation: carried})
+	require.NoError(t, err)
+	require.Equal(t, []domain.PersonalVariable{{Name: "B_TOKEN", Value: "b_token"}}, firstRun(prepared.GetWorkId()), "a carried creation's selection reaches its first run")
+	require.Equal(t, []string{"B_TOKEN"}, selection(prepared.GetWorkId()))
 
 	keepVariables(t, m, workOwner, func(set *domain.PersonalVariableSet) {
 		_, err := set.SetVariable(workOwner, domain.PersonalVariable{Name: "C_TOKEN", Value: "c"})

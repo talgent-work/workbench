@@ -27,14 +27,10 @@ func (s WorkVariableSelection) Validate() error {
 	return nil
 }
 
-// Clone copies the selection.
-func (s WorkVariableSelection) Clone() WorkVariableSelection {
-	return WorkVariableSelection{Names: slices.Clone(s.Names)}
-}
-
 // PersonalVariableChoice is a start's choice of the Personal Variables its
-// new Work enables. A start that chooses none enables every Personal Variable
-// its person keeps; a chosen name the person does not keep is ignored.
+// new Work enables. A start that makes no choice (Chosen false) enables every
+// Personal Variable its person keeps; a choice with no names enables none; a
+// chosen name the person does not keep is ignored.
 type PersonalVariableChoice struct {
 	// Chosen reports that the start names the variables it enables; with no
 	// Names it enables none.
