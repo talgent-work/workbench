@@ -64,6 +64,10 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	if err != nil {
 		return "", err
 	}
+	variables, err := h.variableInput(ctx, agent.RepresentedPerson(), request.PersonalVariables)
+	if err != nil {
+		return "", err
+	}
 	// A named Model Configuration that is not provided is refused for that
 	// reason, whatever the Computer, before Computer is asked.
 	if named := request.WorkModel; named.ConfigurationID != "" {
@@ -129,7 +133,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return "", err
 	}
-	work, established, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, HarnessChoice: harness, WorkCaller: request.WorkCaller, WorkKey: request.WorkKey, FileHome: request.FileHome, StartingUser: request.StartingUserID, AgentHarnessID: request.AgentHarness, Capabilities: capabilities, TraceAttributes: agent.WorkTraceAttributes(request.TraceAttributes), ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle, WorkLabels: request.WorkLabels, InitialTaskInput: initialInput}, facts)
+	work, established, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, VariableInput: variables, WorkModel: model, ComputerManaged: managed, HarnessChoice: harness, WorkCaller: request.WorkCaller, WorkKey: request.WorkKey, FileHome: request.FileHome, StartingUser: request.StartingUserID, AgentHarnessID: request.AgentHarness, Capabilities: capabilities, TraceAttributes: agent.WorkTraceAttributes(request.TraceAttributes), ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle, WorkLabels: request.WorkLabels, InitialTaskInput: initialInput}, facts)
 	if err != nil {
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return "", err
@@ -204,4 +208,21 @@ func (h *CreateWorkHandler) creationFacts(ctx context.Context, agent *domain.Age
 		facts.SourceWork = found
 	}
 	return facts, nil
+}
+
+// variableInput offers a new Work the Personal Variables the represented
+// person keeps now, with the start's choice among them; a Work representing
+// no person is offered none. A choice that names none enables none whatever
+// the person keeps, so the person's set is not read for it.
+func (h *CreateWorkHandler) variableInput(ctx context.Context, person string, choice domain.PersonalVariableChoice) (domain.WorkVariableInput, error) {
+	input := domain.WorkVariableInput{Choice: choice}
+	if person == "" || (choice.Chosen && len(choice.Names) == 0) {
+		return input, nil
+	}
+	set, err := h.variables.Get(ctx, person)
+	if err != nil {
+		return input, err
+	}
+	input.Offered = set.OfferedNames()
+	return input, nil
 }

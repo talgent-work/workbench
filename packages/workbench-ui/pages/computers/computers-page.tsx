@@ -16,7 +16,7 @@ export function ComputersPage() {
   const computers = useComputers();
   const list = computers.data ?? [];
   return <PageLayout workspaceTitle="Computers">
-    <div className="mx-auto grid w-[min(640px,100%)] gap-8 py-6">
+    <div className="mx-auto grid w-[min(640px,100%)] grid-cols-[minmax(0,1fr)] gap-8 py-6">
       <section className="mk-section" aria-labelledby="cp-list">
         <h3 id="cp-list" className="mk-section-title">Your computers{list.length > 0 && <span className="mk-count">{list.length}</span>}</h3>
         <LoadState noun="your computers" isPending={computers.isPending} isError={computers.isError} hasData={Boolean(computers.data)} isFetching={computers.isFetching} onRetry={() => void computers.refetch()} />

@@ -150,7 +150,7 @@ export function WorkConversation({ computer, agentWorkId, label, startupTitle, w
   const openTool = useCallback((tool: ToolPreview, trigger: HTMLElement) => openReader({ kind: "tool", label, tool }, trigger), [openReader, label]);
   // A running Work's settings change only while it runs and its controls are free.
   const canAdjust = processing && allowedActions.includes("stop") && !controlsPending;
-  const thinkingControl = workModel ? <WorkThinkingControl sessionId={agentWorkId} option={model} initialLevel={startupRequest?.initialThinkingLevel} canAdjust={canAdjust} /> : undefined;
+  const thinkingControl = workModel ? <WorkThinkingControl sessionId={agentWorkId} option={model} initialLevel={startupRequest?.initialThinkingLevel} canAdjust={canAdjust} replacedVariables={startupRequest?.replacedVariables} /> : undefined;
   const workStatus = !readOnly && (statusControl ?? <WorkStatusControl workLifecycle={workLifecycle} stateReason={stateReason} disconnectedSince={disconnectedSince} allowedActions={allowedActions} disabled={workControlPending} controls={controls} />);
 
   if (workLifecycle !== "closed" && currentStartup && currentStartup.status !== "completed") {

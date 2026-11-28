@@ -152,7 +152,7 @@ func TestClosedWorkKeepsItsFirstStart(t *testing.T) {
 func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
 	ctx := t.Context()
-	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
 	type result struct {
 		workID string
 		err    error

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"slices"
 	"strings"
 	"time"
 )
@@ -172,17 +173,27 @@ func (e *AgentExecution) RecordCredentialsWithdrawn() bool {
 	return true
 }
 
+// HarnessLaunch is the Harness process launched into an execution's bound
+// environment and the names of the platform variables that its Personal
+// Variables replaced there.
+type HarnessLaunch struct {
+	ProcessID         string
+	ReplacedVariables []string
+}
+
 // RecordLaunch records the Harness process launched into its bound
-// environment while it admits the launch (Admit environment action); a
-// second process is never recorded.
-func (e *AgentExecution) RecordLaunch(processID string) (bool, error) {
-	if strings.TrimSpace(processID) == "" {
+// environment, with the platform variables its Personal Variables replaced
+// (Replacement report), while it admits the launch (Admit environment
+// action); a second process is never recorded.
+func (e *AgentExecution) RecordLaunch(launch HarnessLaunch) (bool, error) {
+	if strings.TrimSpace(launch.ProcessID) == "" {
 		return false, ErrInvalidExecution
 	}
 	if e.Process.ID != "" || !e.AdmitEnvironmentAction(e.Environment) {
 		return false, nil
 	}
-	e.Process.ID, e.StartupSetback = processID, ""
+	e.Process.ID, e.StartupSetback = launch.ProcessID, ""
+	e.ReplacedVariables = slices.Clone(launch.ReplacedVariables)
 	return true, nil
 }
 

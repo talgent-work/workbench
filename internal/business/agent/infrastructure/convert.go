@@ -83,6 +83,10 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	if err != nil {
 		return nil, err
 	}
+	variables, err := encodeVariableSelection(session.VariableSelection)
+	if err != nil {
+		return nil, err
+	}
 	attributes, err := encode(session.TraceAttributes)
 	if err != nil {
 		return nil, err
@@ -117,7 +121,7 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	if located := session.LocatedLayout.Inputs; located != nil {
 		inputs = DirectoryKey(located.Directory)
 	}
-	row := &agentWorkDO{LocatedLayout: layout, InputsDirectory: inputs, AgentHarness: session.AgentHarnessReference, DisplayTitle: session.DisplayTitle, WorkCallerKind: session.WorkCaller.Kind, WorkCallerID: session.WorkCaller.ID, FileHomeKind: session.FileHome.Kind, FileHomeID: session.FileHome.ID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, ComputerKind: string(session.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, StartingContext: starting, RepresentedPerson: session.RepresentedPerson, OwningApplication: session.OwningApplication, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, ReachResumeFailures: session.ReachResumeFailures, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
+	row := &agentWorkDO{LocatedLayout: layout, InputsDirectory: inputs, AgentHarness: session.AgentHarnessReference, DisplayTitle: session.DisplayTitle, WorkCallerKind: session.WorkCaller.Kind, WorkCallerID: session.WorkCaller.ID, FileHomeKind: session.FileHome.Kind, FileHomeID: session.FileHome.ID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, ComputerKind: string(session.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, VariableSelection: variables, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, StartingContext: starting, RepresentedPerson: session.RepresentedPerson, OwningApplication: session.OwningApplication, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, ReachResumeFailures: session.ReachResumeFailures, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
 	if session.WorkKey.Present() {
 		kind, id := session.WorkKey.Kind, session.WorkKey.ID
 		row.WorkKeyKind, row.WorkKeyID = &kind, &id
@@ -186,11 +190,15 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	if err != nil {
 		return nil, err
 	}
+	variables, err := decodeVariableSelection(row.VariableSelection)
+	if err != nil {
+		return nil, err
+	}
 	var current *harnessProcessRecord
 	if err := json.Unmarshal([]byte(row.HarnessProcess), &current); err != nil {
 		return nil, oops.Wrap(err)
 	}
-	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, ComputerKind: domain.ComputerKind(row.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, WorkCaller: domain.WorkCaller{Kind: row.WorkCallerKind, ID: row.WorkCallerID}, WorkKey: workKeyFromColumns(row.WorkKeyKind, row.WorkKeyID), FileHome: domain.FileHome{Kind: row.FileHomeKind, ID: row.FileHomeID}, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, AgentHarnessReference: row.AgentHarness, RepresentedPerson: row.RepresentedPerson, OwningApplication: row.OwningApplication, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, ReachResumeFailures: row.ReachResumeFailures, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
+	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, ComputerKind: domain.ComputerKind(row.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, VariableSelection: variables, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, WorkCaller: domain.WorkCaller{Kind: row.WorkCallerKind, ID: row.WorkCallerID}, WorkKey: workKeyFromColumns(row.WorkKeyKind, row.WorkKeyID), FileHome: domain.FileHome{Kind: row.FileHomeKind, ID: row.FileHomeID}, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, AgentHarnessReference: row.AgentHarness, RepresentedPerson: row.RepresentedPerson, OwningApplication: row.OwningApplication, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, ReachResumeFailures: row.ReachResumeFailures, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
 	if err := json.Unmarshal([]byte(row.TraceAttributes), &session.TraceAttributes); err != nil {
 		return nil, err
 	}

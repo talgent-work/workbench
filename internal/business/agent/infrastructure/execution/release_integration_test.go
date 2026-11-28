@@ -209,7 +209,7 @@ func TestABoundSandboxIsConfirmedAbsentByItsIdentityBeforeRelease(t *testing.T) 
 	_, err := run.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: sandboxID})
 	require.NoError(t, err)
 	run.Environment = sandboxID
-	_, err = run.RecordLaunch("process")
+	_, err = run.RecordLaunch(domain.HarnessLaunch{ProcessID: "process"})
 	require.NoError(t, err)
 	run.RecordExit("process", domain.HarnessExit{})
 	require.NoError(t, f.steps.executions.Save(ctx, run))

@@ -150,7 +150,7 @@ func workViewToProto(value query.WorkView) *agentpublicv1.WorkInfo {
 		}
 	}
 	if request := value.StartupRequest; request != nil {
-		result.StartupRequest = &agentpublicv1.WorkStartupRequest{RequestId: request.RequestID, InitialMessage: request.InitialMessage, InitialThinkingLevel: request.InitialThinkingLevel, StartupAgent: request.StartupAgent, Plugins: request.Plugins}
+		result.StartupRequest = &agentpublicv1.WorkStartupRequest{RequestId: request.RequestID, InitialMessage: request.InitialMessage, InitialThinkingLevel: request.InitialThinkingLevel, StartupAgent: request.StartupAgent, Plugins: request.Plugins, ReplacedVariables: slices.Clone(request.ReplacedVariables)}
 		for _, repository := range request.Repositories {
 			result.StartupRequest.Repositories = append(result.StartupRequest.Repositories, &agentpublicv1.WorkStartupRepository{RepositoryId: repository.RepositoryID, Name: repository.Name, BaseBranch: repository.BaseBranch, CheckoutStatus: repository.CheckoutStatus, CheckoutReason: repository.CheckoutReason})
 		}

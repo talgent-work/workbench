@@ -20,7 +20,9 @@ import (
 // Checkout holds no credential: the preparation process clones with only the
 // planned URL, and the network path between the sandbox and the provider (the
 // sandbox's Credential Proxy) adds the Work's credential. A forward proxy that
-// injects it stands in for the Credential Proxy here.
+// injects it stands in for the Credential Proxy here. Clone failures, work
+// branches and partial checkouts are covered by the native checkout tests;
+// this case covers only the proxy path and the credential it must not keep.
 func TestCheckoutReachesAPrivateRepositoryOnlyThroughTheCredentialProxy(t *testing.T) {
 	requireNodeAndGit(t)
 	remotes := t.TempDir()
@@ -47,18 +49,9 @@ func TestCheckoutReachesAPrivateRepositoryOnlyThroughTheCredentialProxy(t *testi
 	t.Cleanup(proxy.Close)
 	plan := []repositoryCheckout{{RepositoryID: "github:1", CloneURL: "http://github.fixture.invalid/private.git", BaseBranch: "main", WorkBranch: "talgent/TAL-1", TargetPath: "/workspace/repos/private"}}
 
-	// Without the proxy the process reaches the provider itself, which refuses
-	// it: it has no credential to offer. (The provider's own address, not the
-	// fixture host, so the check never waits on name resolution.)
-	direct := t.TempDir()
-	directPlan := []repositoryCheckout{plan[0]}
-	directPlan[0].CloneURL = provider.URL + "/private.git"
-	require.Equal(t, domain.CheckoutUnavailable, runCheckout(t, direct, directPlan, "").checkouts(directPlan, domain.CheckoutIncomplete)[0].Reason, "without the proxy the process has no credential to offer")
-	require.NoDirExists(t, filepath.Join(direct, "repos", "private"))
-
 	workspace := t.TempDir()
-	require.True(t, runCheckout(t, workspace, plan, proxy.URL).checkouts(plan, domain.CheckoutIncomplete)[0].CheckedOut)
-	require.Equal(t, "talgent/TAL-1", gitIn(t, filepath.Join(workspace, "repos", "private"), "rev-parse", "--abbrev-ref", "HEAD"))
+	require.True(t, runCheckout(t, workspace, plan, proxy.URL).checkouts(plan, domain.CheckoutIncomplete)[0].CheckedOut,
+		"the planned host never resolves, so only the proxy that adds the credential can serve the clone")
 	config, err := os.ReadFile(filepath.Join(workspace, "repos", "private", ".git", "config"))
 	require.NoError(t, err)
 	require.NotContains(t, string(config), "work-credential-fixture", "the checkout retains no credential")

@@ -6,6 +6,7 @@ import type { WorkStartupRequest } from "@talgent/contracts/agent/public/v1/work
 import type { WorkModelOption } from "@talgent/contracts/agent/public/v1/model_pb";
 import { modelVendors } from "../../lib/model-vendors";
 import type { WorkComputer } from "../../lib/computer-service";
+import { VariableNames } from "../profile/variable-names";
 import "./startup-progress.css";
 
 const stages: Record<string, { name: string; detail: string }> = {
@@ -87,6 +88,9 @@ function StartupProgressView({ computer, progress, workTitle, request, model, on
           <div><dt>Agent</dt><dd>{request.startupAgent || "Default Agent"}</dd></div>
           {request.repositories.length > 0 && <div><dt>Repository</dt><dd>{request.repositories.map(repository => repository.name || repository.repositoryId).join(", ")}</dd></div>}
           <div><dt>Plugins</dt><dd>{request.plugins.length ? request.plugins.join(", ") : "None"}</dd></div>
+          {/* Names only, shown to the person whose variables they are: a failure
+              these explain is theirs to fix in Profile, not the platform's. */}
+          {request.replacedVariables.length > 0 && <div><dt>Your variables</dt><dd>Replaced the platform’s <VariableNames names={request.replacedVariables} /></dd></div>}
         </dl></div>
       </details>}
       {retryError && <Alert className="wlp-error" status="danger" role="alert"><Alert.Indicator /><Alert.Content><Alert.Description>{retryError}</Alert.Description></Alert.Content></Alert>}

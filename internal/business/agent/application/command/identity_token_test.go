@@ -57,7 +57,7 @@ func TestAnApplicationsWorkTokenStatesItsApplication(t *testing.T) {
 	work := startingSession(t)
 	work.RepresentedPerson, work.OwningApplication = "", application
 	w := newWorld(t, work)
-	w.coordination = command.NewExecutionCoordination(w.now, w.works, commandtest.Definitions{Purpose: domain.StandaloneWorkPurpose, Application: application}, w.executions, w.computers, w.harness)
+	w.coordination = command.NewExecutionCoordination(w.now, w.works, commandtest.Definitions{Purpose: domain.StandaloneWorkPurpose, Application: application}, &commandtest.PersonalVariables{}, w.executions, w.computers, w.harness)
 	w.begin(t)
 	w.change(t, func(execution *domain.AgentExecution) {
 		require.True(t, commandtest.Submit(execution))

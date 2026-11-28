@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -63,6 +65,9 @@ type workSeed struct {
 	closeRequest string
 	// fileHome is the Work's File Home; none when empty.
 	fileHome domain.FileHome
+	// variables are the Personal Variables its person kept at its creation,
+	// all of which it enabled.
+	variables []string
 }
 
 // seededWork is a seeded Work and its current start's AgentExecution.
@@ -92,7 +97,7 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	cloud := testCloud().Cloud
 	admission := domain.StartAdmission{AdmittedAt: now, AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Soul: definition.Soul,
 		Seat: domain.ComputerSeat{ComputerID: cloud.ID, Kind: domain.ComputerCloud, DeskID: uuid.NewString()}}
-	work, created, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: workOwner, AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: definition.RepresentedPerson()},
+	work, created, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: workOwner, AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: definition.RepresentedPerson()}, VariableInput: domain.WorkVariableInput{Offered: seed.variables},
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, WorkCaller: domain.WorkCaller{Kind: "project", ID: workProject}, WorkKey: domain.WorkKey{Kind: "case", ID: strings.ReplaceAll(seed.subject, " ", "-")}, FileHome: seed.fileHome,
 		Capabilities: capabilities, TraceAttributes: definition.WorkTraceAttributes(nil), Admission: admission}, domain.WorkCreationFacts{})
 	require.NoError(t, err)
@@ -110,7 +115,7 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	if seedState(work, run, seed, now) {
 		require.NoError(t, works.Save(ctx, work))
 	}
-	require.NoError(t, execution.NewAgentExecutionRepository(jdb, time.Now).Save(ctx, run))
+	require.NoError(t, execution.NewAgentExecutionRepository(jdb, sealingtest.Sealer(), time.Now).Save(ctx, run))
 	stored, err := works.Get(ctx, work.ID)
 	require.NoError(t, err)
 	return seededWork{AgentWork: stored, execution: run}
@@ -133,7 +138,7 @@ func seedExecution(t *testing.T, work *domain.AgentWork, computerName, purpose s
 	require.True(t, commandtest.Submit(run))
 	_, err = run.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: run.ID})
 	require.NoError(t, err)
-	launched, err := run.RecordLaunch(launchedProcess)
+	launched, err := run.RecordLaunch(domain.HarnessLaunch{ProcessID: launchedProcess})
 	require.NoError(t, err)
 	require.True(t, launched)
 	return run

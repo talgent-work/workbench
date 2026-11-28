@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 
@@ -73,8 +75,8 @@ func newRunsAt(t testing.TB, db *jimuxorm.DB, works domain.AgentWorkRepository, 
 // newRunsWith reads the Work's input buffer and its process's observation
 // from buffer.
 func newRunsWith(t testing.TB, db *jimuxorm.DB, works domain.AgentWorkRepository, now func() time.Time, buffer command.DispatcherPort) *runs {
-	executions := execution.NewAgentExecutionRepository(db, now)
-	coordination := command.NewExecutionCoordination(now, works, commandtest.Definitions{}, executions, computertest.Checked(startupAuthority{}), buffer)
+	executions := execution.NewAgentExecutionRepository(db, sealingtest.Sealer(), now)
+	coordination := command.NewExecutionCoordination(now, works, commandtest.Definitions{}, &commandtest.PersonalVariables{}, executions, computertest.Checked(startupAuthority{}), buffer)
 	return &runs{t: t, now: now, works: works, executions: executions, coordination: coordination,
 		feedback: command.NewApplyExecutionFeedbackHandler(now, works, executions, coordination, buffer, &commandtest.InputSettlements{})}
 }
@@ -97,7 +99,7 @@ func (r *runs) launch(ctx context.Context, workID string) {
 	run.RecordCredentialDelivery(domain.CredentialDelivery{})
 	_, err = run.RecordPreparation(domain.PreparationReport{})
 	require.NoError(r.t, err)
-	_, err = run.RecordLaunch("process")
+	_, err = run.RecordLaunch(domain.HarnessLaunch{ProcessID: "process"})
 	require.NoError(r.t, err)
 	require.NoError(r.t, r.executions.Save(ctx, run))
 }
@@ -240,7 +242,7 @@ func requireStartRequested(t testing.TB, works domain.AgentWorkRepository, workI
 
 // executionsOf is the AgentExecution repository over db.
 func executionsOf(db *jimuxorm.DB) *execution.AgentExecutionRepository {
-	return execution.NewAgentExecutionRepository(db, time.Now)
+	return execution.NewAgentExecutionRepository(db, sealingtest.Sealer(), time.Now)
 }
 
 // latest is the Work's most recently begun execution after the Policies ran,

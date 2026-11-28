@@ -40,7 +40,7 @@ import (
 func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
 	server := connecttest.NewFronted(t)
 	app := fx.New(agent.Module, sessionStateTransport(t), fx.NopLogger, storageStub(),
-		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
+		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, personalVariableConfig(t), defaultBuiltIns), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return nil }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *jimuxorm.DB { return nil }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() transaction.Transactor { return nil }, fx.ResultTags(`name:"execution"`))),

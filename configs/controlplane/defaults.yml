@@ -318,6 +318,9 @@ agent-execution:
 agent-rpc:
   control-token: ${AGENT_CONTROL_TOKEN:}
   feedback-token: ${AGENT_FEEDBACK_TOKEN:}
+# The Agent key sealing Personal Variables at rest: 32 base64-encoded bytes.
+agent-personal-variables:
+  key-path: "${AGENT_PERSONAL_VARIABLE_KEY_PATH:/etc/talgent/agent/personal-variable-key}"
 agent-computer:
   address: "${COMPUTER_ADDRESS:http://127.0.0.1:8080}"
   token: "${COMPUTER_CONTROL_TOKEN:}"

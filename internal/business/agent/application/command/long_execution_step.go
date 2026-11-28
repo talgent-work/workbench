@@ -94,8 +94,9 @@ func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domai
 // is left to retry. Any other failure is returned for its task's bounded
 // retry, its step recorded as the start's latest setback, so a start that
 // misses its Startup Deadline names what kept failing. The recorded cause
-// names the step and the class of failure only: the error itself may carry
-// what the Work's owners must not see, and goes to the log.
+// names the step and the class of failure, or the cause the failure names
+// for its setback, only: the error itself may carry what the Work's owners
+// must not see, and goes to the log.
 func (h *ReconcileExecutionHandler) failed(ctx context.Context, executionID, step string, err error) error {
 	if cause, definite := domain.DefiniteStartCause(err); definite {
 		return h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
@@ -106,7 +107,9 @@ func (h *ReconcileExecutionHandler) failed(ctx context.Context, executionID, ste
 		return err
 	}
 	setback := step + " failed"
-	if errors.Is(err, context.DeadlineExceeded) {
+	if cause, named := domain.StartSetbackCause(err); named {
+		setback = step + ": " + cause
+	} else if errors.Is(err, context.DeadlineExceeded) {
 		setback = step + " timed out"
 	}
 	return errors.Join(err, h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
@@ -150,13 +153,13 @@ func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *doma
 	}
 	launch, release := context.WithTimeout(ctx, launchTimeout)
 	defer release()
-	processID, err := h.environments.Launch(launch, execution, h.holding(execution))
+	harness, err := h.environments.Launch(launch, execution, h.holding(execution))
 	if err != nil {
 		return h.failed(ctx, executionID, "launching the Harness", err)
 	}
 	launched := false
 	if err := h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
-		changed, err := execution.RecordLaunch(processID)
+		changed, err := execution.RecordLaunch(harness)
 		launched = changed
 		return changed, err
 	}); err != nil || !launched {

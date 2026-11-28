@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
@@ -63,7 +65,7 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 		server := connecttest.NewFronted(t)
 		var registry *application.Application
 		options := []fx.Option{agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, fx.Populate(&registry), storageStub(),
-			server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
+			server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, personalVariableConfig(t), defaultBuiltIns), computertest.Option(&computertest.Admission{}),
 			mysqltest.Provide(t, "execution", db),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
 			fx.Provide(func() command.DispatcherPort { return port }),
@@ -117,8 +119,8 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	require.NoError(t, err)
 	origin := time.Now().Add(-31 * time.Minute).UTC().Truncate(time.Millisecond)
 	works := infrastructure.NewAgentWorkRepository(observerDB, time.Now)
-	executions := execution.NewAgentExecutionRepository(observerDB, time.Now)
-	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return origin }, works, executions, command.NewExecutionCoordination(time.Now, works, commandtest.Definitions{}, executions, &computertest.Admission{}, port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	executions := execution.NewAgentExecutionRepository(observerDB, sealingtest.Sealer(), time.Now)
+	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return origin }, works, executions, command.NewExecutionCoordination(time.Now, works, commandtest.Definitions{}, &commandtest.PersonalVariables{}, executions, &computertest.Admission{}, port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	// A Turn ending at origin leaves the Work idle since then.
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ObservationSequence: 1, Kind: command.TurnStarted, WorkID: ref, ProcessID: "process"}))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ObservationSequence: 2, Kind: command.TurnFinished, WorkID: ref, ProcessID: "process", TurnCompleted: false}))

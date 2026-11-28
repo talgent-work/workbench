@@ -30,7 +30,7 @@ func TestCreationRetainsPersonalOwner(t *testing.T) {
 	other, err := jimuxorm.New(otherDB)
 	require.NoError(t, err)
 	works := infrastructure.NewAgentWorkRepository(other, time.Now)
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(other).WorkOwners), deploymentModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(other, deploymentModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(other).WorkOwners), deploymentModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(other, deploymentModels()))
 	id, err := handler.Handle(t.Context(), f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)

@@ -35,6 +35,10 @@ type nativeLaunch struct {
 type launchLayout struct {
 	// prefix begins every process.
 	prefix string
+	// own are the variables the layout's Harness launch exports itself,
+	// right after prefix, unless the run's Personal Variables set them
+	// (exports).
+	own []launchVariable
 	// diagnostic is the shell word of the Harness's diagnostics file name.
 	diagnostic func(name string) string
 	// server declares one of the Work's Connectors to the Harness, or
@@ -50,6 +54,10 @@ type launchLayout struct {
 	// only a Managed Computer's Works have; elsewhere the Harness bypasses
 	// permission prompts.
 	harnessChoice bool
+	// variables is the file a run's Personal Variables wait in for its
+	// Harness launch (personal_variable_delivery.go); nil where the layout
+	// delivers none.
+	variables func(owner SandboxOwner) string
 }
 
 // sandboxDiagnostics is where a Cloud sandbox keeps Harness diagnostics.
@@ -59,6 +67,7 @@ const sandboxDiagnostics = "/tmp/"
 // mounted HOME with the Harness state mounted where the Agent Harness keeps
 // it, and preparation bounded by coreutils timeout.
 var sandboxLayout = launchLayout{
+	variables:  sandboxVariableFile,
 	diagnostic: func(name string) string { return shellWord(sandboxDiagnostics + name) },
 	server:     func(connector domain.SelectedConnector) (map[string]any, bool) { return nativeServer(connector), true },
 	recovered:  recoveredContext,
@@ -86,7 +95,8 @@ var sandboxLayout = launchLayout{
 // the run's ANTHROPIC_BASE_URL. User-level settings stay excluded by
 // --setting-sources as on a Cloud.
 var machineLayout = launchLayout{
-	prefix:        managedRoot,
+	prefix:        managedRootName,
+	own:           []launchVariable{pluginCache},
 	harnessChoice: true,
 	diagnostic:    func(name string) string { return "\"$talgent_root/.talgent/\"" + shellWord(name) },
 	server:        machineServer,
@@ -98,10 +108,30 @@ var machineLayout = launchLayout{
 
 // managedRoot is how every Managed process begins: it names the Work root
 // and keeps the Plugin package cache there.
-const managedRoot = "talgent_root=\"${TALGENT_WORK_ROOT:?}\"; mkdir -p \"$talgent_root/.talgent\" || exit 1; export CLAUDE_CODE_PLUGIN_CACHE_DIR=\"$talgent_root/.talgent/claude-plugins\"; "
+const managedRoot = managedRootName + "export " + pluginCacheVariable + "=" + pluginCacheValue + "; "
 
-// prepare renders the Work's Harness launch and preparation in a layout.
+// managedRootName names the Work root of a Managed process.
+const managedRootName = "talgent_root=\"${TALGENT_WORK_ROOT:?}\"; mkdir -p \"$talgent_root/.talgent\" || exit 1; "
+
+const (
+	pluginCacheVariable = "CLAUDE_CODE_PLUGIN_CACHE_DIR"
+	pluginCacheValue    = "\"$talgent_root/.talgent/claude-plugins\""
+)
+
+// pluginCache keeps a Managed Harness's Plugin package cache in the Work
+// root, where its preparation installed them.
+var pluginCache = launchVariable{name: pluginCacheVariable, value: pluginCacheValue}
+
+// prepare renders the Work's Harness launch and preparation in a layout for
+// a run without Personal Variables.
 func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSpecification, owner SandboxOwner, thinkingLevel string) (nativeLaunch, error) {
+	return c.prepareRun(layout, request, owner, thinkingLevel, nil)
+}
+
+// prepareRun renders the Work's Harness launch and preparation in a layout
+// for a run whose Personal Variables set the names personal: the launch
+// leaves each of those to them instead of exporting its own.
+func (c NativeLaunchConfig) prepareRun(layout launchLayout, request domain.LaunchSpecification, owner SandboxOwner, thinkingLevel string, personal []string) (nativeLaunch, error) {
 	if err := c.Validate(); err != nil {
 		return nativeLaunch{}, err
 	}
@@ -211,7 +241,7 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	// The environment override wins over later native apply_flag_settings.
 	// Convert the Model Template default to an initial CLI setting so adjustments
 	// remain governed by the Harness. Quoted arguments preserve literal values.
-	effort := "${CLAUDE_CODE_EFFORT_LEVEL-}"
+	effort := "${" + effortVariable + "-}"
 	if thinkingLevel != "" {
 		effort = shellWord(thinkingLevel)
 	}
@@ -225,7 +255,11 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 		// starts it as a fresh start would.
 		recovered = layout.recovered(harness, sessionID, freshContext(request.StartingContext, sessionID))
 	}
-	command := layout.prefix + "exec 2>>" + diagnostic + "; " + repositoryInstructions + "talgent_effort=" + effort + "; unset CLAUDE_CODE_EFFORT_LEVEL; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
+	variables := ""
+	if layout.variables != nil {
+		variables = personalVariableLoader(layout.variables(owner))
+	}
+	command := layout.prefix + launchExports(layout.exports(), personal) + "exec 2>>" + diagnostic + "; " + variables + "talgent_effort=" + effort + "; unset " + effortVariable + "; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
 	return nativeLaunch{Command: command, SessionID: sessionID, PreparationCommand: preparation}, nil
 }
 
@@ -256,7 +290,14 @@ func repositoryDirectories(request domain.LaunchSpecification) []string {
 // Every instruction file stays in context side by side: the Harness neither
 // orders nor reconciles conflicting ones, so a repository's instructions
 // govern by what they say, below the Work's system prompt.
-const repositoryInstructions = "export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1; "
+var repositoryInstructions = launchVariable{name: repositoryInstructionsVariable, value: "1"}
+
+const repositoryInstructionsVariable = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD"
+
+// effortVariable is the environment's default effort. The launch reads it
+// into the Harness's --effort argument, where a Work's thinking level takes
+// its place, and unsets it, so the Harness never sees it as a variable.
+const effortVariable = "CLAUDE_CODE_EFFORT_LEVEL"
 
 // diagnosticName is the file a live execution's Harness writes its
 // diagnostics to, in its layout's place for them.

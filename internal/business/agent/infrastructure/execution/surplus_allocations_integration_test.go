@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -104,7 +106,7 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	input := request()
 	record, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
-	executions := NewAgentExecutionRepository(jdb, time.Now)
+	executions := NewAgentExecutionRepository(jdb, sealingtest.Sealer(), time.Now)
 	run, err := executions.Get(ctx, record.ID)
 	require.NoError(t, err)
 	require.True(t, commandtest.Submit(run))
@@ -157,7 +159,7 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 
 	// The process exits and the Work retires the execution: its release
 	// deletes the primary.
-	_, err = bound.RecordLaunch("current-process")
+	_, err = bound.RecordLaunch(domain.HarnessLaunch{ProcessID: "current-process"})
 	require.NoError(t, err)
 	bound.RecordExit("current-process", domain.HarnessExit{})
 	require.NoError(t, executions.Save(ctx, bound))

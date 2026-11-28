@@ -56,9 +56,13 @@ type ExecutionEnvironmentPort interface {
 	// and each remaining repository's checkout. It asks holding before it
 	// starts the preparation process.
 	Prepare(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (domain.PreparationReport, error)
-	// Launch starts the Harness in the bound environment and returns its
-	// process. It asks holding right before the start.
-	Launch(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (string, error)
+	// Launch starts the Harness in the bound environment with the
+	// execution's Personal Variables layered over the environment's own, and
+	// returns its process and the platform variables they replaced. The
+	// values travel in the launch only, never in the environment's
+	// specification, a preparation process or a command's text. It asks
+	// holding right before the start.
+	Launch(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (domain.HarnessLaunch, error)
 	// Connect hands the launched process to Dispatcher.
 	Connect(ctx context.Context, execution *domain.AgentExecution) error
 	// RenewLease renews the bound environment's lease to expiresAt and

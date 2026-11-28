@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	"github.com/talgent-work/workbench/internal/pkg/database"
 
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
@@ -97,7 +99,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	readings := &streamReadings{}
 	environment, err := NewExecutionEnvironment(provisioning, connections, readings, nil)
 	require.NoError(t, err)
-	executions := NewAgentExecutionRepository(jdb, time.Now)
+	executions := NewAgentExecutionRepository(jdb, sealingtest.Sealer(), time.Now)
 	harness := commandtest.NewHarness()
 	computers := &cloudDesks{}
 	services := &swappableServices{current: authorizationcatalogtest.NoServices{}}
@@ -105,7 +107,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	return &nativeWorkLifecycleFixture{
 		db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, external: external, executions: executions, readings: readings, services: services,
 		reconcile:    command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, executions, environment, harness, computers, supplies),
-		coordination: command.NewExecutionCoordination(time.Now, works, definitions, executions, computers, harness),
+		coordination: command.NewExecutionCoordination(time.Now, works, definitions, &commandtest.PersonalVariables{}, executions, computers, harness),
 	}
 }
 
@@ -176,7 +178,7 @@ func (f *nativeWorkLifecycleFixture) run(t *testing.T, ctx context.Context, work
 	run.RecordCredentialDelivery(domain.CredentialDelivery{ExpiresAt: time.Now().Add(time.Hour)})
 	_, err = run.RecordPreparation(domain.PreparationReport{})
 	require.NoError(t, err)
-	_, err = run.RecordLaunch(processID)
+	_, err = run.RecordLaunch(domain.HarnessLaunch{ProcessID: processID})
 	require.NoError(t, err)
 	require.NoError(t, f.executions.Save(ctx, run))
 	// Dispatcher reads it at the endpoint the sandbox exposes.

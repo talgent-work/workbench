@@ -33,6 +33,8 @@ type Commands struct {
 	CreateWork               *command.CreateWorkHandler
 	ApplyExecutionFeedback   *command.ApplyExecutionFeedbackHandler
 	ExecutionCoordination    *command.ExecutionCoordination
+	// PersonalVariables changes a person's own Personal Variables.
+	PersonalVariables *command.PersonalVariablesHandler
 }
 
 type Queries struct {
@@ -54,6 +56,8 @@ type Queries struct {
 	ListRecoveryWorks             *query.ListRecoveryWorksHandler
 	GetAgentDefinition            *query.GetAgentDefinitionHandler
 	GetWork                       *query.GetWorkHandler
+	// PersonalVariables reads a person's own Personal Variables.
+	PersonalVariables *query.PersonalVariablesHandler
 }
 
 type Application struct {
@@ -93,6 +97,7 @@ func NewApplication(
 	definitions domain.AgentDefinitionRepository,
 	definitionQueries query.AgentDefinitionQueryRepository,
 	accounts command.AccountPort,
+	variables domain.PersonalVariableSetRepository,
 	logger *slog.Logger,
 	workReport *query.GetWorkReportHandler,
 	ensure *command.EnsureAgentDefinitionHandler,
@@ -164,6 +169,7 @@ func NewApplication(
 			CreateWork:                       createSession,
 			ApplyExecutionFeedback:           feedback,
 			ExecutionCoordination:            coordination,
+			PersonalVariables:                command.NewPersonalVariablesHandler(variables),
 		},
 		Queries: Queries{
 			GetAgentSoul:                  query.NewGetAgentSoulHandler(definitions),
@@ -184,6 +190,7 @@ func NewApplication(
 			ListRecoveryWorks:             recoverySessions,
 			GetAgentDefinition:            getAgent,
 			GetWork:                       getSession,
+			PersonalVariables:             query.NewPersonalVariablesHandler(variables),
 		},
 	}
 }

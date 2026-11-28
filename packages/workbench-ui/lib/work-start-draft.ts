@@ -19,6 +19,8 @@ export interface WorkStartDraft {
   plugins: Record<string, WorkPluginChoice>;
   /** Per-Work Connector inclusion that differs from the default, by Connector identity. */
   connectors: Record<string, boolean>;
+  /** Personal Variables turned off for this Work; every other one is enabled. */
+  variablesOff: string[];
   agent: string;
   /** The chosen Computer; empty keeps the default, the first Cloud. */
   computer: string;
@@ -40,7 +42,7 @@ export function useWorkStartDraft(scope: WorkStartDraftScope) {
   const { data } = useQuery<WorkStartDraft>({
     queryKey: key,
     queryFn: skipToken,
-    initialData: () => ({ instruction: scope.instruction, repositories: [], plugins: {}, connectors: {}, agent: "", computer: "", files: [], submitting: false }),
+    initialData: () => ({ instruction: scope.instruction, repositories: [], plugins: {}, connectors: {}, variablesOff: [], agent: "", computer: "", files: [], submitting: false }),
     enabled: false,
     staleTime: Infinity,
     gcTime: Infinity,

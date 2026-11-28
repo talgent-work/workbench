@@ -39,7 +39,7 @@ func newWorld(t *testing.T, work *domain.AgentWork) *world {
 	w := &world{works: &feedbackSessionStore{session: work}, executions: &commandtest.Executions{}, harness: commandtest.NewHarness(),
 		computers: &commandtest.Computers{}, environment: &commandtest.Environment{}, storage: &commandtest.Storage{}, settlements: &commandtest.InputSettlements{}, at: time.Now()}
 	w.accounts = &commandtest.Accounts{Now: w.now}
-	w.coordination = command.NewExecutionCoordination(w.now, w.works, commandtest.Definitions{}, w.executions, w.computers, w.harness)
+	w.coordination = command.NewExecutionCoordination(w.now, w.works, commandtest.Definitions{}, &commandtest.PersonalVariables{}, w.executions, w.computers, w.harness)
 	return w
 }
 
@@ -48,7 +48,7 @@ func worldOver(t *testing.T, works *feedbackSessionStore) *world {
 	t.Helper()
 	w := newWorld(t, works.session)
 	w.works = works
-	w.coordination = command.NewExecutionCoordination(w.now, works, commandtest.Definitions{}, w.executions, w.computers, w.harness)
+	w.coordination = command.NewExecutionCoordination(w.now, works, commandtest.Definitions{}, &commandtest.PersonalVariables{}, w.executions, w.computers, w.harness)
 	return w
 }
 
@@ -103,7 +103,7 @@ func (w *world) launch(t *testing.T, processID string) {
 		prepared, err := execution.RecordPreparation(domain.PreparationReport{})
 		require.NoError(t, err)
 		require.True(t, prepared)
-		launched, err := execution.RecordLaunch(processID)
+		launched, err := execution.RecordLaunch(domain.HarnessLaunch{ProcessID: processID})
 		require.NoError(t, err)
 		require.True(t, launched)
 	})

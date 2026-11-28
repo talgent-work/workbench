@@ -42,7 +42,7 @@ func preparedPluginExecution(t *testing.T) *domain.AgentExecution {
 	}})
 	require.NoError(t, err)
 	require.True(t, changed)
-	launched, err := execution.RecordLaunch("process-1")
+	launched, err := execution.RecordLaunch(domain.HarnessLaunch{ProcessID: "process-1"})
 	require.NoError(t, err)
 	require.True(t, launched)
 	return execution
@@ -94,7 +94,7 @@ func TestPreparationRecordsEachSelectedPluginsInstallationAndLoading(t *testing.
 		{Slug: "tools", Installation: domain.PluginOutcome{Reported: true, Reason: "installation_failed"}},
 	}, execution.PluginResults)
 
-	_, err = execution.RecordLaunch("process-1")
+	_, err = execution.RecordLaunch(domain.HarnessLaunch{ProcessID: "process-1"})
 	require.NoError(t, err)
 	require.True(t, reportLoaded(t, execution, domain.LoadedPlugin{Slug: "runtime", Version: "1.0.0"}))
 	require.Equal(t, succeeded, loadingOf(t, execution, "runtime"))
@@ -158,7 +158,7 @@ func TestAPluginOutsideTheSelectionIsIgnored(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []domain.PluginResult{{Slug: "runtime", Installation: succeeded}}, execution.PluginResults)
 
-	_, err = execution.RecordLaunch("process-1")
+	_, err = execution.RecordLaunch(domain.HarnessLaunch{ProcessID: "process-1"})
 	require.NoError(t, err)
 	reportLoaded(t, execution, domain.LoadedPlugin{Slug: "unselected", Version: "9.0.0"})
 	for _, result := range execution.PluginResults {

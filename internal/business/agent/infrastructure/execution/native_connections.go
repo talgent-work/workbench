@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
 
 // NativeConnections realizes the steps an execution takes inside its bound
@@ -200,15 +203,21 @@ func (n *NativeConnections) prepare(ctx context.Context, record executionRecord,
 	return n.prepareEnvironment(ctx, &record, box.client, admitted)
 }
 
-// launch starts the Harness in the bound environment and returns its
-// process. The execution records it before it is connected; an uncertain
+// launch starts the Harness in the bound environment, with the run's
+// Personal Variables handed over right before it where the authority
+// delivers them, and returns its process and the platform variables they
+// replaced. The execution records it before it is connected; an uncertain
 // record leaves the process to the environment's deletion.
-func (n *NativeConnections) launch(ctx context.Context, record executionRecord, holding command.EnvironmentHolding) (string, error) {
+func (n *NativeConnections) launch(ctx context.Context, record executionRecord, variables []domain.PersonalVariable, holding command.EnvironmentHolding) (domain.HarnessLaunch, error) {
+	authority, err := n.provisioning.authority(record)
+	if err != nil {
+		return domain.HarnessLaunch{}, err
+	}
 	box, err := n.resolve(ctx, record)
 	if err != nil {
-		return "", err
+		return domain.HarnessLaunch{}, err
 	}
-	var id string
+	var launched domain.HarnessLaunch
 	err = n.credentials.withLock(ctx, record.SandboxID, func() error {
 		// An exit asked while preparation ran must not start the Harness
 		// (Exit request ends delivery).
@@ -222,18 +231,90 @@ func (n *NativeConnections) launch(ctx context.Context, record executionRecord, 
 		if current.LaunchCommand == "" || current.NativeSessionID == "" {
 			return domain.ErrExecutionRequest
 		}
-		id, err = box.client.Create(ctx, "/workspace", current.LaunchCommand)
+		var handover variableHandover
+		delivery, delivers := authority.(variableDelivery)
+		delivers = delivers && len(variables) > 0
+		if delivers {
+			if handover, err = delivery.deliverVariables(ctx, current, box.client, variables); err != nil {
+				return err
+			}
+		}
+		var reported []string
+		launched.ProcessID, reported, err = createHarness(ctx, box.client, current.LaunchCommand, handover.carried)
+		if err != nil && delivers {
+			withdrawUnlaunchedVariables(ctx, delivery, current, box.client)
+		}
+		launched.ReplacedVariables = mergeNames(handover.replaced, reported)
 		return err
 	})
-	return id, err
+	return launched, err
 }
 
+// createHarness creates the Harness process, carrying the variables its
+// creation carries, if any, and returns the names of the variables of its
+// environment that the endpoint reports they replaced. A process reserved
+// without them, by an endpoint that ignored them, is deleted before it could
+// start without them, and the launch fails for its bounded retry, its
+// setback naming the outdated Talgent Computer.
+func createHarness(ctx context.Context, client *execd.Client, command string, carried map[string]string) (string, []string, error) {
+	if carried == nil {
+		id, err := client.Create(ctx, domain.WorkspacePath, command)
+		return id, nil, err
+	}
+	created, err := client.CreateWithVariables(ctx, domain.WorkspacePath, command, carried)
+	if errors.Is(err, execd.ErrVariablesIgnored) {
+		ignored := errors.Join(oops.With("operation", "carry_personal_variables").Wrap(err), client.Delete(ctx, created.ID))
+		return "", nil, domain.StartSetback(outdatedComputer, ignored)
+	}
+	return created.ID, created.Replaced, err
+}
+
+// outdatedComputer names, without a value, why a Managed Harness did not
+// start with its Personal Variables.
+const outdatedComputer = "the Computer's Talgent Computer predates Personal Variables and must be upgraded to receive them"
+
+// mergeNames is the names of a and b, in name order, each once.
+func mergeNames(a, b []string) []string {
+	names := slices.Concat(a, b)
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
+// withdrawUnlaunchedVariables removes the Personal Variables a failed launch
+// delivered, so they do not wait in the sandbox for a retry that may never
+// come. It is best effort, bounded apart from the launch's own context: the
+// launch's failure decides what follows, a retry delivers them anew in their
+// place and the sandbox's deletion ends any file left behind.
+func withdrawUnlaunchedVariables(ctx context.Context, delivery variableDelivery, record executionRecord, client *execd.Client) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), variableWithdrawalTimeout)
+	defer cancel()
+	if err := delivery.withdrawVariables(ctx, record, client); err != nil {
+		slog.Default().WarnContext(ctx, "personal variables of a failed launch not withdrawn",
+			slog.String("work_id", record.SessionID), slog.String("execution_id", record.ID), slog.Any("error", err))
+	}
+}
+
+// variableWithdrawalTimeout bounds withdrawing a failed launch's Personal
+// Variables.
+const variableWithdrawalTimeout = 10 * time.Second
+
 // connect hands the launched process to Dispatcher. It resolves the
-// environment only: no preparation, delivery or cleanup.
-func (n *NativeConnections) connect(ctx context.Context, record executionRecord) error {
+// environment and gives the process the run's Personal Variables again where
+// the environment lost them before the process ever ran: no preparation,
+// other delivery or cleanup.
+func (n *NativeConnections) connect(ctx context.Context, record executionRecord, variables []domain.PersonalVariable) error {
+	authority, err := n.provisioning.authority(record)
+	if err != nil {
+		return err
+	}
 	box, err := n.resolve(ctx, record)
 	if err != nil {
 		return err
+	}
+	if delivery, delivers := authority.(variableDelivery); delivers && len(variables) > 0 {
+		if err := delivery.restoreVariables(ctx, record, box.client, variables); err != nil {
+			return err
+		}
 	}
 	request := &dispatcherprivatev1.ConnectRequest{
 		WorkId:   record.SessionID,

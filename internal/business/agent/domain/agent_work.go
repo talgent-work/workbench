@@ -56,8 +56,10 @@ type WorkInput struct {
 	StartedBy          string
 	RepositoryInput    WorkRepositoryInput
 	AuthorizationInput WorkAuthorizationInput
-	ThinkingLevel      string
-	WorkModel          WorkModelSelection
+	// VariableInput supplies the Personal Variables the Work may enable.
+	VariableInput WorkVariableInput
+	ThinkingLevel string
+	WorkModel     WorkModelSelection
 	// WorkCaller, WorkKey and FileHome are the facts the Work fixes at
 	// creation.
 	WorkCaller   WorkCaller
@@ -233,6 +235,8 @@ type AgentWork struct {
 	// be checked out.
 	RepositoryCheckouts    []RepositoryCheckout
 	AuthorizationSelection WorkAuthorizationSelection
+	// VariableSelection names the Personal Variables it enabled at creation.
+	VariableSelection WorkVariableSelection
 	// InitialTaskInput is the creating caller's first task input, held until
 	// it is handed to the Work's input buffer; nil once handed off, or for a
 	// Work created without one.
@@ -349,6 +353,9 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 	if err := session.determineRepositorySelection(input.RepositoryInput); err != nil {
 		return nil, err
 	}
+	if err := session.determineVariableSelection(input.VariableInput); err != nil {
+		return nil, err
+	}
 	if err := validateStartAdmission(session.AgentID, session.WorkModel, admission); err != nil {
 		return nil, err
 	}
@@ -406,6 +413,12 @@ func (s *AgentWork) Validate() error {
 	}
 	if err := s.RepositorySelection.Validate(); err != nil {
 		return err
+	}
+	if err := s.VariableSelection.Validate(); err != nil {
+		return err
+	}
+	if len(s.VariableSelection.Names) > 0 && s.RepresentedPerson == "" {
+		return fmt.Errorf("%w: only a Work that represents a person enables Personal Variables", ErrInvalidWork)
 	}
 	if err := validateDisplayTitle(s.DisplayTitle, s.Standalone()); err != nil {
 		return err

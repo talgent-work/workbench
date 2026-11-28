@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
@@ -55,7 +57,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 	beginAgain := func(launch domain.LaunchSpecification) error {
 		run, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: domain.WorkStartAdmitted{WorkID: launch.WorkID, StartAdmittedAt: time.Now(), DeskID: "desk-again"}, Launch: launch, Realization: domain.RealizationCloud})
 		require.NoError(t, err)
-		return NewAgentExecutionRepository(jdb, time.Now).Save(ctx, run)
+		return NewAgentExecutionRepository(jdb, sealingtest.Sealer(), time.Now).Save(ctx, run)
 	}
 
 	t.Run("continuation launch retains the Work thinking level", func(t *testing.T) {
@@ -66,7 +68,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		input.ThinkingLevel = "high"
 		stored, err := register(ctx, p, input, testMounts)
 		require.NoError(t, err)
-		require.NoError(t, p.specify(ctx, stored, command.CreationSupply{Mounts: testMounts}), "a repeated specification keeps the admitted launch")
+		require.NoError(t, p.specify(ctx, stored, command.CreationSupply{Mounts: testMounts}, nil), "a repeated specification keeps the admitted launch")
 		again, _, err := p.live(ctx, input.WorkID)
 		require.NoError(t, err)
 		require.Equal(t, stored.LaunchCommand, again.LaunchCommand)
@@ -136,7 +138,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.NoError(t, reconcile(steps, begun.ID))
 		// The acknowledged exit of the bound process authorizes retirement.
 		run := current(t, steps, begun.ID)
-		_, err = run.RecordLaunch("current-process")
+		_, err = run.RecordLaunch(domain.HarnessLaunch{ProcessID: "current-process"})
 		require.NoError(t, err)
 		run.RecordExit("current-process", domain.HarnessExit{})
 		require.NoError(t, steps.executions.Save(ctx, run))

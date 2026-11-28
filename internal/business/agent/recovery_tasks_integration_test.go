@@ -87,7 +87,7 @@ func TestFailedSweepDoesNotSuppressLaterSweeps(t *testing.T) {
 			return executions
 		}),
 		storageStub(),
-		fx.Provide(func() connectrpc.Server { return connecttest.NewServer() }), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
+		fx.Provide(func() connectrpc.Server { return connecttest.NewServer() }), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, personalVariableConfig(t), defaultBuiltIns), computertest.Option(&computertest.Admission{}),
 		mysqltest.Provide(t, "execution", db),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
 		fx.Provide(func() command.DispatcherPort { return port }),

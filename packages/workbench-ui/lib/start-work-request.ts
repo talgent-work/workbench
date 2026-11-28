@@ -18,6 +18,9 @@ export interface WorkStartInput {
   computerId?: string;
   /** How the Harness runs on a Managed Computer; absent for a Cloud. */
   harness?: { permissionMode: PermissionMode; sandbox: boolean };
+  /** The Personal Variables the Work enables, by name; absence enables every
+   * one the person keeps when the Work is created. */
+  personalVariables?: { names: string[] };
 }
 
 /** The start request's fields for the choices, leaving unchosen ones unset. */
@@ -30,5 +33,6 @@ export function workStartFields(input: WorkStartInput) {
     ...(input.creationCapabilities && { creationCapabilities: input.creationCapabilities }),
     ...(input.computerId && { computerId: input.computerId }),
     ...(input.harness && { harness: input.harness }),
+    ...(input.personalVariables && { personalVariables: input.personalVariables }),
   };
 }

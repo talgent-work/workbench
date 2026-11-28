@@ -150,3 +150,25 @@ test('a cwd reached through a symlink is the cwd the process sees, as named', { 
   const stdout = out.binaries.filter((frame) => frame[0] === 1).map((frame) => frame.subarray(1).toString()).join('')
   assert.equal(stdout, `${root}/link\n`)
 })
+
+test('a process whose shim cannot start ends at once, with the reason on stderr', { skip: portableProcessRules }, async () => {
+  const unstartable = new ProcessTable({ stateRoot: join(dir, 'state', 'processes'), shim: [join(dir, 'no-such-shim')] })
+  const over = new ExecdService({
+    works: new Works({ worksDir: join(dir, 'works'), recordsDir: join(dir, 'state', 'works') }),
+    processes: unstartable,
+    credentials: new CredentialStore({ dir: join(dir, 'state', 'credentials') }),
+    proxyOrigin: () => 'http://127.0.0.1:1',
+    baseEnv: { PATH: '/usr/bin:/bin' },
+    home: '/home/owner',
+    log: () => {},
+  })
+  const response = await over.request({ workId: 'w-1', method: 'POST', path: '/pty', token: 'tok', body: { cwd: '/workspace', command: 'true' } })
+  const id = (response.body as { session_id: string }).session_id
+  created.push(id)
+  const pipe = sink()
+  await over.openStream({ workId: 'w-1', processId: id, since: 0, token: 'tok' }, pipe.value)
+  await until(pipe.ended)
+  const stderr = pipe.binaries.filter((frame) => frame[0] === 2).map((frame) => frame.subarray(1).toString()).join('')
+  assert.match(stderr, /process shim/)
+  assert.equal(pipe.texts.at(-1), '{"type":"exit","exit_code":-1}\n', 'the reader sees the run end instead of waiting for it')
+})

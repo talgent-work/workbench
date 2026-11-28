@@ -38,7 +38,7 @@ func TestAnUnreachedCloudRunReleasesItsSandboxWithoutAnExit(t *testing.T) {
 	run := current(t, steps, record.ID)
 	require.True(t, commandtest.Submit(run))
 	run.Environment = sandboxID
-	_, err = run.RecordLaunch("current-process")
+	_, err = run.RecordLaunch(domain.HarnessLaunch{ProcessID: "current-process"})
 	require.NoError(t, err)
 	require.NoError(t, steps.executions.Save(ctx, run))
 	var spec sdk.CreateSandboxRequest

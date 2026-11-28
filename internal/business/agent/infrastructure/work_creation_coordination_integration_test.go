@@ -34,7 +34,7 @@ func creationCoordinator(db *jimuxorm.DB, capacity computertest.RoomCheck, regis
 	if registrar == nil {
 		registrar = sessions
 	}
-	return command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, registrar, auth, options, commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), creationPreparation(db, options))
+	return command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agents, registrar, auth, options, commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), creationPreparation(db, options))
 }
 
 // A creation whose acknowledgement was lost after its commit is answered by

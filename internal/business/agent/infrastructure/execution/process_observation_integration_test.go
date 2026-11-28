@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -23,7 +25,7 @@ func startTwice(t *testing.T, db *xorm.Engine, jdb *jimuxorm.DB) (*AgentExecutio
 	ctx := context.Background()
 	provider, _, _ := sandboxClient(t)
 	p := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
-	executions := NewAgentExecutionRepository(jdb, time.Now)
+	executions := NewAgentExecutionRepository(jdb, sealingtest.Sealer(), time.Now)
 	launched := func(processID string) *domain.AgentExecution {
 		record, err := register(ctx, p, request(), testMounts)
 		require.NoError(t, err)
@@ -31,7 +33,7 @@ func startTwice(t *testing.T, db *xorm.Engine, jdb *jimuxorm.DB) (*AgentExecutio
 		require.NoError(t, err)
 		require.True(t, commandtest.Submit(run))
 		run.Environment = sandboxID
-		_, err = run.RecordLaunch(processID)
+		_, err = run.RecordLaunch(domain.HarnessLaunch{ProcessID: processID})
 		require.NoError(t, err)
 		require.NoError(t, executions.Save(ctx, run))
 		run, err = executions.Get(ctx, record.ID)

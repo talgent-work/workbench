@@ -124,7 +124,7 @@ func (e *ExecutionEnvironment) PrepareCreation(ctx context.Context, execution *d
 	if err != nil {
 		return err
 	}
-	return withExecution(e.provisioning.specify(ctx, record, supply), execution)
+	return withExecution(e.provisioning.specify(ctx, record, supply, personalNames(execution.PersonalVariables)), execution)
 }
 
 // SubmitCreation submits the specified environment's creation once, waiting
@@ -257,14 +257,16 @@ func (e *ExecutionEnvironment) Prepare(ctx context.Context, execution *domain.Ag
 	return report, nil
 }
 
-// Launch starts the Harness in the bound environment and returns its process.
-func (e *ExecutionEnvironment) Launch(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (string, error) {
+// Launch starts the Harness in the bound environment with the execution's
+// Personal Variables and returns its process and the platform variables they
+// replaced.
+func (e *ExecutionEnvironment) Launch(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (domain.HarnessLaunch, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
-		return "", err
+		return domain.HarnessLaunch{}, err
 	}
-	id, err := e.connections.launch(ctx, record, holding)
-	return id, withExecution(e.recovering(ctx, record, err), execution)
+	launched, err := e.connections.launch(ctx, record, execution.PersonalVariables, holding)
+	return launched, withExecution(e.recovering(ctx, record, err), execution)
 }
 
 // Connect hands the launched process to Dispatcher.
@@ -278,7 +280,7 @@ func (e *ExecutionEnvironment) Connect(ctx context.Context, execution *domain.Ag
 	}
 	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
 	defer cancel()
-	return withExecution(e.recovering(ctx, record, e.connections.connect(attempt, record)), execution)
+	return withExecution(e.recovering(ctx, record, e.connections.connect(attempt, record, execution.PersonalVariables)), execution)
 }
 
 // ReconcileComputer reconciles a Managed Computer that is reachable again;

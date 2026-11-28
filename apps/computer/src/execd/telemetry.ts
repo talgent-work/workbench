@@ -42,10 +42,13 @@ function httpsOrigin(value: string): boolean {
   return url.protocol === 'https:' && url.username === '' && url.password === '' && url.search === '' && url.hash === ''
 }
 
+// The variables applyTelemetry sets or removes.
+export const TELEMETRY_VARIABLES: readonly string[] = [...SIGNAL_OVERRIDES, 'OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_HEADERS']
+
 // Points env's OTLP exporters at the platform with the Work's telemetry
 // token and identity, replacing whatever the machine set for them.
 export function applyTelemetry(env: NodeJS.ProcessEnv, workId: string, telemetry: WorkTelemetry, platform: NodeJS.Platform): void {
-  for (const name of [...SIGNAL_OVERRIDES, 'OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_HEADERS']) deleteVariable(env, name, platform)
+  for (const name of TELEMETRY_VARIABLES) deleteVariable(env, name, platform)
   env.OTEL_EXPORTER_OTLP_ENDPOINT = telemetry.endpoint
   env.OTEL_EXPORTER_OTLP_HEADERS = `Authorization=Bearer ${telemetry.token},X-Talgent-Work-Id=${workId}`
 }

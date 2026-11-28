@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
@@ -28,6 +30,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -136,7 +139,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	// The deployment's default: every Work requires the core plugin.
 	builtIns, err := domain.NewBuiltInPlugins([]string{"talgent"}, nil)
 	require.NoError(t, err)
-	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
+	create := command.NewCreateWorkHandler(time.Now, builtIns, &commandtest.PersonalVariables{}, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
 	app := &application.Application{
 		WorkQueries: queries, Catalog: start, Definitions: definitions, DefinitionQueries: lookup,
 		Works: works, WorkPrincipals: authorizer, Models: models, BuiltInPlugins: builtIns,
@@ -147,7 +150,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 		Queries: application.Queries{
 			GetWorkPreparation: query.NewGetWorkPreparationHandler(queries, authorizer),
 			GetWork:            query.NewGetWorkHandler(definitions, works, authorizer, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
-			GetWorkView:        query.NewGetWorkViewHandler(authorizer, queries),
+			GetWorkView:        query.NewGetWorkViewHandler(authorizer, queries, execution.NewExecutionQueryRepository(adapter)),
 			GetWorkOrigin:      query.NewGetWorkOriginHandler(queries),
 			GetAgentDefinition: query.NewGetAgentDefinitionHandler(definitions, application.AssembleAgentDefinition),
 			ListWorks:          query.NewListWorksHandler(queries),

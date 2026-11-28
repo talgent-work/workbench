@@ -203,6 +203,9 @@ removed = set((entry or {}).get("spec", {}).get("headers", {}).get("earlyRequest
 check(removed == identity_headers, f"the entry removes every identity header a client sends, got {sorted(removed ^ identity_headers)} differing")
 check("x-talgent-space-token" not in removed, "the Space Token, a capability, passes through the entry")
 for route in (d for d in docs if d["kind"] == "HTTPRoute"):
+    # The Gateway API admits at most 16 rules in one HTTPRoute.
+    check(len(route["spec"]["rules"]) <= 16,
+          f"route {route['metadata']['name']} has at most 16 rules, got {len(route['spec']['rules'])}")
     for rule in route["spec"]["rules"]:
         for f in rule.get("filters", []):
             check(not f.get("requestHeaderModifier", {}).get("remove"),
@@ -219,8 +222,10 @@ want_claims = {"principal": "x-talgent-principal", "iss": "x-talgent-issuer", "s
                "application_id": "x-talgent-application-id"}
 check(claims == want_claims, f"web-auth writes every claim as its header, got {claims}")
 targets = {t["sectionName"] for t in auth["spec"]["targetRefs"]}
-for section in ("agent-identity-api", "storage-artifact-api", "work-api", "work-file-api", "work-workspace-api", "application-api"):
-    check(section in rules(docs, "web-api") and section in targets, f"web-auth validates the web-api rule {section}")
+for route, section in (("agent-api", "agent-identity-api"), ("web-api", "storage-artifact-api"), ("agent-api", "work-api"),
+                       ("agent-api", "work-file-api"), ("agent-api", "work-workspace-api"),
+                       ("agent-api", "personal-variable-api"), ("web-api", "application-api")):
+    check(section in rules(docs, route) and section in targets, f"web-auth validates the {route} rule {section}")
 check(find(docs, "BackendTrafficPolicy", "computer-api-rate-limit") is None and "computer-api" not in rules(docs, "computer"),
       "Managed Works reach the platform through the entry, not a computer-api rule")
 check(service_ports(docs, "controlplane") == ["http"],
@@ -305,15 +310,15 @@ check(built_in_platform(switched) == ["talgent"],
       f"AGENT_CORE_API_ACCESS=disabled leaves talgent-api out of the platform scope, got {built_in_platform(switched)}")
 
 # ADDITIONAL_ENTRY_HOST: empty, every route serves WORKBENCH_HOST only; set,
-# the web-api, auth and computer routes serve that host too, while the
+# the web-api, agent-api, auth and computer routes serve that host too, while the
 # Workbench's pages stay on its own.
 def hostnames(rendered, route):
     return find(rendered, "HTTPRoute", route)["spec"]["hostnames"]
 
-for route in ("workbench-web", "web-api", "auth", "computer"):
+for route in ("workbench-web", "web-api", "agent-api", "auth", "computer"):
     check(hostnames(docs, route) == ["workbench.example.com"],
           f"by default route {route} serves only WORKBENCH_HOST, got {hostnames(docs, route)}")
-for route in ("web-api", "auth", "computer"):
+for route in ("web-api", "agent-api", "auth", "computer"):
     check(hostnames(switched, route) == ["workbench.example.com", "entry.example.org"],
           f"ADDITIONAL_ENTRY_HOST=entry.example.org adds it to route {route}, got {hostnames(switched, route)}")
 check(hostnames(switched, "workbench-web") == ["workbench.example.com"],

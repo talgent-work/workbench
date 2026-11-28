@@ -30,7 +30,7 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	catalog := &creationCatalog{}
 	capacity := &initialCreationCapacity{err: domain.ErrCapacityUnavailable}
 	execution := &creationExecution{AgentWorkRepository: works, db: db}
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), creationPreparation(jdb, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), creationPreparation(jdb, creationModels()))
 	request := creationInput(agent.ID, "first")
 	workID, err := handler.Handle(t.Context(), request)
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
@@ -67,7 +67,7 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 	db, jdb, definitions, works, agent := startingCreationDatabase(t)
 	port := &creationExecution{AgentWorkRepository: works, db: db}
-	winner := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(jdb, creationModels()))
+	winner := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(jdb, creationModels()))
 	winning := creationInput(agent.ID, "same-subject")
 	var winnerID string
 	// The winner commits the same Subject after the loser's lookup, and the
@@ -77,7 +77,7 @@ func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 		winnerID, err = winner.Handle(t.Context(), winning)
 		return err
 	}, err: domain.ErrCapacityUnavailable}
-	loser := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(capacity), creationPreparation(jdb, creationModels()))
+	loser := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(capacity), creationPreparation(jdb, creationModels()))
 	reused, err := loser.Handle(t.Context(), creationInput(agent.ID, "same-subject"))
 	require.NoError(t, err)
 	require.Equal(t, winnerID, reused)

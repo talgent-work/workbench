@@ -55,9 +55,13 @@ type agentWorkDO struct {
 	// checkout outcomes.
 	RepositoryCheckouts    string `xorm:"repository_checkouts json"`
 	AuthorizationSelection string `xorm:"authorization_selection json"`
-	ThinkingLevel          string `xorm:"thinking_level varchar(32)"`
-	PermissionMode         string `xorm:"permission_mode varchar(32)"`
-	WorkProgress           string `xorm:"work_progress mediumtext"`
+	// VariableSelection is the JSON array of the Personal Variable names the
+	// Work enabled at creation, written once; empty, as for a Work created
+	// before Personal Variables, enables none.
+	VariableSelection string `xorm:"variable_selection json"`
+	ThinkingLevel     string `xorm:"thinking_level varchar(32)"`
+	PermissionMode    string `xorm:"permission_mode varchar(32)"`
+	WorkProgress      string `xorm:"work_progress mediumtext"`
 	// InitialTaskInput is the JSON of the initial task input the Work still
 	// holds; empty once handed off or for a Work created without one.
 	InitialTaskInput     string `xorm:"initial_task_input mediumtext"`
@@ -198,3 +202,17 @@ type workProgressItemRecord struct {
 	Status     string `json:"status"`
 	ActiveForm string `json:"active_form,omitempty"`
 }
+
+// personalVariableSetDO is one person's PersonalVariableSet; its variables
+// stay sealed under the Agent key, bound to the person.
+type personalVariableSetDO struct {
+	ID        string `xorm:"id pk varchar(36)"`
+	PersonID  string `xorm:"person_id varchar(255)"`
+	Variables []byte `xorm:"variables mediumblob"`
+	Version   int    `xorm:"'version' int"`
+	CreatedAt int64  `xorm:"created_at bigint"`
+	UpdatedAt int64  `xorm:"updated_at bigint"`
+	DeletedAt int64  `xorm:"deleted_at bigint"`
+}
+
+func (personalVariableSetDO) TableName() string { return "agent_personal_variable_set" }

@@ -54,7 +54,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 		require.NoError(t, err)
 		server := connecttest.NewFronted(t)
 		app := fx.New(agent.Module, sessionStateTransport(t), moduleCatalog(), fx.NopLogger, storageStub(),
-			server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, builtIns), computertest.Option(&computertest.Admission{}),
+			server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, personalVariableConfig(t), builtIns), computertest.Option(&computertest.Admission{}),
 			mysqltest.Provide(t, "execution", db),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
 			fx.Provide(func() command.DispatcherPort { return port }),

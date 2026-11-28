@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
@@ -41,7 +43,7 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	views := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(f.jdb), models)
 	app := &application.Application{Works: f.sessions, Harness: thinking, WorkPrincipals: owners, WorkQueries: views, Models: models, Queries: application.Queries{
 		GetWork:     query.NewGetWorkHandler(f.agents, f.sessions, owners, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
-		GetWorkView: query.NewGetWorkViewHandler(owners, views),
+		GetWorkView: query.NewGetWorkViewHandler(owners, views, execution.NewExecutionQueryRepository(f.jdb)),
 	}}
 	handler := connecttest.Handler(func(s *connect.Server) {
 		agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))

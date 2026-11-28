@@ -21,7 +21,7 @@ func TestCreationCapturesOwnersRepositoryAndReuseIgnoresLaterBindingChanges(t *t
 	require.NoError(t, err)
 	store := &sessionStore{}
 	catalog := &repositoryCatalog{}
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store,
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agentStore{agent}, store, store,
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
 		commandtest.StartCatalog(emptyPluginCatalog{}, catalog), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
 	input := command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, AgentID: agent.ID, SubjectID: "owner", StartingUserID: "owner",

@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -163,6 +164,12 @@ type AgentExecution struct {
 	// environment created without one.
 	Lease   time.Time
 	Process LaunchedProcess
+	// PersonalVariables are the values of its Work's Personal Variables at its
+	// start, which its retries and recovery reuse (Run keeps its variables).
+	PersonalVariables []PersonalVariable
+	// ReplacedVariables name the platform variables its Personal Variables
+	// replaced at its launch, never their values.
+	ReplacedVariables []string
 	// PluginResults are its selected Plugins' preparation outcomes in this
 	// run, at most one per Plugin, in no particular order.
 	PluginResults []PluginResult
@@ -186,12 +193,14 @@ type AgentExecution struct {
 }
 
 // ExecutionBeginning is what Begin takes from an admitted start: the Work's
-// start admission, the LaunchSpecification taken from the Work and where the
-// Work's Computer realizes it.
+// start admission, the LaunchSpecification taken from the Work, where the
+// Work's Computer realizes it and the current values of the Personal
+// Variables the Work receives.
 type ExecutionBeginning struct {
-	Admitted    WorkStartAdmitted
-	Launch      LaunchSpecification
-	Realization ExecutionRealization
+	Admitted          WorkStartAdmitted
+	Launch            LaunchSpecification
+	Realization       ExecutionRealization
+	PersonalVariables []PersonalVariable
 }
 
 // BeginExecution begins the AgentExecution of an admitted start, Queued while
@@ -205,7 +214,8 @@ func BeginExecution(beginning ExecutionBeginning) (*AgentExecution, error) {
 	execution := &AgentExecution{
 		ID: uuid.Must(uuid.NewV7()).String(), WorkID: admitted.WorkID, StartAdmittedAt: admitted.StartAdmittedAt.UTC(),
 		Realization: beginning.Realization, Desk: ExecutionDesk{ID: admitted.DeskID}, Launch: beginning.Launch,
-		State: ExecutionQueued, Events: NewEventCollection(),
+		PersonalVariables: slices.Clone(beginning.PersonalVariables),
+		State:             ExecutionQueued, Events: NewEventCollection(),
 	}
 	if !admitted.Waiting {
 		execution.seat(execution.StartAdmittedAt)

@@ -22,6 +22,7 @@ func validateOption(opt Option) error {
 		{name: "agent-built-in-plugins", validate: opt.AgentBuiltInPlugins.Validate},
 		{name: "account", validate: opt.Account.Validate},
 		{name: "agent-account", validate: opt.AgentAccount.Validate},
+		{name: "agent-personal-variables", validate: opt.AgentPersonalVariables.Validate},
 		{name: "trace-clickhouse", validate: opt.TraceClickHouse.Validate},
 		{name: "trace-access", validate: opt.TraceAccess.Validate},
 	} {
