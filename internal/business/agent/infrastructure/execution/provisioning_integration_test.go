@@ -68,7 +68,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		input.ThinkingLevel = "high"
 		stored, err := register(ctx, p, input, testMounts)
 		require.NoError(t, err)
-		require.NoError(t, p.specify(ctx, stored, command.CreationSupply{Mounts: testMounts}), "a repeated specification keeps the admitted launch")
+		require.NoError(t, p.specify(ctx, stored, command.CreationSupply{Mounts: testMounts}, nil), "a repeated specification keeps the admitted launch")
 		again, _, err := p.live(ctx, input.WorkID)
 		require.NoError(t, err)
 		require.Equal(t, stored.LaunchCommand, again.LaunchCommand)

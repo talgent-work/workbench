@@ -44,7 +44,7 @@ type machineRelay struct {
 	credentials           []byte
 	deliveries, forgotten int
 	files                 map[string]string
-	created               []struct{ Cwd, Command string }
+	created               []relayedProcess
 	deleted               []string
 	calls                 []string
 	// reconciliation serves the machine's reconciliation; nil answers 404,
@@ -58,6 +58,15 @@ type machineRelay struct {
 	preparation string
 	// launching, when set, runs as the Harness process is created.
 	launching func()
+	// ignoresVariables answers a process creation as a Talgent Computer
+	// that predates Personal Variables: without acknowledging them.
+	ignoresVariables bool
+}
+
+// relayedProcess is a process creation the machine was sent.
+type relayedProcess struct {
+	Cwd, Command      string
+	PersonalVariables map[string]string `json:"personal_variables"`
 }
 
 // reconciled is the state of the machine's current round, as its ping
@@ -170,9 +179,10 @@ func (m *machineRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = io.WriteString(w, content)
 	case r.Method == http.MethodPost && path == "/pty":
-		var body struct{ Cwd, Command string }
+		var body relayedProcess
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		m.mu.Lock()
+		acknowledged := body.PersonalVariables != nil && !m.ignoresVariables
 		m.created = append(m.created, body)
 		// Only the Harness launch reads the native input stream; preparation
 		// and the Harness's own hooks both run node.
@@ -184,6 +194,10 @@ func (m *machineRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.mu.Unlock()
 		if launching != nil && id == "harness-handle" {
 			launching()
+		}
+		if acknowledged {
+			_, _ = w.Write([]byte(`{"session_id":"` + id + `","personal_variables":true}`))
+			return
 		}
 		_, _ = w.Write([]byte(`{"session_id":"` + id + `"}`))
 	case r.Method == http.MethodGet && path == "/pty/preparation-handle/ws":
@@ -298,6 +312,13 @@ func newManagedWork(t *testing.T) *managedWork {
 // its Computer is, as the Policies do from the Work's admitted start.
 func (f *managedWork) begin(t *testing.T, input domain.LaunchSpecification) executionRecord {
 	t.Helper()
+	return f.beginWith(t, input, nil)
+}
+
+// beginWith begins it with the current values of the Work's Personal
+// Variables.
+func (f *managedWork) beginWith(t *testing.T, input domain.LaunchSpecification, variables []domain.PersonalVariable) executionRecord {
+	t.Helper()
 	ctx := context.Background()
 	place, err := f.place.DescribeComputer(ctx, input.ComputerID)
 	require.NoError(t, err)
@@ -308,7 +329,7 @@ func (f *managedWork) begin(t *testing.T, input domain.LaunchSpecification) exec
 	}
 	run, err := domain.BeginExecution(domain.ExecutionBeginning{
 		Admitted: domain.WorkStartAdmitted{WorkID: input.WorkID, StartAdmittedAt: time.Now(), DeskID: "desk-" + input.WorkID},
-		Launch:   input, Realization: realization,
+		Launch:   input, Realization: realization, PersonalVariables: variables,
 	})
 	require.NoError(t, err)
 	require.NoError(t, f.steps.executions.Save(ctx, run))

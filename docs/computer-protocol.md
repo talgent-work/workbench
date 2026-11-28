@@ -157,7 +157,7 @@ Under it, the execd API (`internal/pkg/execd`) with the Work's execd access toke
 | Call | Meaning |
 |---|---|
 | `GET /ping` | `200` while the machine is connected |
-| `POST /pty` `{cwd, command}` | reserve a process; `{session_id}` |
+| `POST /pty` `{cwd, command, personal_variables?}` | reserve a process; `{session_id}`, with `"personal_variables": true` when it took them |
 | `GET /pty/<id>` | `{session_id, running}`; `404` when unknown |
 | `DELETE /pty/<id>` | kill the process group and forget it; `404` when unknown |
 | `GET /pty/<id>/ws?pty=0&since=<offset>` | WebSocket pipe, below |
@@ -170,6 +170,20 @@ and one call that is not execd's:
 
 `POST /pty` answers `409` `{"code":"RECONCILIATION_PENDING"}` while the connection's reconciliation round
 is not decided (Reconciliation).
+
+`personal_variables`, `{"NAME": "value"}`, is not execd's: only the creation of a Work's Harness process
+carries it, holding the run's Personal Variables, and every other process, preparation included, is created
+without it. Talgent Computer gives that process, on every run of it, the variables layered last over its
+environment (Work environment): each replaces the variable of the same name, the machine's, the Work's
+and Talgent Computer's own alike, as the machine compares names, except a name starting with `TALGENT_`
+in any case, which it leaves out. A name that is not `[A-Za-z_][A-Za-z0-9_]*` or a value that is not a
+string or holds NUL answers `400` naming neither. It keeps the values in memory only, never in the
+process's state directory or a log: a process created with them that a later Talgent Computer run would
+start, its values gone with the earlier run, exits `-1` with the reason on stderr instead of starting
+without them. The answer's `"personal_variables": true` tells the platform the machine took them; an answer
+without it, from a Talgent Computer that predates them, makes the platform delete the process and retry the
+launch, so the Harness never starts without them. A Work's Harness launch whose request would exceed the
+relay's 1 MiB body fails its start.
 
 The machine itself, naming no Work, is reached at `http://computer-gateway.<namespace>.svc:8085/relay/<computer-id>/reconciliation`
 with `X-Talgent-Control-Token` (Reconciliation).

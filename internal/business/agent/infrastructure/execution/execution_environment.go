@@ -124,7 +124,7 @@ func (e *ExecutionEnvironment) PrepareCreation(ctx context.Context, execution *d
 	if err != nil {
 		return err
 	}
-	return withExecution(e.provisioning.specify(ctx, record, supply), execution)
+	return withExecution(e.provisioning.specify(ctx, record, supply, personalNames(execution.PersonalVariables)), execution)
 }
 
 // SubmitCreation submits the specified environment's creation once, waiting
@@ -259,7 +259,7 @@ func (e *ExecutionEnvironment) Prepare(ctx context.Context, execution *domain.Ag
 
 // Launch starts the Harness in the bound environment with the execution's
 // Personal Variables and returns its process and the platform variables they
-// replaced. A Managed Computer's launch carries none yet.
+// replaced.
 func (e *ExecutionEnvironment) Launch(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (domain.HarnessLaunch, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {

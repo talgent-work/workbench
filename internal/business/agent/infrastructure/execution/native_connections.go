@@ -16,6 +16,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
 
 // NativeConnections realizes the steps an execution takes inside its bound
@@ -228,15 +229,32 @@ func (n *NativeConnections) launch(ctx context.Context, record executionRecord, 
 		if current.LaunchCommand == "" || current.NativeSessionID == "" {
 			return domain.ErrExecutionRequest
 		}
+		var handover variableHandover
 		if delivery, delivers := authority.(variableDelivery); delivers && len(variables) > 0 {
-			if launched.ReplacedVariables, err = delivery.deliverVariables(ctx, current, box.client, variables); err != nil {
+			if handover, err = delivery.deliverVariables(ctx, current, box.client, variables); err != nil {
 				return err
 			}
 		}
-		launched.ProcessID, err = box.client.Create(ctx, "/workspace", current.LaunchCommand)
+		launched.ReplacedVariables = handover.replaced
+		launched.ProcessID, err = createHarness(ctx, box.client, current.LaunchCommand, handover.carried)
 		return err
 	})
 	return launched, err
+}
+
+// createHarness creates the Harness process, carrying the variables its
+// creation carries, if any. A process reserved without them, by an endpoint
+// that ignored them, is deleted before it could start without them, and the
+// launch fails for its bounded retry.
+func createHarness(ctx context.Context, client *execd.Client, command string, carried map[string]string) (string, error) {
+	if carried == nil {
+		return client.Create(ctx, "/workspace", command)
+	}
+	id, err := client.CreateWithVariables(ctx, "/workspace", command, carried)
+	if errors.Is(err, execd.ErrVariablesIgnored) {
+		return "", errors.Join(oops.With("operation", "carry_personal_variables").Wrap(err), client.Delete(ctx, id))
+	}
+	return id, err
 }
 
 // connect hands the launched process to Dispatcher. It resolves the

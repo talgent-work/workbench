@@ -15,9 +15,13 @@ to the database named by `AGENT_MYSQL_DATABASE`, then deploy this release; an ea
 `agent-personal-variable-key`, the Agent key that seals Personal Variables. A deployment that
 manages its own Secrets creates that Secret with key `key`, 32 random bytes base64-encoded, before
 deploying; `controlplane` does not start without it. A person now keeps Personal Variables on
-Profile, and every start of a Cloud Work their Agent does for them gives its Harness their current
-values, in place of platform variables of the same name. A rollback drops the columns as the
-script's header describes; the table and the Secret may stay.
+Profile, and every start of a Work their Agent does for them gives its Harness their current
+values, in place of platform variables of the same name. On a Managed Computer this takes this
+release's Talgent Computer, to which machines upgrade on connecting: a machine still on an earlier one
+never starts the Harness of a run with Personal Variables, whose start fails at its Startup Deadline,
+until it upgrades; raise `COMPUTER_MINIMUM_VERSION` to this release to refuse such runs at Start Work
+instead. A rollback drops the columns as the script's header describes; the table and the Secret may
+stay.
 
 ## The release that gives an Agent its Workspace Instructions
 

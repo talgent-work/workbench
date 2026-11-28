@@ -318,7 +318,7 @@ func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 	require.IsType(t, cloudEnvironment{}, authority)
 	_, err = cloudOnly.authority(executionRecord{Realization: realizationManaged})
 	require.ErrorIs(t, err, errManagedNotConfigured)
-	require.ErrorIs(t, cloudOnly.specify(context.Background(), executionRecord{Realization: realizationManaged, SpecificationJSON: []byte("null")}, command.CreationSupply{}), errManagedNotConfigured, "a Managed execution's creation is refused before anything is specified")
+	require.ErrorIs(t, cloudOnly.specify(context.Background(), executionRecord{Realization: realizationManaged, SpecificationJSON: []byte("null")}, command.CreationSupply{}, nil), errManagedNotConfigured, "a Managed execution's creation is refused before anything is specified")
 	_, err = cloudOnly.authority(executionRecord{Realization: "kubernetes"})
 	require.Error(t, err)
 

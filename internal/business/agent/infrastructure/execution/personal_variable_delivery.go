@@ -85,9 +85,20 @@ func replacedVariables(variables []domain.PersonalVariable, platform map[string]
 // variableDelivery is an authority that hands a run's Personal Variables to
 // its Harness launch. One without it launches the Harness without them.
 type variableDelivery interface {
-	// deliverVariables places the variables where the launch command loads
-	// them and names the platform variables they replace.
-	deliverVariables(ctx context.Context, record executionRecord, client *execd.Client, variables []domain.PersonalVariable) ([]string, error)
+	// deliverVariables hands the variables over for the launch, placing them
+	// where the launch command loads them or giving them to the Harness's
+	// process creation to carry, and names the platform variables they
+	// replace.
+	deliverVariables(ctx context.Context, record executionRecord, client *execd.Client, variables []domain.PersonalVariable) (variableHandover, error)
+}
+
+// variableHandover is how a launch hands over a run's Personal Variables:
+// the platform variables they replace and, where the Harness's process
+// creation itself carries them, the variables it carries; nil where they
+// were placed for the launch command to load.
+type variableHandover struct {
+	replaced []string
+	carried  map[string]string
 }
 
 var _ variableDelivery = cloudEnvironment{}
@@ -95,14 +106,14 @@ var _ variableDelivery = cloudEnvironment{}
 // deliverVariables uploads a Cloud run's Personal Variables to its file,
 // readable by the sandbox user alone, and names the variables of the
 // sandbox's specification and of the launch command they replace.
-func (cloudEnvironment) deliverVariables(ctx context.Context, record executionRecord, client *execd.Client, variables []domain.PersonalVariable) ([]string, error) {
+func (cloudEnvironment) deliverVariables(ctx context.Context, record executionRecord, client *execd.Client, variables []domain.PersonalVariable) (variableHandover, error) {
 	var spec sdk.CreateSandboxRequest
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
-		return nil, oops.With("operation", "decode_native_spec").Wrap(err)
+		return variableHandover{}, oops.With("operation", "decode_native_spec").Wrap(err)
 	}
 	file := sandboxVariableFile(SandboxOwner{WorkID: record.SessionID, ID: record.ID})
 	if err := client.Upload(ctx, file, 0o600, encodePersonalVariables(variables)); err != nil {
-		return nil, oops.With("operation", "deliver_personal_variables").Wrap(err)
+		return variableHandover{}, oops.With("operation", "deliver_personal_variables").Wrap(err)
 	}
-	return replacedVariables(variables, spec.Env), nil
+	return variableHandover{replaced: replacedVariables(variables, spec.Env)}, nil
 }

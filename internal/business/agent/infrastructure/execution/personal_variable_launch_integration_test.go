@@ -149,7 +149,7 @@ func TestTheHarnessLaunchAloneCarriesTheRunsPersonalVariables(t *testing.T) {
 	require.NoError(t, NewAgentExecutionRepository(jdb, sealingtest.Sealer(), time.Now).Save(ctx, run))
 	record, _, err := provisioning.get(ctx, run.ID)
 	require.NoError(t, err)
-	require.NoError(t, provisioning.specify(ctx, record, command.CreationSupply{Mounts: testMounts}))
+	require.NoError(t, provisioning.specify(ctx, record, command.CreationSupply{Mounts: testMounts}, personalNames(variables)))
 	record, _, err = provisioning.get(ctx, run.ID)
 	require.NoError(t, err)
 	var spec struct{ Env map[string]string }
