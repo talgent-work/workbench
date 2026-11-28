@@ -40,26 +40,8 @@ func NewClient(client *http.Client, endpoint, token string) (*Client, error) {
 // Create reserves a process handle. The command starts on Attach, allowing the
 // caller to persist its handle before launching the native process.
 func (c *Client) Create(ctx context.Context, cwd, command string) (string, error) {
-	if strings.TrimSpace(cwd) == "" || strings.TrimSpace(command) == "" {
-		return "", errors.New("execd: working directory and command required")
-	}
-	body, err := c.request(ctx, http.MethodPost, c.endpoint("pty"), struct {
-		Cwd     string `json:"cwd"`
-		Command string `json:"command"`
-	}{cwd, command})
-	if err != nil {
-		return "", err
-	}
-	var result struct {
-		SessionID string `json:"session_id"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return "", oops.With("operation", "create").Wrap(err)
-	}
-	if !validID(result.SessionID) {
-		return "", errors.New("execd: invalid process handle")
-	}
-	return result.SessionID, nil
+	answer, err := c.create(ctx, cwd, command, nil)
+	return answer.SessionID, err
 }
 
 // Attach opens an exclusive pipe connection. It never takes over another owner.

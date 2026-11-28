@@ -58,7 +58,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			begun, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 			require.True(t, found)
-			require.NoError(t, provisioning.specify(ctx, begun, command.CreationSupply{Mounts: grantsFor(work.LocatedLayout)}))
+			require.NoError(t, provisioning.specify(ctx, begun, command.CreationSupply{Mounts: grantsFor(work.LocatedLayout)}, nil))
 			original, _, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 

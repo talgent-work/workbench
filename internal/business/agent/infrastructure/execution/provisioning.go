@@ -45,9 +45,10 @@ func NewProvisioning(db *jimuxorm.DB, sandboxes *Sandboxes, credentials *Sandbox
 // specify fixes the execution's environment specification, launch commands
 // and the credential plan its submission freezes, from its LaunchSpecification
 // and what Application supplied: the Mount Grants and repository access of a
-// Cloud start. A specified execution keeps the image, environment and access
-// tokens it was given.
-func (p *Provisioning) specify(ctx context.Context, record executionRecord, supply command.CreationSupply) error {
+// Cloud start. personal names the run's Personal Variables, whose names the
+// launch leaves to them; their values never enter what it fixes. A specified
+// execution keeps the image, environment and access tokens it was given.
+func (p *Provisioning) specify(ctx context.Context, record executionRecord, supply command.CreationSupply, personal []string) error {
 	if record.specified() {
 		return nil
 	}
@@ -60,7 +61,7 @@ func (p *Provisioning) specify(ctx context.Context, record executionRecord, supp
 		return oops.With("operation", "decode_execution_launch").Wrap(err)
 	}
 	owner := SandboxOwner{WorkID: record.SessionID, ID: record.ID}
-	native, err := p.native.prepare(authority.launchLayout(), launch, owner, launch.ThinkingLevel)
+	native, err := p.native.prepareRun(authority.launchLayout(), launch, owner, launch.ThinkingLevel, personal)
 	if err != nil {
 		return err
 	}

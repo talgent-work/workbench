@@ -81,3 +81,17 @@ func TestADefiniteLaunchFailureFailsTheStartAtOnce(t *testing.T) {
 	require.Equal(t, "The start could not complete: launching the Harness: execution request failed.", w.work().FailureReason)
 	require.Equal(t, 1, w.environment.Launched)
 }
+
+// A failure that may pass and carries a cause safe to show is retried, its
+// setback naming that cause instead of the step's failure alone.
+func TestARetriedFailureWithANamedCauseRecordsThatCause(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t, startingSession(t))
+	w.begin(t)
+	refused := errors.New("refused by https://internal.example")
+	w.environment.SubmitErr = domain.StartSetback("the Computer must be upgraded", refused)
+
+	require.ErrorIs(t, w.reconciliation().RunLongStep(ctx, w.execution(t).ID), refused, "it is returned for its bounded retry")
+	require.False(t, w.execution(t).Outcome.Rejected)
+	require.Equal(t, "creating the execution environment: the Computer must be upgraded", w.execution(t).StartupSetback, "the cause, not the error")
+}

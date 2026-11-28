@@ -26,6 +26,35 @@ func (e *LaunchSpecificationError) Error() string {
 // Unwrap keeps it an execution request failure.
 func (e *LaunchSpecificationError) Unwrap() error { return ErrExecutionRequest }
 
+// StartSetbackError is a failed attempt at a startup step that may pass,
+// whose Cause, which carries nothing secret, names why: the start's setback
+// names it in place of the step's failure alone. Err is the failure itself,
+// which may carry what the Work's owners must not see.
+type StartSetbackError struct {
+	Cause string
+	Err   error
+}
+
+// StartSetback is a failed attempt, err, that the start's setback names by
+// cause.
+func StartSetback(cause string, err error) error {
+	return &StartSetbackError{Cause: cause, Err: err}
+}
+
+func (e *StartSetbackError) Error() string { return e.Cause + ": " + e.Err.Error() }
+
+func (e *StartSetbackError) Unwrap() error { return e.Err }
+
+// StartSetbackCause reports the cause a failed attempt names for the start's
+// setback, if it names one.
+func StartSetbackCause(err error) (string, bool) {
+	var setback *StartSetbackError
+	if errors.As(err, &setback) {
+		return startCause(setback.Cause), true
+	}
+	return "", false
+}
+
 // startCauseLimit bounds a recorded cause, so a failure reason that carries
 // it stays within what its Work retains.
 const startCauseLimit = 320

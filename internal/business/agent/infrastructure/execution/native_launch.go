@@ -35,6 +35,10 @@ type nativeLaunch struct {
 type launchLayout struct {
 	// prefix begins every process.
 	prefix string
+	// own are the variables the layout's Harness launch exports itself,
+	// right after prefix, unless the run's Personal Variables set them
+	// (exports).
+	own []launchVariable
 	// diagnostic is the shell word of the Harness's diagnostics file name.
 	diagnostic func(name string) string
 	// server declares one of the Work's Connectors to the Harness, or
@@ -91,7 +95,8 @@ var sandboxLayout = launchLayout{
 // the run's ANTHROPIC_BASE_URL. User-level settings stay excluded by
 // --setting-sources as on a Cloud.
 var machineLayout = launchLayout{
-	prefix:        managedRoot,
+	prefix:        managedRootName,
+	own:           []launchVariable{pluginCache},
 	harnessChoice: true,
 	diagnostic:    func(name string) string { return "\"$talgent_root/.talgent/\"" + shellWord(name) },
 	server:        machineServer,
@@ -103,10 +108,30 @@ var machineLayout = launchLayout{
 
 // managedRoot is how every Managed process begins: it names the Work root
 // and keeps the Plugin package cache there.
-const managedRoot = "talgent_root=\"${TALGENT_WORK_ROOT:?}\"; mkdir -p \"$talgent_root/.talgent\" || exit 1; export CLAUDE_CODE_PLUGIN_CACHE_DIR=\"$talgent_root/.talgent/claude-plugins\"; "
+const managedRoot = managedRootName + "export " + pluginCacheVariable + "=" + pluginCacheValue + "; "
 
-// prepare renders the Work's Harness launch and preparation in a layout.
+// managedRootName names the Work root of a Managed process.
+const managedRootName = "talgent_root=\"${TALGENT_WORK_ROOT:?}\"; mkdir -p \"$talgent_root/.talgent\" || exit 1; "
+
+const (
+	pluginCacheVariable = "CLAUDE_CODE_PLUGIN_CACHE_DIR"
+	pluginCacheValue    = "\"$talgent_root/.talgent/claude-plugins\""
+)
+
+// pluginCache keeps a Managed Harness's Plugin package cache in the Work
+// root, where its preparation installed them.
+var pluginCache = launchVariable{name: pluginCacheVariable, value: pluginCacheValue}
+
+// prepare renders the Work's Harness launch and preparation in a layout for
+// a run without Personal Variables.
 func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSpecification, owner SandboxOwner, thinkingLevel string) (nativeLaunch, error) {
+	return c.prepareRun(layout, request, owner, thinkingLevel, nil)
+}
+
+// prepareRun renders the Work's Harness launch and preparation in a layout
+// for a run whose Personal Variables set the names personal: the launch
+// leaves each of those to them instead of exporting its own.
+func (c NativeLaunchConfig) prepareRun(layout launchLayout, request domain.LaunchSpecification, owner SandboxOwner, thinkingLevel string, personal []string) (nativeLaunch, error) {
 	if err := c.Validate(); err != nil {
 		return nativeLaunch{}, err
 	}
@@ -234,7 +259,7 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	if layout.variables != nil {
 		variables = personalVariableLoader(layout.variables(owner))
 	}
-	command := layout.prefix + "exec 2>>" + diagnostic + "; " + repositoryInstructions + variables + "talgent_effort=" + effort + "; unset " + effortVariable + "; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
+	command := layout.prefix + launchExports(layout.exports(), personal) + "exec 2>>" + diagnostic + "; " + variables + "talgent_effort=" + effort + "; unset " + effortVariable + "; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
 	return nativeLaunch{Command: command, SessionID: sessionID, PreparationCommand: preparation}, nil
 }
 
@@ -265,7 +290,7 @@ func repositoryDirectories(request domain.LaunchSpecification) []string {
 // Every instruction file stays in context side by side: the Harness neither
 // orders nor reconciles conflicting ones, so a repository's instructions
 // govern by what they say, below the Work's system prompt.
-const repositoryInstructions = "export " + repositoryInstructionsVariable + "=1; "
+var repositoryInstructions = launchVariable{name: repositoryInstructionsVariable, value: "1"}
 
 const repositoryInstructionsVariable = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD"
 

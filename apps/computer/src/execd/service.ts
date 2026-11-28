@@ -1,11 +1,12 @@
 import { mkdir } from 'node:fs/promises'
 import { InvalidCredentialsError, type CredentialStore } from '../proxy/credentials.ts'
 import { deleteVariable, mergeEnvironment, prependPath } from './environment.ts'
+import { InvalidPersonalVariablesError, layerPersonalVariables, parsePersonalVariables, replacedVariables, type PersonalVariables } from './personal-variables.ts'
 import { openPipe, type PipeInput, type PipeSink } from './pipe.ts'
 import type { ProcessTable } from './processes.ts'
 import { Reconciliation } from './reconciliation.ts'
 import { listDirectory, openApiFile, statEntry, streamFile } from './work-files.ts'
-import { applyTelemetry } from './telemetry.ts'
+import { applyTelemetry, TELEMETRY_VARIABLES } from './telemetry.ts'
 import { mapCwd } from './work-paths.ts'
 import { InvalidEnvironmentError, validId, type WorkEnvironment, type Works } from './works.ts'
 
@@ -129,17 +130,19 @@ export class ExecdService {
     if (path === '/pty') return method === 'POST' ? this.create(work, workId, request.body) : { status: 405 }
     if (path === '/files' || path.startsWith('/files?')) return method === 'GET' ? this.list(work, path) : { status: 405 }
     if (path === '/files/stat' || path.startsWith('/files/stat?')) return method === 'GET' ? this.stat(work, path) : { status: 405 }
-    const match = /^\/pty\/([^/]+)$/.exec(path)
+    const match = /^\/pty\/([^/]+)(\/personal_variables)?$/.exec(path)
     if (match === null) return { status: 404 }
     const id = decodeURIComponent(match[1])
     if (!validId(id)) return notFound(id)
+    if (match[2] !== undefined) return method === 'PUT' ? this.restore(workId, id, request.body) : { status: 405 }
     const { processes } = this.options
     if (method === 'GET') {
       const phase = await processes.phase(workId, id)
       if (phase === undefined) return notFound(id)
+      const awaiting = (await processes.awaitsVariables(workId, id)) ? { awaiting_personal_variables: true } : {}
       return {
         status: 200,
-        body: { session_id: id, running: phase.kind === 'running', output_offset: await processes.outputOffset(workId, id) },
+        body: { session_id: id, running: phase.kind === 'running', output_offset: await processes.outputOffset(workId, id), ...awaiting },
       }
     }
     if (method === 'DELETE') return (await processes.delete(workId, id)) ? { status: 200 } : notFound(id)
@@ -165,9 +168,19 @@ export class ExecdService {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return { status: 400, body: { code: 'INVALID_REQUEST_BODY', message: 'error parsing request' } }
     }
-    const { cwd = '', command = '' } = body as Record<string, unknown>
+    const { cwd = '', command = '', personal_variables: personalVariables } = body as Record<string, unknown>
     if (typeof cwd !== 'string' || typeof command !== 'string') {
       return { status: 400, body: { code: 'INVALID_REQUEST_BODY', message: 'error parsing request' } }
+    }
+    // Only the Harness launch carries them; the answer acknowledges them, so
+    // the platform never takes a machine that ignored them for one that
+    // applies them.
+    let personal: PersonalVariables | undefined
+    try {
+      if (personalVariables !== undefined) personal = parsePersonalVariables(personalVariables)
+    } catch (error) {
+      if (error instanceof InvalidPersonalVariablesError) return { status: 400, body: { code: 'INVALID_REQUEST_BODY', message: error.message } }
+      throw error
     }
     // Nothing new runs before the platform decided what ran while it was away.
     if (this.reconciliation.pending()) {
@@ -180,8 +193,30 @@ export class ExecdService {
       const message = error instanceof Error ? error.message : String(error)
       return { status: 500, body: { code: 'RUNTIME_ERROR', message: `error creating pty session: ${message}` } }
     }
-    const id = await this.options.processes.reserve(workId, { cwd: mappedCwd, command })
-    return { status: 201, body: { session_id: id } }
+    const id = await this.options.processes.reserve(workId, { cwd: mappedCwd, command }, personal)
+    if (personal === undefined) return { status: 201, body: { session_id: id } }
+    // Names only: the Work's variables and Talgent Computer's own that the
+    // Personal Variables take the place of, for the start's report.
+    const { platform = process.platform } = this.options
+    const replaced = replacedVariables(personal, this.compose(workId, work, '').owned, platform)
+    return { status: 201, body: { session_id: id, personal_variables: true, replaced_variables: replaced } }
+  }
+
+  // Gives a Harness process that has never run the Personal Variables it
+  // was created with again, as the platform does for one awaiting them.
+  private async restore(workId: string, id: string, body: unknown): Promise<ExecResponse> {
+    let personal: PersonalVariables
+    try {
+      if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new InvalidPersonalVariablesError('error parsing request')
+      personal = parsePersonalVariables((body as Record<string, unknown>).personal_variables)
+    } catch (error) {
+      if (error instanceof InvalidPersonalVariablesError) return { status: 400, body: { code: 'INVALID_REQUEST_BODY', message: error.message } }
+      throw error
+    }
+    const outcome = await this.options.processes.restoreVariables(workId, id, personal)
+    if (outcome === 'unknown') return notFound(id)
+    if (outcome === 'refused') return { status: 409, body: { code: 'PERSONAL_VARIABLES_REFUSED', message: 'the process was created without Personal Variables or has run' } }
+    return { status: 204 }
   }
 
   async openStream(open: StreamOpen, sink: PipeSink): Promise<{ status: number } | PipeInput> {
@@ -202,7 +237,7 @@ export class ExecdService {
         workId: open.workId,
         id: open.processId,
         since: open.since,
-        env: (proxyToken) => this.runEnv(open.workId, access.work, proxyToken),
+        env: (proxyToken, personal) => this.runEnv(open.workId, access.work, proxyToken, personal),
         // A run starts once the reconciliation decided what may run.
         ready: (signal) => this.reconciliation.settled(signal),
         log: this.options.log,
@@ -219,23 +254,44 @@ export class ExecdService {
   // its path, as a plain HTTP client presents nothing else. A Work on a Model
   // Configuration reaches its model only through the proxy, with the run's
   // token, whether or not its credentials were delivered yet: it never falls
-  // back to the machine's own login.
-  private async runEnv(workId: string, work: WorkEnvironment, proxyToken: string): Promise<NodeJS.ProcessEnv> {
+  // back to the machine's own login. A process created with Personal
+  // Variables, the Harness, has them last, over all of it but the TALGENT_
+  // variables: a person's PATH takes the place of PATH as it is.
+  private async runEnv(workId: string, work: WorkEnvironment, proxyToken: string, personal?: PersonalVariables): Promise<NodeJS.ProcessEnv> {
+    const { env } = this.compose(workId, work, proxyToken)
+    return personal === undefined ? env : layerPersonalVariables(env, personal, this.options.platform ?? process.platform)
+  }
+
+  // The run's environment below its Personal Variables, and the names the
+  // Work's environment and Talgent Computer set or removed in it over the
+  // machine's own, which a Personal Variable of the same name replaces.
+  private compose(workId: string, work: WorkEnvironment, proxyToken: string): { env: NodeJS.ProcessEnv; owned: Set<string> } {
     const { baseEnv, home, claudeBinDir: bin, proxyOrigin, platform = process.platform } = this.options
     const proxyUrl = `${proxyOrigin()}/w/${workId}`
     const model = work.modelProxy ? { ANTHROPIC_BASE_URL: `${proxyUrl}/model`, ANTHROPIC_AUTH_TOKEN: proxyToken } : {}
     const api = work.platformApi ? { TALGENT_API_ADDRESS: `${proxyUrl}/api/${proxyToken}` } : {}
-    const env = mergeEnvironment(platform, baseEnv, work.environment, {
+    const own = {
       HOME: home,
       TALGENT_WORK_ROOT: work.root,
       TALGENT_PROXY_URL: proxyUrl,
       TALGENT_PROXY_TOKEN: proxyToken,
       ...model,
       ...api,
-    })
-    if (bin !== undefined) prependPath(env, bin, platform)
-    if (work.modelProxy) deleteVariable(env, 'ANTHROPIC_API_KEY', platform)
-    if (work.telemetry !== undefined) applyTelemetry(env, workId, work.telemetry, platform)
-    return env
+    }
+    const owned = new Set([...Object.keys(work.environment), ...Object.keys(own)])
+    const env = mergeEnvironment(platform, baseEnv, work.environment, own)
+    if (bin !== undefined) {
+      prependPath(env, bin, platform)
+      owned.add('PATH')
+    }
+    if (work.modelProxy) {
+      deleteVariable(env, 'ANTHROPIC_API_KEY', platform)
+      owned.add('ANTHROPIC_API_KEY')
+    }
+    if (work.telemetry !== undefined) {
+      applyTelemetry(env, workId, work.telemetry, platform)
+      for (const name of TELEMETRY_VARIABLES) owned.add(name)
+    }
+    return { env, owned }
   }
 }

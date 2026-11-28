@@ -46,7 +46,7 @@ func registerAs(ctx context.Context, p *Provisioning, launch domain.LaunchSpecif
 	if err != nil {
 		return record, err
 	}
-	if err := p.specify(ctx, record, command.CreationSupply{Mounts: mounts}); err != nil {
+	if err := p.specify(ctx, record, command.CreationSupply{Mounts: mounts}, nil); err != nil {
 		return record, err
 	}
 	record, _, err = p.get(ctx, run.ID)
