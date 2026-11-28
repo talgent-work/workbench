@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Alert, Button, Spinner } from "@heroui/react";
 import { Check, ChevronDown, CircleAlert, Cloud, Monitor, RotateCcw, Square, X } from "lucide-react";
 import type { StartupProgress } from "@talgent/contracts/agent/public/v1/startup_pb";
@@ -87,6 +87,9 @@ function StartupProgressView({ computer, progress, workTitle, request, model, on
           <div><dt>Agent</dt><dd>{request.startupAgent || "Default Agent"}</dd></div>
           {request.repositories.length > 0 && <div><dt>Repository</dt><dd>{request.repositories.map(repository => repository.name || repository.repositoryId).join(", ")}</dd></div>}
           <div><dt>Plugins</dt><dd>{request.plugins.length ? request.plugins.join(", ") : "None"}</dd></div>
+          {/* Names only, shown to the person whose variables they are: a failure
+              these explain is theirs to fix in Profile, not the platform's. */}
+          {request.replacedVariables.length > 0 && <div><dt>Your variables</dt><dd>Replaced the platform’s{request.replacedVariables.map((name, index, names) => <Fragment key={name}> <span className="wlp-name">{breakable(name)}{index < names.length - 1 && ","}</span></Fragment>)}</dd></div>}
         </dl></div>
       </details>}
       {retryError && <Alert className="wlp-error" status="danger" role="alert"><Alert.Indicator /><Alert.Content><Alert.Description>{retryError}</Alert.Description></Alert.Content></Alert>}
@@ -94,6 +97,9 @@ function StartupProgressView({ computer, progress, workTitle, request, model, on
     </div>
   </section>;
 }
+
+// A variable name too wide for its line breaks after an underscore, not mid-word.
+const breakable = (name: string) => name.split(/(?<=_)/).map((part, index) => <Fragment key={index}>{index > 0 && <wbr />}{part}</Fragment>);
 
 // A Managed Computer is the person's own machine, already online when a start
 // reaches it; its sandbox stage readies the Work there.
