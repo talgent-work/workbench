@@ -19,11 +19,7 @@ func keepVariables(t *testing.T, m *lifecycleModule, person string, change func(
 	t.Helper()
 	sets := personalVariableSets(t, m)
 	set, err := sets.Get(m.ctx, person)
-	if err != nil {
-		require.ErrorIs(t, err, domain.ErrPersonalVariableSetNotFound)
-		set, err = domain.NewPersonalVariableSet(person)
-		require.NoError(t, err)
-	}
+	require.NoError(t, err)
 	change(set)
 	require.NoError(t, sets.Save(m.ctx, set))
 }

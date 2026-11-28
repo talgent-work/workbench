@@ -121,9 +121,6 @@ func (c *ExecutionCoordination) personalVariables(ctx context.Context, work *dom
 		return nil, nil
 	}
 	set, err := c.variables.Get(ctx, work.RepresentedPerson)
-	if errors.Is(err, domain.ErrPersonalVariableSetNotFound) {
-		return nil, nil
-	}
 	if err != nil {
 		return nil, err
 	}

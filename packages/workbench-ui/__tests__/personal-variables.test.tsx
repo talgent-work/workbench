@@ -79,7 +79,8 @@ it("adds a variable through an inline row and lists it", async () => {
 
 it.each([
   ["1ST_KEY", "Use letters, digits and underscores, not starting with a digit."],
-  ["TALGENT_WORK_ROOT", "Names starting with TALGENT_ are reserved for the platform."],
+  ["TALGENT_WORK_ROOT", "Names starting with TALGENT_, in any letter case, are reserved for the platform."],
+  ["talgent_work_root", "Names starting with TALGENT_, in any letter case, are reserved for the platform."],
   ["OPENAI_API_KEY", "OPENAI_API_KEY already exists."],
 ])("refuses the name %s before sending it", async (name, reason) => {
   const user = userEvent.setup();
@@ -98,7 +99,8 @@ it.each([
 it("shows the reason the core refused a variable and keeps the draft", async () => {
   const user = userEvent.setup();
   keepVariables({});
-  services.personalVariable.setPersonalVariable = () => { throw new ConnectError("You can keep at most 100 variables.", Code.InvalidArgument); };
+  // The core's refusal names the broken rule as its whole message.
+  services.personalVariable.setPersonalVariable = () => { throw new ConnectError("You can keep at most 100 Personal Variables.", Code.InvalidArgument); };
   renderSection();
 
   await user.click(await screen.findByRole("button", { name: "Add variable" }));
@@ -107,7 +109,7 @@ it("shows the reason the core refused a variable and keeps the draft", async () 
   await user.type(within(form).getByRole("textbox", { name: "Value" }), "value");
   await user.click(within(form).getByRole("button", { name: "Save" }));
 
-  expect(await within(form).findByText("You can keep at most 100 variables.")).toBeInTheDocument();
+  expect(await within(form).findByText("You can keep at most 100 Personal Variables.")).toBeInTheDocument();
   expect(within(form).getByRole("textbox", { name: "Name" })).toHaveValue("EXTRA");
   expect(within(form).getByRole("textbox", { name: "Value" })).toHaveValue("value");
 });
@@ -210,6 +212,30 @@ it("keeps a variable the core did not delete and says so", async () => {
 
   expect(await screen.findByText("OPENAI_API_KEY couldn’t be deleted")).toBeInTheDocument();
   expect(await row("OPENAI_API_KEY")).toBeInTheDocument();
+});
+
+it("reports each failed deletion while another is still in flight", async () => {
+  const user = userEvent.setup();
+  keepVariables({ OPENAI_API_KEY: "sk-secret", DEPLOY_HOSTS: "a" });
+  const failures = new Map<string, () => void>();
+  services.personalVariable.deletePersonalVariable = ({ name }: { name: string }) =>
+    new Promise((_, reject) => { failures.set(name, () => reject(new ConnectError("unavailable", Code.Unavailable))); });
+  renderSection();
+
+  await user.click(await screen.findByRole("button", { name: "Delete OPENAI_API_KEY" }));
+  await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+  await user.click(screen.getByRole("button", { name: "Delete DEPLOY_HOSTS" }));
+  await user.click(within(await screen.findByRole("alertdialog", { name: "Delete DEPLOY_HOSTS?" })).getByRole("button", { name: "Delete" }));
+  await expect.poll(() => failures.size).toBe(2);
+
+  failures.get("OPENAI_API_KEY")!();
+  expect(await screen.findByText("OPENAI_API_KEY couldn’t be deleted")).toBeInTheDocument();
+  await expect.poll(() => screen.getByRole("button", { name: "Delete OPENAI_API_KEY" }).hasAttribute("data-pending")).toBe(false);
+  expect(screen.getByRole("button", { name: "Delete DEPLOY_HOSTS" })).toHaveAttribute("data-pending");
+
+  failures.get("DEPLOY_HOSTS")!();
+  expect(await screen.findByText("DEPLOY_HOSTS couldn’t be deleted")).toBeInTheDocument();
+  expect(screen.getByText("OPENAI_API_KEY couldn’t be deleted")).toBeInTheDocument();
 });
 
 it("offers to load the variables again when loading failed", async () => {

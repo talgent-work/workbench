@@ -22,12 +22,12 @@ const (
 
 var (
 	// ErrTooManyPersonalVariables refuses a variable beyond the count limit.
-	ErrTooManyPersonalVariables = fmt.Errorf("%w: a person keeps at most %d Personal Variables", domain.ErrInvalidPersonalVariable, MaxPersonalVariables)
+	ErrTooManyPersonalVariables error = &domain.PersonalVariableRefusal{Reason: fmt.Sprintf("You can keep at most %d Personal Variables.", MaxPersonalVariables)}
 	// ErrPersonalVariableTooLarge refuses a value beyond the size limit.
-	ErrPersonalVariableTooLarge = fmt.Errorf("%w: a value is at most %d KiB", domain.ErrInvalidPersonalVariable, MaxPersonalVariableValueBytes>>10)
+	ErrPersonalVariableTooLarge error = &domain.PersonalVariableRefusal{Reason: fmt.Sprintf("A value is at most %d KiB.", MaxPersonalVariableValueBytes>>10)}
 	// ErrPersonalVariablesTooLarge refuses a variable that takes a person's
 	// names and values together beyond their limit.
-	ErrPersonalVariablesTooLarge = fmt.Errorf("%w: a person's names and values together are at most %d KiB", domain.ErrInvalidPersonalVariable, MaxPersonalVariableBytes>>10)
+	ErrPersonalVariablesTooLarge error = &domain.PersonalVariableRefusal{Reason: fmt.Sprintf("All your Personal Variables, names and values together, are at most %d KiB.", MaxPersonalVariableBytes>>10)}
 )
 
 // personalVariableAttempts bounds retries of a set changed concurrently.
@@ -85,7 +85,7 @@ func (h *PersonalVariablesHandler) change(ctx context.Context, requester string,
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		set, err := loadPersonalVariables(ctx, h.sets, requester)
+		set, err := h.sets.Get(ctx, requester)
 		if err != nil {
 			return err
 		}
@@ -99,16 +99,6 @@ func (h *PersonalVariablesHandler) change(ctx context.Context, requester string,
 		return err
 	}
 	return domain.ErrConcurrentModification
-}
-
-// loadPersonalVariables loads the person's set, empty for a person who keeps
-// none yet.
-func loadPersonalVariables(ctx context.Context, sets domain.PersonalVariableSetRepository, person string) (*domain.PersonalVariableSet, error) {
-	set, err := sets.Get(ctx, person)
-	if errors.Is(err, domain.ErrPersonalVariableSetNotFound) {
-		return domain.NewPersonalVariableSet(person)
-	}
-	return set, err
 }
 
 func withinLimits(set *domain.PersonalVariableSet) error {

@@ -22,7 +22,7 @@ func (p *PersonalVariables) Get(_ context.Context, personID string) (*domain.Per
 	defer p.mu.Unlock()
 	set, found := p.sets[personID]
 	if !found {
-		return nil, domain.ErrPersonalVariableSetNotFound
+		return domain.NewPersonalVariableSet(personID)
 	}
 	set.Variables = slices.Clone(set.Variables)
 	return &set, nil

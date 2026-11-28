@@ -1,6 +1,10 @@
 // Package sealing keeps Personal Variable values encrypted at rest under the
 // Agent's own key, so the database alone never yields one: in each person's
 // PersonalVariableSet and in each AgentExecution that took them at its start.
+//
+// Agent keeps this sealer instead of sharing another context's: each context
+// owns its keys and its ciphertext formats, so one context's key rotation or
+// format change never reaches another's stored values.
 package sealing
 
 import (

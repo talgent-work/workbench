@@ -218,7 +218,7 @@ func (h *CreateWorkHandler) variableInput(ctx context.Context, person string, ch
 	if person == "" {
 		return input, nil
 	}
-	set, err := loadPersonalVariables(ctx, h.variables, person)
+	set, err := h.variables.Get(ctx, person)
 	if err != nil {
 		return input, err
 	}
