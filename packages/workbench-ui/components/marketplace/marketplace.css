@@ -19,7 +19,7 @@
 .mk-main { display: grid; gap: 28px; min-width: 0; width: 100%; max-width: 1080px; margin-inline: auto; }
 .mk-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .mk-search { width: min(420px, 100%); }
-.mk-section { display: grid; gap: 8px; }
+.mk-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .mk-section-head { display: inline-flex; align-items: center; gap: 4px; justify-self: start; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; border-radius: 6px; }
 a.mk-section-head:hover svg { transform: translateX(2px); }
 .mk-section-head svg { color: var(--muted); transition: transform 150ms; }

@@ -27,7 +27,7 @@ export function ProfilePage() {
   if (connecting) return <PageLayout workspaceTitle="Profile"><p className="sr-only" role="status">Connecting your account…</p></PageLayout>;
   return (
     <PageLayout workspaceTitle="Profile">
-      <div className="mx-auto grid w-[min(640px,100%)] gap-8 py-6">
+      <div className="mx-auto grid w-[min(640px,100%)] grid-cols-[minmax(0,1fr)] gap-8 py-6">
         <header className="mk-detail-head !items-center">
           <Avatar aria-label={`${displayName} avatar`} className="size-16 shrink-0 rounded-full">
             {avatarUrl && <Avatar.Image src={avatarUrl} alt="" />}
@@ -41,7 +41,7 @@ export function ProfilePage() {
                 <Tooltip.Content>From your GitHub profile; updated each time you sign in.</Tooltip.Content>
               </Tooltip>
             </div>
-            <p className="flex flex-wrap gap-x-3 text-[14px] text-muted">{username && <span>@{username}</span>}{email && <span>{email}</span>}</p>
+            <p className="flex flex-wrap gap-x-3 text-[14px] text-muted [overflow-wrap:anywhere]">{username && <span>@{username}</span>}{email && <span>{email}</span>}</p>
           </div>
           <div className="mk-detail-actions">
             <Tooltip delay={300}>
