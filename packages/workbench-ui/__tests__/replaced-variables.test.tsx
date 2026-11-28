@@ -84,7 +84,7 @@ it("names the replaced platform variables beside a running Work's model, with th
   renderWork();
 
   const settings = await openModelSettings();
-  expect(settings).toHaveTextContent("Your variables replace the platform’s ANTHROPIC_BASE_URL, ANTHROPIC_MODEL.");
+  expect(settings).toHaveTextContent("Your variables replace the platform’s ANTHROPIC_BASE_URL, ANTHROPIC_MODEL");
   expect(within(settings).getByText("ANTHROPIC_MODEL").closest("code")).not.toBeNull();
   expect(within(settings).getByRole("link", { name: "Manage variables in Profile" })).toHaveAttribute("href", "/profile");
 });
