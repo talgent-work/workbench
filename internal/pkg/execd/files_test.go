@@ -52,3 +52,23 @@ func TestFailedUploadDoesNotReportTheContentOrTheResponse(t *testing.T) {
 	require.NotContains(t, err.Error(), "private-value")
 	require.Error(t, client.Upload(context.Background(), "relative", 0o600, nil))
 }
+
+func TestRemoveDeletesTheFileThroughTheFileAPI(t *testing.T) {
+	var removed []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodDelete, r.Method)
+		require.Equal(t, "/files", r.URL.Path)
+		require.Equal(t, "test-only", r.Header.Get("X-EXECD-ACCESS-TOKEN"))
+		removed = append(removed, r.URL.Query()["path"]...)
+		if len(removed) > 1 {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client, err := execd.NewClient(server.Client(), server.URL, "test-only")
+	require.NoError(t, err)
+	require.NoError(t, client.Remove(context.Background(), "/tmp/run file"))
+	require.NoError(t, client.Remove(context.Background(), "/tmp/run file"), "a file already gone is removed")
+	require.Equal(t, []string{"/tmp/run file", "/tmp/run file"}, removed)
+	require.Error(t, client.Remove(context.Background(), "relative"))
+}

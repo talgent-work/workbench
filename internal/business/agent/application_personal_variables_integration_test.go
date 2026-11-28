@@ -109,10 +109,10 @@ func TestAPersonKeepsTheirOwnPersonalVariables(t *testing.T) {
 	require.Equal(t, []string{"PEM"}, person.variableNames(t))
 }
 
-// Setting refuses, naming the broken rule and never the value, a name that
-// is not an environment variable name, a reserved name, a value with NUL, a
-// value over 32 KiB, names and values together over 256 KiB, and a 101st
-// variable; a refusal changes nothing.
+// Setting refuses, naming the broken rule as a person reads it and never the
+// value, a name that is not an environment variable name, a reserved name, a
+// value with NUL, a value over 32 KiB, names and values together over 256 KiB,
+// and a 101st variable; a refusal changes nothing.
 func TestSettingRefusesWhatBreaksAPersonalVariableRule(t *testing.T) {
 	m := newLifecycleModule(t).start()
 	subject := uuid.NewString()
@@ -122,6 +122,7 @@ func TestSettingRefusesWhatBreaksAPersonalVariableRule(t *testing.T) {
 		err := person.setVariable(name, value)
 		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), name)
 		require.Contains(t, refusal(t, err), rule)
+		require.NotContains(t, refusal(t, err), "agent:", "the person reads the rule, not an internal error")
 		if len(value) > 0 {
 			require.NotContains(t, err.Error(), value, "a refusal never quotes the value")
 		}
@@ -129,7 +130,7 @@ func TestSettingRefusesWhatBreaksAPersonalVariableRule(t *testing.T) {
 	refused("1TOKEN", "refused-value", "letter or underscore")
 	refused("API-TOKEN", "refused-value", "letter or underscore")
 	refused("TALGENT_WORK_ID", "refused-value", "reserved")
-	refused("talgent_root", "refused-value", "reserved")
+	refused("talgent_root", "refused-value", "in any letter case")
 	refused("TOKEN", "secret\x00value", "NUL")
 	refused("LARGE", strings.Repeat("x", 32<<10+1), "32 KiB")
 

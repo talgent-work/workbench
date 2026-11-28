@@ -78,14 +78,17 @@ func (h *PersonalVariableHandler) DeletePersonalVariable(ctx context.Context, re
 	return &agentpublicv1.DeletePersonalVariableResponse{}, nil
 }
 
-// mapPersonalVariableError names the broken rule of a refusal, whose message
-// never carries a value; any other failure answers a fixed message and keeps
-// its cause for the request log alone.
+// mapPersonalVariableError answers a refusal with the reason its person can
+// act on: the broken rule, never a value. Any other failure answers a fixed
+// message and keeps its cause for the request log alone.
 func mapPersonalVariableError(err error) error {
+	var refusal *domain.PersonalVariableRefusal
 	var code connect.Code
 	switch {
+	case errors.As(err, &refusal):
+		return connect.NewError(connect.CodeInvalidArgument, refusal.Reason).WithCause(err)
 	case errors.Is(err, domain.ErrInvalidPersonalVariable):
-		code = connect.CodeInvalidArgument
+		return connect.NewError(connect.CodeInvalidArgument, "This Personal Variable cannot be saved.").WithCause(err)
 	case errors.Is(err, domain.ErrPersonalVariableNotFound):
 		code = connect.CodeNotFound
 	case errors.Is(err, domain.ErrPersonalVariableForbidden):

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -230,13 +231,18 @@ func (n *NativeConnections) launch(ctx context.Context, record executionRecord, 
 			return domain.ErrExecutionRequest
 		}
 		var handover variableHandover
-		if delivery, delivers := authority.(variableDelivery); delivers && len(variables) > 0 {
+		delivery, delivers := authority.(variableDelivery)
+		delivers = delivers && len(variables) > 0
+		if delivers {
 			if handover, err = delivery.deliverVariables(ctx, current, box.client, variables); err != nil {
 				return err
 			}
 		}
 		launched.ReplacedVariables = handover.replaced
 		launched.ProcessID, err = createHarness(ctx, box.client, current.LaunchCommand, handover.carried)
+		if err != nil && delivers {
+			withdrawUnlaunchedVariables(ctx, delivery, current, box.client)
+		}
 		return err
 	})
 	return launched, err
@@ -256,6 +262,24 @@ func createHarness(ctx context.Context, client *execd.Client, command string, ca
 	}
 	return id, err
 }
+
+// withdrawUnlaunchedVariables removes the Personal Variables a failed launch
+// delivered, so they do not wait in the sandbox for a retry that may never
+// come. It is best effort, bounded apart from the launch's own context: the
+// launch's failure decides what follows, a retry delivers them anew in their
+// place and the sandbox's deletion ends any file left behind.
+func withdrawUnlaunchedVariables(ctx context.Context, delivery variableDelivery, record executionRecord, client *execd.Client) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), variableWithdrawalTimeout)
+	defer cancel()
+	if err := delivery.withdrawVariables(ctx, record, client); err != nil {
+		slog.Default().WarnContext(ctx, "personal variables of a failed launch not withdrawn",
+			slog.String("work_id", record.SessionID), slog.String("execution_id", record.ID), slog.Any("error", err))
+	}
+}
+
+// variableWithdrawalTimeout bounds withdrawing a failed launch's Personal
+// Variables.
+const variableWithdrawalTimeout = 10 * time.Second
 
 // connect hands the launched process to Dispatcher. It resolves the
 // environment only: no preparation, delivery or cleanup.

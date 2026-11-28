@@ -30,10 +30,9 @@ func TestPersonalVariableSetsKeepTheirValuesSealedPerPerson(t *testing.T) {
 	require.NoError(t, err)
 	sets := infrastructure.NewPersonalVariableSetRepository(jdb, sealingtest.Sealer(), time.Now)
 
-	_, err = sets.Get(ctx, "person-a")
-	require.ErrorIs(t, err, domain.ErrPersonalVariableSetNotFound)
-	first, err := domain.NewPersonalVariableSet("person-a")
+	first, err := sets.Get(ctx, "person-a")
 	require.NoError(t, err)
+	require.Equal(t, &domain.PersonalVariableSet{PersonID: "person-a"}, first, "a person who keeps none reads the empty set")
 	_, err = first.SetVariable("person-a", domain.PersonalVariable{Name: "TOKEN", Value: "one\ntwo"})
 	require.NoError(t, err)
 	racing, err := domain.NewPersonalVariableSet("person-a")
@@ -65,4 +64,14 @@ func TestPersonalVariableSetsKeepTheirValuesSealedPerPerson(t *testing.T) {
 	require.NoError(t, err)
 	_, err = infrastructure.NewPersonalVariableSetRepository(jdb, other, time.Now).Get(ctx, "person-a")
 	require.Error(t, err, "another key opens nothing")
+
+	// A stored set that breaks its rules is corrupt data, never an invalid
+	// request of whoever reads it.
+	corrupt, err := sealingtest.Sealer().Seal([]domain.PersonalVariable{{Name: "1BAD", Value: "v"}}, sealing.Person("person-a"))
+	require.NoError(t, err)
+	_, err = db.Exec("UPDATE agent_personal_variable_set SET variables = ? WHERE person_id = 'person-a'", corrupt)
+	require.NoError(t, err)
+	_, err = sets.Get(ctx, "person-a")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, domain.ErrInvalidPersonalVariable)
 }

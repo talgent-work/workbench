@@ -9,9 +9,9 @@ GitHub release page.
 
 Apply
 [`20261128-personal-variables.sql`](../deploy/middleware/migrations/20261128-personal-variables.sql)
-to the database named by `AGENT_MYSQL_DATABASE`, then deploy this release; an earlier
-`controlplane` keeps running against the new columns. Its `apply.sh` creates the table
-`agent_personal_variable_set` and, once and never replacing it, the Secret
+to the database named by `AGENT_MYSQL_DATABASE`, then deploy this release; the script creates the
+table `agent_personal_variable_set` and the new columns, and an earlier `controlplane` keeps
+running against them. Its `apply.sh` creates, once and never replacing it, the Secret
 `agent-personal-variable-key`, the Agent key that seals Personal Variables. A deployment that
 manages its own Secrets creates that Secret with key `key`, 32 random bytes base64-encoded, before
 deploying; `controlplane` does not start without it. A person now keeps Personal Variables on

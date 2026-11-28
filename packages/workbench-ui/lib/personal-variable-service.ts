@@ -6,7 +6,7 @@ import { personalVariableClient } from "./client";
 // The signed-in person's Personal Variables: named values every Work their
 // Work Agent does for them receives as environment variables at its next
 // start. Listing gives names only; a value is read one at a time, on request,
-// and never kept in the query cache.
+// and never kept in the query or mutation cache.
 
 const variablesKey = (userId: string | undefined) => ["personal-variables", userId];
 
@@ -36,6 +36,8 @@ export function useSetPersonalVariable() {
   const key = variablesKey(useCurrentUser().data?.user?.id);
   return useMutation({
     mutationFn: async (variable: { name: string; value: string }) => { await personalVariableClient.setPersonalVariable(variable); },
+    // A finished save would otherwise keep its value in the mutation cache.
+    gcTime: 0,
     onSuccess: (_, { name }) => {
       queryClient.setQueryData<string[]>(key, names => withName(names, name));
       void queryClient.invalidateQueries({ queryKey: key });
@@ -64,12 +66,13 @@ const RESERVED_PREFIX = "TALGENT_";
 export function nameProblem(name: string, kept: string[], isNew: boolean) {
   if (!name) return "Enter a name.";
   if (!NAME.test(name)) return "Use letters, digits and underscores, not starting with a digit.";
-  if (name.startsWith(RESERVED_PREFIX)) return `Names starting with ${RESERVED_PREFIX} are reserved for the platform.`;
+  // Environment names ignore case on Windows, so the platform reserves its prefix in any case.
+  if (name.toUpperCase().startsWith(RESERVED_PREFIX)) return `Names starting with ${RESERVED_PREFIX}, in any letter case, are reserved for the platform.`;
   if (isNew && kept.includes(name)) return `${name} already exists.`;
   return "";
 }
 
-/** The core names the rule a refused variable broke; other failures get `fallback`. */
+/** A refusal's message is the rule the variable broke, worded for the person; other failures get `fallback`. */
 export function personalVariableErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ConnectError && error.code === Code.InvalidArgument && error.rawMessage) return error.rawMessage;
   return fallback;

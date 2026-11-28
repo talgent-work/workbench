@@ -240,7 +240,7 @@ func (c NativeLaunchConfig) prepareRun(layout launchLayout, request domain.Launc
 	// The environment override wins over later native apply_flag_settings.
 	// Convert the Model Template default to an initial CLI setting so adjustments
 	// remain governed by the Harness. Quoted arguments preserve literal values.
-	effort := "${CLAUDE_CODE_EFFORT_LEVEL-}"
+	effort := "${" + effortVariable + "-}"
 	if thinkingLevel != "" {
 		effort = shellWord(thinkingLevel)
 	}
@@ -258,7 +258,7 @@ func (c NativeLaunchConfig) prepareRun(layout launchLayout, request domain.Launc
 	if layout.variables != nil {
 		variables = personalVariableLoader(layout.variables(owner))
 	}
-	command := layout.prefix + launchExports(layout.own, personal) + "exec 2>>" + diagnostic + "; " + launchExports([]launchVariable{repositoryInstructions}, personal) + variables + "talgent_effort=" + effort + "; unset CLAUDE_CODE_EFFORT_LEVEL; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
+	command := layout.prefix + launchExports(layout.own, personal) + "exec 2>>" + diagnostic + "; " + launchExports([]launchVariable{repositoryInstructions}, personal) + variables + "talgent_effort=" + effort + "; unset " + effortVariable + "; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
 	return nativeLaunch{Command: command, SessionID: sessionID, PreparationCommand: preparation}, nil
 }
 
@@ -292,6 +292,11 @@ func repositoryDirectories(request domain.LaunchSpecification) []string {
 var repositoryInstructions = launchVariable{name: repositoryInstructionsVariable, value: "1"}
 
 const repositoryInstructionsVariable = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD"
+
+// effortVariable is the environment's default effort. The launch reads it
+// into the Harness's --effort argument, where a Work's thinking level takes
+// its place, and unsets it, so the Harness never sees it as a variable.
+const effortVariable = "CLAUDE_CODE_EFFORT_LEVEL"
 
 // diagnosticName is the file a live execution's Harness writes its
 // diagnostics to, in its layout's place for them.

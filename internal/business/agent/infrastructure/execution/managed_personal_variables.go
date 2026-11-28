@@ -53,6 +53,13 @@ func (ManagedEnvironment) deliverVariables(_ context.Context, record executionRe
 	return variableHandover{replaced: replacedVariables(variables, spec.platformVariables()), carried: carried}, nil
 }
 
+// withdrawVariables has nothing to remove: the values travelled in the
+// failed process creation itself, and Talgent Computer holds a reserved
+// process's values in memory only, ending with its deletion.
+func (ManagedEnvironment) withdrawVariables(context.Context, executionRecord, *execd.Client) error {
+	return nil
+}
+
 // platformVariables are the variables the platform sets in a Managed
 // Harness's environment: the specification's environment, those Talgent
 // Computer sets as the specification asks (the machine's HOME, the model

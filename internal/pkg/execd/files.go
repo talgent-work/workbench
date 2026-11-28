@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -76,4 +77,20 @@ func (c *Client) Upload(ctx context.Context, path string, mode os.FileMode, cont
 		return &responseError{method: fmt.Sprintf("%s /files/upload", http.MethodPost), status: resp.StatusCode}
 	}
 	return nil
+}
+
+// Remove deletes the file at an absolute path in the environment through
+// execd's file API; a file already gone is removed.
+func (c *Client) Remove(ctx context.Context, path string) error {
+	if !strings.HasPrefix(path, "/") || strings.ContainsRune(path, 0) {
+		return errors.New("execd: absolute file path required")
+	}
+	endpoint := c.endpoint("files")
+	endpoint.RawQuery = url.Values{"path": {path}}.Encode()
+	_, err := c.request(ctx, http.MethodDelete, endpoint, nil)
+	var response *responseError
+	if errors.As(err, &response) && response.status == http.StatusNotFound {
+		return nil
+	}
+	return err
 }

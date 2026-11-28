@@ -38,7 +38,9 @@ function VariableRows({ names }: { names: string[] }) {
   const remove = useDeletePersonalVariable();
   const [revealed, setRevealed] = useState<Revealed | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [deleting, setDeleting] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  // Names whose deletion is in flight; each deletion reports its own outcome.
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
   const container = useRef<HTMLDivElement>(null);
   const focusTarget = useRef("");
 
@@ -71,17 +73,23 @@ function VariableRows({ names }: { names: string[] }) {
     setEditor(null);
   };
   const confirmDelete = () => {
-    const name = deleting;
+    const name = confirmingDelete;
+    if (name === null) return;
     if (revealed?.name === name) setRevealed(null);
-    remove.mutate(name, {
-      onSuccess: () => dismiss(`personal-variable-delete:${name}`),
-      onError: error => notify(`personal-variable-delete:${name}`, "danger", `${name} couldn’t be deleted`, personalVariableErrorMessage(error, "Try again.")),
-    });
+    setRemoving(current => new Set(current).add(name));
+    remove.mutateAsync(name).then(
+      () => dismiss(`personal-variable-delete:${name}`),
+      error => notify(`personal-variable-delete:${name}`, "danger", `${name} couldn’t be deleted`, personalVariableErrorMessage(error, "Try again.")),
+    ).finally(() => setRemoving(current => {
+      const next = new Set(current);
+      next.delete(name);
+      return next;
+    }));
   };
 
   return (
     <>
-      <ConfirmDialog isOpen={deleting !== ""} onOpenChange={open => { if (!open) setDeleting(""); }} title={`Delete ${deleting}?`} confirmLabel="Delete" onConfirm={confirmDelete}>
+      <ConfirmDialog isOpen={confirmingDelete !== null} onOpenChange={open => { if (!open) setConfirmingDelete(null); }} title={`Delete ${confirmingDelete ?? ""}?`} confirmLabel="Delete" onConfirm={confirmDelete}>
         <p>Works lose it the next time they start or resume.</p>
       </ConfirmDialog>
       <Card className="mk-group">
@@ -93,8 +101,8 @@ function VariableRows({ names }: { names: string[] }) {
                 ? <li key={name}><PersonalVariableEditor initial={editor} kept={names} onDone={close} /></li>
                 : <VariableRow key={name} name={name} revealed={revealed?.name === name ? revealed.value : undefined}
                     reading={reader.pending?.name === name ? reader.pending.purpose : undefined} editLocked={editor !== null}
-                    deleting={remove.isPending && remove.variables === name}
-                    onToggle={() => toggle(name)} onEdit={() => edit(name)} onDelete={() => setDeleting(name)} />)}
+                    deleting={removing.has(name)}
+                    onToggle={() => toggle(name)} onEdit={() => edit(name)} onDelete={() => setConfirmingDelete(name)} />)}
             </ul>
           )}
           {editor?.isNew && <PersonalVariableEditor initial={editor} kept={names} onDone={close} />}
