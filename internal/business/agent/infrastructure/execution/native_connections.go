@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
 
 // NativeConnections realizes the steps an execution takes inside its bound
@@ -228,16 +230,39 @@ func (n *NativeConnections) launch(ctx context.Context, record executionRecord, 
 		if current.LaunchCommand == "" || current.NativeSessionID == "" {
 			return domain.ErrExecutionRequest
 		}
-		if delivery, delivers := authority.(variableDelivery); delivers && len(variables) > 0 {
+		delivery, delivers := authority.(variableDelivery)
+		delivers = delivers && len(variables) > 0
+		if delivers {
 			if launched.ReplacedVariables, err = delivery.deliverVariables(ctx, current, box.client, variables); err != nil {
 				return err
 			}
 		}
 		launched.ProcessID, err = box.client.Create(ctx, "/workspace", current.LaunchCommand)
+		if err != nil && delivers {
+			withdrawUnlaunchedVariables(ctx, delivery, current, box.client)
+		}
 		return err
 	})
 	return launched, err
 }
+
+// withdrawUnlaunchedVariables removes the Personal Variables a failed launch
+// delivered, so they do not wait in the sandbox for a retry that may never
+// come. It is best effort, bounded apart from the launch's own context: the
+// launch's failure decides what follows, a retry delivers them anew in their
+// place and the sandbox's deletion ends any file left behind.
+func withdrawUnlaunchedVariables(ctx context.Context, delivery variableDelivery, record executionRecord, client *execd.Client) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), variableWithdrawalTimeout)
+	defer cancel()
+	if err := delivery.withdrawVariables(ctx, record, client); err != nil {
+		slog.Default().WarnContext(ctx, "personal variables of a failed launch not withdrawn",
+			slog.String("work_id", record.SessionID), slog.String("execution_id", record.ID), slog.Any("error", err))
+	}
+}
+
+// variableWithdrawalTimeout bounds withdrawing a failed launch's Personal
+// Variables.
+const variableWithdrawalTimeout = 10 * time.Second
 
 // connect hands the launched process to Dispatcher. It resolves the
 // environment only: no preparation, delivery or cleanup.

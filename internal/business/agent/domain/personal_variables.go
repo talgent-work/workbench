@@ -2,16 +2,15 @@ package domain
 
 import (
 	"errors"
-	"fmt"
 	"regexp"
 	"slices"
 	"strings"
 )
 
 // ReservedVariablePrefix starts the names of the platform's own variables,
-// which no Personal Variable takes. It is matched regardless of case: a
-// Managed Computer may run Windows, whose environment names ignore case, and
-// the Harness launch keeps its own shell variables under the lowercase form.
+// which no Personal Variable takes (Reserved names). Environment names are
+// case-insensitive on Windows, which a Managed Computer may run, so the prefix
+// is reserved in any letter case.
 const ReservedVariablePrefix = "TALGENT_"
 
 var (
@@ -21,22 +20,32 @@ var (
 	// ErrPersonalVariableNotFound answers a read of a name the person does
 	// not keep.
 	ErrPersonalVariableNotFound = errors.New("agent: no Personal Variable of that name")
-	// ErrPersonalVariableSetNotFound answers a person who keeps no Personal
-	// Variables yet.
-	ErrPersonalVariableSetNotFound = errors.New("agent: the person keeps no Personal Variables")
 	// ErrInvalidPersonalVariable refuses a Personal Variable that breaks one
-	// of its rules; each rule's error wraps it and names the rule, never the
+	// of its rules; each rule's refusal wraps it and names the rule, never the
 	// value.
 	ErrInvalidPersonalVariable = errors.New("agent: invalid Personal Variable")
 	// ErrInvalidPersonalVariableName refuses a name that is not a POSIX
 	// environment variable name.
-	ErrInvalidPersonalVariableName = fmt.Errorf("%w: a name is a letter or underscore followed by letters, digits or underscores", ErrInvalidPersonalVariable)
+	ErrInvalidPersonalVariableName error = &PersonalVariableRefusal{Reason: "A name starts with a letter or underscore and holds only letters, digits and underscores."}
 	// ErrReservedPersonalVariableName refuses a name the platform reserves.
-	ErrReservedPersonalVariableName = fmt.Errorf("%w: names starting with %s are reserved for the platform", ErrInvalidPersonalVariable, ReservedVariablePrefix)
+	ErrReservedPersonalVariableName error = &PersonalVariableRefusal{Reason: "Names starting with " + ReservedVariablePrefix + ", in any letter case, are reserved for the platform."}
 	// ErrInvalidPersonalVariableValue refuses a value an environment cannot
 	// carry.
-	ErrInvalidPersonalVariableValue = fmt.Errorf("%w: a value contains no NUL character", ErrInvalidPersonalVariable)
+	ErrInvalidPersonalVariableValue error = &PersonalVariableRefusal{Reason: "A value cannot contain a NUL character."}
 )
+
+// PersonalVariableRefusal refuses a Personal Variable that breaks one of its
+// rules. Reason states the rule for the person who set it and never carries a
+// value.
+type PersonalVariableRefusal struct {
+	Reason string
+}
+
+func (r *PersonalVariableRefusal) Error() string {
+	return ErrInvalidPersonalVariable.Error() + ": " + r.Reason
+}
+
+func (r *PersonalVariableRefusal) Unwrap() error { return ErrInvalidPersonalVariable }
 
 var variableName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -64,7 +73,7 @@ func (v PersonalVariable) Validate() error {
 }
 
 // ReservedVariableName reports whether name starts with the platform's
-// reserved prefix, in any case.
+// reserved prefix, in any letter case.
 func ReservedVariableName(name string) bool {
 	return len(name) >= len(ReservedVariablePrefix) && strings.EqualFold(name[:len(ReservedVariablePrefix)], ReservedVariablePrefix)
 }
@@ -79,7 +88,7 @@ type PersonalVariableSet struct {
 }
 
 // NewPersonalVariableSet starts the empty set of a person who keeps no
-// Personal Variables yet.
+// Personal Variables yet, the set such a person's Repository read answers.
 func NewPersonalVariableSet(personID string) (*PersonalVariableSet, error) {
 	set := &PersonalVariableSet{PersonID: strings.TrimSpace(personID)}
 	return set, set.Validate()

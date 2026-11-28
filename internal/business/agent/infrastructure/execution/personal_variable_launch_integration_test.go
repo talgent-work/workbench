@@ -29,8 +29,8 @@ import (
 )
 
 // variableExecd is a sandbox's execd as a Cloud run's steps reach it: it runs
-// the preparation, takes file uploads and reserves the Harness process,
-// recording each request in order. Its first Harness reservation fails when
+// the preparation, takes file uploads and removals and reserves the Harness
+// process, recording each request in order. Its first Harness reservation fails when
 // failLaunch is set.
 type variableExecd struct {
 	mu                 sync.Mutex
@@ -39,6 +39,7 @@ type variableExecd struct {
 	failLaunch         bool
 	calls              []string
 	uploads            []variableUpload
+	removed            []string
 	launchAttempts     int
 	preparationStarted bool
 }
@@ -87,6 +88,9 @@ func (e *variableExecd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		upload.Content, _ = io.ReadAll(file)
 		e.uploads = append(e.uploads, upload)
 		e.calls = append(e.calls, "upload")
+	case r.Method == http.MethodDelete && r.URL.Path == "/files":
+		e.removed = append(e.removed, r.URL.Query()["path"]...)
+		e.calls = append(e.calls, "remove")
 	case r.Method == http.MethodPost && r.URL.Path == "/pty":
 		var request struct{ Cwd, Command string }
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Cwd != "/workspace" {
@@ -117,8 +121,9 @@ func (e *variableExecd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // uploaded, readable by the sandbox user alone, right before the Harness
 // starts and after preparation, never in the sandbox's creation request, its
 // stored specification or any command's text; a reserved name never travels.
-// A retried launch hands over the same values, and the run records and
-// answers the platform variables they replaced.
+// A failed launch removes them again, a retried launch hands over the same
+// values, and the run records and answers the platform variables they
+// replaced.
 func TestTheHarnessLaunchAloneCarriesTheRunsPersonalVariables(t *testing.T) {
 	ctx := context.Background()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
@@ -179,10 +184,12 @@ func TestTheHarnessLaunchAloneCarriesTheRunsPersonalVariables(t *testing.T) {
 	require.Equal(t, "process-handle", launched.Process.ID, "the retried launch starts the Harness")
 
 	execd.mu.Lock()
-	calls, uploads := append([]string(nil), execd.calls...), append([]variableUpload(nil), execd.uploads...)
+	calls, uploads, removed := append([]string(nil), execd.calls...), append([]variableUpload(nil), execd.uploads...), append([]string(nil), execd.removed...)
 	execd.mu.Unlock()
-	require.Equal(t, []string{"prepare", "upload", "launch", "upload", "launch"}, calls, "the values arrive after preparation, right before each launch attempt")
+	require.Equal(t, []string{"prepare", "upload", "launch", "remove", "upload", "launch"}, calls,
+		"the values arrive after preparation, right before each launch attempt, and leave with a launch that failed")
 	file := sandboxVariableFile(SandboxOwner{WorkID: input.WorkID, ID: run.ID})
+	require.Equal(t, []string{file}, removed)
 	want := []byte("API_TOKEN=secret-token-value\x00" + repositoryInstructionsVariable + "=0\x00GH_PROMPT_DISABLED=person-choice\x00PEM=" + pem + "\x00")
 	for _, upload := range uploads {
 		require.Equal(t, file, upload.Path, "outside every Work Directory, named from the execution alone")

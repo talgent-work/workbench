@@ -38,18 +38,21 @@ func (r *PersonalVariableSetRepository) Get(ctx context.Context, personID string
 		return nil, oops.With("operation", "personal_variable_set.get").Wrap(err)
 	}
 	if !found {
-		return nil, domain.ErrPersonalVariableSetNotFound
+		return domain.NewPersonalVariableSet(personID)
 	}
 	variables, err := r.sealer.Open(row.Variables, sealing.Person(row.PersonID))
 	if err != nil {
 		return nil, oops.With("operation", "personal_variable_set.open").Wrap(err)
 	}
-	if row.Version < 1 {
-		return nil, oops.With("operation", "personal_variable_set.restore").Wrap(domain.ErrInvalidPersonalVariable)
-	}
+	// A stored set that breaks its rules is corrupt data, not the caller's
+	// mistake: the failure carries the broken rule as text, never the rule's
+	// error identity, so no entry answers it as an invalid request.
 	set := &domain.PersonalVariableSet{PersonID: row.PersonID, Variables: variables, Version: row.Version}
+	if row.Version < 1 {
+		return nil, oops.With("operation", "personal_variable_set.restore").Errorf("a stored Personal Variable set has version %d", row.Version)
+	}
 	if err := set.Validate(); err != nil {
-		return nil, oops.With("operation", "personal_variable_set.restore").Wrap(err)
+		return nil, oops.With("operation", "personal_variable_set.restore").Errorf("a stored Personal Variable set breaks its rules: %s", err.Error())
 	}
 	return set, nil
 }

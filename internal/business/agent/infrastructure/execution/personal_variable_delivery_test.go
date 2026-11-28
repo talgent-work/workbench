@@ -30,7 +30,11 @@ func runCloudLaunch(t *testing.T, thinkingLevel string, content []byte, env ...s
 	root := t.TempDir()
 	output := filepath.Join(root, "harness.json")
 	binary := filepath.Join(root, "claude")
-	require.NoError(t, os.WriteFile(binary, []byte("#!/usr/bin/env python3\nimport os,sys,json\nopen(os.environ['RECORD_FILE'],'w').write(json.dumps({'args':sys.argv[1:],'env':dict(os.environ)}))\n"), 0o700))
+	// The interpreter is named in full, so a person's PATH does not decide
+	// whether the recording Harness starts.
+	python, err := exec.LookPath("python3")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(binary, []byte("#!"+python+"\nimport os,sys,json\nopen(os.environ['RECORD_FILE'],'w').write(json.dumps({'args':sys.argv[1:],'env':dict(os.environ)}))\n"), 0o700))
 	input := request()
 	input.WorkID = uuid.NewString()
 	input.ContextMode = domain.ContextFresh
@@ -66,7 +70,7 @@ func argument(args []string, flag string) string {
 // A person's values reach the Harness as they are, in place of the platform's
 // own and of what the launch command exports, and the launch's derivations
 // follow them; the platform's TALGENT_ variables are never replaced, and the
-// file is gone once loaded.
+// file is gone once loaded, even when the person's PATH finds no rm.
 func TestCloudLaunchLayersPersonalVariablesOverThePlatformsForTheHarness(t *testing.T) {
 	injected := filepath.Join(t.TempDir(), "injected")
 	pem := "-----BEGIN KEY-----\nline ' \"two\" $(touch " + injected + ") `false` $HOME\n-----END KEY-----\n"
@@ -76,6 +80,7 @@ func TestCloudLaunchLayersPersonalVariablesOverThePlatformsForTheHarness(t *test
 		{Name: repositoryInstructionsVariable, Value: "0"},
 		{Name: "PEM", Value: pem},
 		{Name: "EMPTY", Value: ""},
+		{Name: "PATH", Value: "/nonexistent"},
 		{Name: "TALGENT_WORK_ID", Value: "replaced"},
 	}
 	content := encodePersonalVariables(variables)
@@ -95,10 +100,11 @@ func TestCloudLaunchLayersPersonalVariablesOverThePlatformsForTheHarness(t *test
 	require.Equal(t, "work", record.Env["TALGENT_WORK_ID"])
 	require.NotContains(t, record.Env, "talgent_root")
 	require.Equal(t, "kept", record.Env["PLATFORM_ONLY"])
+	require.Equal(t, "/nonexistent", record.Env["PATH"])
 	require.NoFileExists(t, injected, "a value is never evaluated by the shell")
 	require.NoFileExists(t, file, "the launch removes the file once loaded")
 	for _, variable := range variables {
-		if variable.Value != "" && variable.Value != "0" {
+		if variable.Value != "" && variable.Value != "0" && variable.Name != "PATH" {
 			require.NotContains(t, launch.Command, variable.Value, "the command text carries no value")
 		}
 	}
@@ -125,9 +131,17 @@ func TestCloudLaunchWithoutPersonalVariablesKeepsThePlatformsEnvironment(t *test
 	require.Equal(t, "1", record.Env[repositoryInstructionsVariable])
 }
 
+// The report names what the platform sets, the sandbox's specification and
+// the launch command's own exports; the image's own variables and a variable
+// the launch unsets before the Harness starts are not replaced platform ones.
 func TestReplacedVariablesNameThePlatformsOwnInNameOrder(t *testing.T) {
-	variables := []domain.PersonalVariable{{Name: "PERSONAL_ONLY"}, {Name: "ANTHROPIC_MODEL"}, {Name: repositoryInstructionsVariable}, {Name: "ANTHROPIC_BASE_URL"}, {Name: "TALGENT_WORK_ID"}}
-	platform := map[string]string{"ANTHROPIC_MODEL": "m", "ANTHROPIC_BASE_URL": "u", "TALGENT_WORK_ID": "w", "HOME": "/home/talgent"}
+	variables := []domain.PersonalVariable{{Name: "PERSONAL_ONLY"}, {Name: "ANTHROPIC_MODEL"}, {Name: repositoryInstructionsVariable}, {Name: "ANTHROPIC_BASE_URL"},
+		{Name: "TALGENT_WORK_ID"}, {Name: effortVariable}, {Name: "PATH"}}
+	platform := map[string]string{"ANTHROPIC_MODEL": "m", "ANTHROPIC_BASE_URL": "u", "TALGENT_WORK_ID": "w", effortVariable: "medium", "HOME": "/home/talgent"}
 	require.Equal(t, []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", repositoryInstructionsVariable}, replacedVariables(variables, platform))
 	require.Empty(t, replacedVariables(nil, platform))
+}
+
+func TestTheReservedPatternIsThePrefixInAnyLetterCase(t *testing.T) {
+	require.Equal(t, "[Tt][Aa][Ll][Gg][Ee][Nn][Tt]_*", reservedVariablePattern())
 }
