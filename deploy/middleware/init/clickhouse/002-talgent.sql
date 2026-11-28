@@ -87,31 +87,6 @@ ORDER BY (WorkCaller, Timestamp, SessionId, EventSequence)
 TTL toDateTime(Timestamp) + INTERVAL 7 DAY
 SETTINGS ttl_only_drop_parts = 1;
 
--- Earlier releases let the Collector create otel_traces and otel_logs itself.
--- Move their retained evidence over once, before any view derives from the
--- new tables, so moved evidence keeps the measurements already derived from
--- it, then drop them with the Collector's trace-id lookup, which nothing reads.
--- merge() names the new table too, so the statement holds on a deployment
--- without the old one. Remove this block once no deployment predates it.
-INSERT INTO talgent_trace.native_spans (Timestamp, TraceId, SpanId, ParentSpanId, TraceState, SpanName, SpanKind, ServiceName,
-    ResourceAttributes, ScopeName, ScopeVersion, SpanAttributes, Duration, StatusCode, StatusMessage,
-    `Events.Timestamp`, `Events.Name`, `Events.Attributes`, `Links.TraceId`, `Links.SpanId`, `Links.TraceState`, `Links.Attributes`)
-SELECT Timestamp, TraceId, SpanId, ParentSpanId, TraceState, SpanName, SpanKind, ServiceName,
-    ResourceAttributes, ScopeName, ScopeVersion, SpanAttributes, Duration, StatusCode, StatusMessage,
-    `Events.Timestamp`, `Events.Name`, `Events.Attributes`, `Links.TraceId`, `Links.SpanId`, `Links.TraceState`, `Links.Attributes`
-FROM merge('talgent_trace', '^(native_spans|otel_traces)$')
-WHERE _table = 'otel_traces' AND Timestamp >= now64(9) - INTERVAL 7 DAY;
-INSERT INTO talgent_trace.native_events (Timestamp, TraceId, SpanId, TraceFlags, SeverityText, SeverityNumber, ServiceName, Body,
-    ResourceSchemaUrl, ResourceAttributes, ScopeSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, LogAttributes, EventName)
-SELECT Timestamp, TraceId, SpanId, TraceFlags, SeverityText, SeverityNumber, ServiceName, Body,
-    ResourceSchemaUrl, ResourceAttributes, ScopeSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, LogAttributes, EventName
-FROM merge('talgent_trace', '^(native_events|otel_logs)$')
-WHERE _table = 'otel_logs' AND Timestamp >= now64(9) - INTERVAL 7 DAY;
-DROP VIEW IF EXISTS talgent_trace.otel_traces_trace_id_ts_mv;
-DROP TABLE IF EXISTS talgent_trace.otel_traces_trace_id_ts;
-DROP TABLE IF EXISTS talgent_trace.otel_traces;
-DROP TABLE IF EXISTS talgent_trace.otel_logs;
-
 CREATE OR REPLACE FUNCTION talgent_call_kind AS (tool, server) ->
     multiIf(tool = 'Skill', 'skill_call', tool IN ('Agent', 'Task'), 'agent_call',
             tool = 'mcp_tool' OR server != '' OR startsWith(tool, 'mcp__'), 'mcp_call', tool != '', 'tool_call', 'unclassified_call');
@@ -138,14 +113,6 @@ CREATE OR REPLACE FUNCTION talgent_span_measurements AS (name, attrs) ->
          ('cache_read_tokens', talgent_usage(attrs['cache_read_tokens'])),
          ('cache_creation_tokens', talgent_usage(attrs['cache_creation_tokens']))],
         CAST([], 'Array(Tuple(String, Nullable(Float64)))'));
-
--- This schema replaced the Project and Application columns with work_caller
--- and work_key without converting measurements. A table of the earlier schema
--- is dropped by hand before this file is applied.
-SELECT throwIf(count() > 0,
-    'trace_work_measurements has the earlier schema with project_id: drop talgent_trace.trace_work_measurements, then apply this file again')
-FROM system.columns
-WHERE database = 'talgent_trace' AND table = 'trace_work_measurements' AND name = 'project_id';
 
 -- Measurements are attributed per Work, never per Harness process run. Each
 -- carries the Work's Work Caller and Work Key as "<kind>:<id>", the values
@@ -328,7 +295,3 @@ FROM (
 )
 ARRAY JOIN if(empty(fact.8) AND notEmpty(fact.9),
     [('observation_gap', CAST(NULL AS Nullable(Float64)))], fact.8) AS metric;
-
--- The content-hash event identity of earlier releases, which no view uses now.
--- Remove this statement once no deployment predates it.
-DROP FUNCTION IF EXISTS talgent_log_evidence_id;
