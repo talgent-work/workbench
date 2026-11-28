@@ -176,6 +176,7 @@ from the shell variables of §1, and creates once, never replacing:
 | Secret | Keep in mind |
 |---|---|
 | `account-master-key` | Seals Account's signing keys. If it is lost, delete every row of the Account database's `signing_key` table and restart controlplane; everyone signs in again. |
+| `agent-personal-variable-key` | Seals every person's Personal Variables. If it is lost, delete every row of the Agent database's `agent_personal_variable_set` table, set `personal_variables` to NULL in its `agent_execution` table and restart controlplane; everyone sets their Personal Variables again. |
 | `native-execution-control` | Tokens between services. New keys are added on deploy; existing keys are never rotated. |
 | `opensandbox-api` | After rotating it, restart `opensandbox` and `controlplane`. |
 

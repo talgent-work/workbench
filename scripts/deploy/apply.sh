@@ -13,6 +13,7 @@ SKIP_DB_BOOTSTRAP="${TALGENT_SKIP_DB_BOOTSTRAP:-0}"
 SKIP_CLICKHOUSE_MIGRATION="${TALGENT_SKIP_CLICKHOUSE_MIGRATION:-0}"
 ACCOUNT_OAUTH_SECRET="account-github-oauth"
 ACCOUNT_MASTER_KEY_SECRET="account-master-key"
+AGENT_PERSONAL_VARIABLE_KEY_SECRET="agent-personal-variable-key"
 CLICKHOUSE_AUTH_SECRET="clickhouse-auth"
 MYSQL_AUTH_SECRET="mysql-auth"
 REDIS_AUTH_SECRET="redis-auth"
@@ -81,6 +82,20 @@ ensure_account_master_key() {
   echo "generated ${ACCOUNT_MASTER_KEY_SECRET}" >&2
 }
 
+# The Agent key seals every person's Personal Variables. It is generated
+# once; replacing it makes stored values unreadable, so an existing key is
+# never overwritten.
+ensure_agent_personal_variable_key() {
+  if [[ -n "$(secret_data_value "${AGENT_PERSONAL_VARIABLE_KEY_SECRET}" key)" ]]; then
+    echo "${AGENT_PERSONAL_VARIABLE_KEY_SECRET} already exists" >&2
+    return
+  fi
+  kubectl -n "${NS}" create secret generic "${AGENT_PERSONAL_VARIABLE_KEY_SECRET}" \
+    "--from-literal=key=$(head -c 32 /dev/urandom | base64 | tr -d '\n')" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo "generated ${AGENT_PERSONAL_VARIABLE_KEY_SECRET}" >&2
+}
+
 # write_secret_from SECRET KEY VARIABLE: create or replace SECRET holding
 # VARIABLE's value under KEY.
 write_secret_from() {
@@ -118,6 +133,7 @@ ensure_redis_auth_secret() {
 
 ensure_account_oauth_secret
 ensure_account_master_key
+ensure_agent_personal_variable_key
 ensure_password_secret "${CLICKHOUSE_AUTH_SECRET}" CLICKHOUSE_TALGENT_PASSWORD
 ensure_password_secret "${MYSQL_AUTH_SECRET}" MYSQL_PASSWORD
 ensure_redis_auth_secret
