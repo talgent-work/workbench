@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { InvalidCredentialsError, type CredentialStore } from '../proxy/credentials.ts'
 import { deleteVariable, mergeEnvironment, prependPath } from './environment.ts'
+import { InvalidPersonalVariablesError, layerPersonalVariables, parsePersonalVariables, type PersonalVariables } from './personal-variables.ts'
 import { openPipe, type PipeInput, type PipeSink } from './pipe.ts'
 import type { ProcessTable } from './processes.ts'
 import { Reconciliation } from './reconciliation.ts'
@@ -165,9 +166,19 @@ export class ExecdService {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return { status: 400, body: { code: 'INVALID_REQUEST_BODY', message: 'error parsing request' } }
     }
-    const { cwd = '', command = '' } = body as Record<string, unknown>
+    const { cwd = '', command = '', personal_variables: personalVariables } = body as Record<string, unknown>
     if (typeof cwd !== 'string' || typeof command !== 'string') {
       return { status: 400, body: { code: 'INVALID_REQUEST_BODY', message: 'error parsing request' } }
+    }
+    // Only the Harness launch carries them; the answer acknowledges them, so
+    // the platform never takes a machine that ignored them for one that
+    // applies them.
+    let personal: PersonalVariables | undefined
+    try {
+      if (personalVariables !== undefined) personal = parsePersonalVariables(personalVariables)
+    } catch (error) {
+      if (error instanceof InvalidPersonalVariablesError) return { status: 400, body: { code: 'INVALID_REQUEST_BODY', message: error.message } }
+      throw error
     }
     // Nothing new runs before the platform decided what ran while it was away.
     if (this.reconciliation.pending()) {
@@ -180,8 +191,8 @@ export class ExecdService {
       const message = error instanceof Error ? error.message : String(error)
       return { status: 500, body: { code: 'RUNTIME_ERROR', message: `error creating pty session: ${message}` } }
     }
-    const id = await this.options.processes.reserve(workId, { cwd: mappedCwd, command })
-    return { status: 201, body: { session_id: id } }
+    const id = await this.options.processes.reserve(workId, { cwd: mappedCwd, command }, personal)
+    return { status: 201, body: personal === undefined ? { session_id: id } : { session_id: id, personal_variables: true } }
   }
 
   async openStream(open: StreamOpen, sink: PipeSink): Promise<{ status: number } | PipeInput> {
@@ -202,7 +213,7 @@ export class ExecdService {
         workId: open.workId,
         id: open.processId,
         since: open.since,
-        env: (proxyToken) => this.runEnv(open.workId, access.work, proxyToken),
+        env: (proxyToken, personal) => this.runEnv(open.workId, access.work, proxyToken, personal),
         // A run starts once the reconciliation decided what may run.
         ready: (signal) => this.reconciliation.settled(signal),
         log: this.options.log,
@@ -219,8 +230,10 @@ export class ExecdService {
   // its path, as a plain HTTP client presents nothing else. A Work on a Model
   // Configuration reaches its model only through the proxy, with the run's
   // token, whether or not its credentials were delivered yet: it never falls
-  // back to the machine's own login.
-  private async runEnv(workId: string, work: WorkEnvironment, proxyToken: string): Promise<NodeJS.ProcessEnv> {
+  // back to the machine's own login. A process created with Personal
+  // Variables, the Harness, has them last, over all of it but the TALGENT_
+  // variables.
+  private async runEnv(workId: string, work: WorkEnvironment, proxyToken: string, personal?: PersonalVariables): Promise<NodeJS.ProcessEnv> {
     const { baseEnv, home, claudeBinDir: bin, proxyOrigin, platform = process.platform } = this.options
     const proxyUrl = `${proxyOrigin()}/w/${workId}`
     const model = work.modelProxy ? { ANTHROPIC_BASE_URL: `${proxyUrl}/model`, ANTHROPIC_AUTH_TOKEN: proxyToken } : {}
@@ -236,6 +249,6 @@ export class ExecdService {
     if (bin !== undefined) prependPath(env, bin, platform)
     if (work.modelProxy) deleteVariable(env, 'ANTHROPIC_API_KEY', platform)
     if (work.telemetry !== undefined) applyTelemetry(env, workId, work.telemetry, platform)
-    return env
+    return personal === undefined ? env : layerPersonalVariables(env, personal, platform)
   }
 }

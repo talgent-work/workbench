@@ -8,7 +8,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { Limit } from '../limit.ts'
 import { isErrno } from '../store.ts'
 import { currentHost, type ProcessHost } from './host.ts'
-import { LogCursor } from './output-log.ts'
+import { LogAppender, LogCursor, STDERR } from './output-log.ts'
+import type { PersonalVariables } from './personal-variables.ts'
 import { RunTokens } from './run-tokens.ts'
 import { SHIM_ENV, stateFiles, writeJsonAtomic, type ExitRecord, type ProcessSpec, type StartedRecord, type UsesRecord } from './shim.ts'
 
@@ -40,8 +41,9 @@ export interface EndOutcome {
   failure?: unknown
 }
 
-// The environment of a run, given the run's local proxy token.
-export type RunEnvironment = (proxyToken: string) => Promise<NodeJS.ProcessEnv>
+// The environment of a run, given the run's local proxy token and the
+// Personal Variables its process was created with, if any.
+export type RunEnvironment = (proxyToken: string, personal?: PersonalVariables) => Promise<NodeJS.ProcessEnv>
 
 // What Talgent Computer keeps in memory per known process: who holds its
 // pipe, the log checkpoints read so far, and listeners for its deletion.
@@ -72,6 +74,12 @@ export class ProcessTable {
   private readonly launching = new Set<Promise<unknown>>()
   // What every run this table starts uses, recorded with the run.
   private readonly uses: string[]
+  // The Personal Variables of the processes created with them, by
+  // "<work>/<process>", held in memory only so no value rests on disk. A
+  // process whose spec says it has them, but whose values this run of
+  // Talgent Computer does not hold, as one created before a restart, never
+  // runs without them (launch).
+  private readonly personal = new Map<string, PersonalVariables>()
 
   constructor(options: { stateRoot: string; shim: string[]; uses?: string[]; host?: ProcessHost }) {
     this.stateRoot = options.stateRoot
@@ -85,11 +93,14 @@ export class ProcessTable {
     return join(this.stateRoot, workId, id)
   }
 
-  async reserve(workId: string, spec: ProcessSpec): Promise<string> {
+  // Reserves a process; its Personal Variables, if any, stay in memory and
+  // only the fact that it has them is written with its spec.
+  async reserve(workId: string, spec: ProcessSpec, personal?: PersonalVariables): Promise<string> {
     const id = randomUUID()
     const dir = this.dir(workId, id)
     await mkdir(dir, { recursive: true, mode: 0o700 })
-    writeJsonAtomic(join(dir, stateFiles.spec), spec)
+    if (personal !== undefined) this.personal.set(`${workId}/${id}`, personal)
+    writeJsonAtomic(join(dir, stateFiles.spec), personal === undefined ? spec : { ...spec, personalVariables: true } satisfies ProcessSpec)
     return id
   }
 
@@ -288,7 +299,12 @@ export class ProcessTable {
     const dir = this.dir(workId, id)
     const previous = await readJson<StartedRecord>(join(dir, stateFiles.started))
     const run = (previous?.run ?? 0) + 1
-    const env = await runEnv(await this.tokens.mint(workId, id, run))
+    const spec = await readJson<ProcessSpec>(join(dir, stateFiles.spec))
+    const personal = this.personal.get(`${workId}/${id}`)
+    if (spec?.personalVariables === true && personal === undefined) {
+      return this.refuse(dir, run, 'this process was created with Personal Variables that an earlier Talgent Computer run held; it does not run without them')
+    }
+    const env = await runEnv(await this.tokens.mint(workId, id, run), personal)
     // Before the run starts, so a run never runs unrecorded.
     writeJsonAtomic(join(dir, stateFiles.uses), { run, uses: this.uses } satisfies UsesRecord)
     const output = openSync(join(dir, 'shim.log'), 'a', 0o600)
@@ -322,6 +338,21 @@ export class ProcessTable {
     }
   }
 
+  // Records a run that never started, as the shim records one it could not
+  // start: the reason on stderr, the run started without a process, then its
+  // exit (-1), so the reader of its pipe sees it end.
+  private refuse(dir: string, run: number, reason: string): number {
+    const log = new LogAppender(join(dir, stateFiles.log))
+    try {
+      log.append(STDERR, Buffer.from(`talgent-computer: ${reason}\n`))
+    } finally {
+      log.close()
+    }
+    writeJsonAtomic(join(dir, stateFiles.started), { run, shimPid: 0, pid: 0 } satisfies StartedRecord)
+    writeJsonAtomic(join(dir, stateFiles.exit), { run, exitCode: -1 } satisfies ExitRecord)
+    return run
+  }
+
   async signal(workId: string, id: string, signal: string): Promise<void> {
     if (!SIGNALS.has(signal)) return
     const phase = await this.phase(workId, id)
@@ -341,6 +372,7 @@ export class ProcessTable {
     const entry = this.entry(workId, id)
     entry.deleted.abort()
     this.entries.delete(`${workId}/${id}`)
+    this.personal.delete(`${workId}/${id}`)
     // Windows keeps a directory a just-killed shim held files in busy for a moment.
     await rm(this.dir(workId, id), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     await this.tokens.forget(workId, id)

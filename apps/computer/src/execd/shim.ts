@@ -35,6 +35,9 @@ export const stateFiles = {
 export interface ProcessSpec {
   command: string
   cwd: string
+  // Whether the process was created with Personal Variables, whose values
+  // Talgent Computer keeps in memory only (processes.ts); never the values.
+  personalVariables?: true
 }
 
 export interface StartedRecord {
