@@ -49,17 +49,9 @@ func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *agentp
 		if err := h.application.AdmitExtensionWorkCaller(workCallerFromProto(creation.GetWorkCaller())); err != nil {
 			return nil, mapAgentError(err)
 		}
-		workID, err = h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{
-			StartingUserID: creation.GetStartingUserId(),
-			SubjectID:      input.SubjectID, InitialExecution: &input, WorkModel: workModelFromProto(creation.GetModel()),
-			AgentID: creation.GetAgentId(), AgentHarness: strings.TrimSpace(creation.GetAgentHarness()),
-			WorkCaller: workCallerFromProto(creation.GetWorkCaller()), WorkKey: workKeyFromProto(creation.GetWorkKey()), FileHome: fileHomeFromProto(creation.GetFileHome()),
-			TraceAttributes:       maps.Clone(creation.GetTraceAttributes()),
-			CapabilityDifferences: capabilityDifferencesFromProto(creation.GetCapabilityDifferences()),
-			StartingContext:       startingContextFromProto(creation.GetStartingContext()),
-			ComputerID:            strings.TrimSpace(creation.GetComputerId()),
-			Harness:               harnessChoiceFromProto(creation.GetHarness()),
-		})
+		create := creationFromProto(creation)
+		create.SubjectID, create.RequestID, create.InitialExecution = input.SubjectID, "", &input
+		workID, err = h.application.Commands.CreateWork.Handle(ctx, create)
 	} else if err = h.application.AdmitDelegatedControl(ctx, input.WorkID); err == nil {
 		workID, err = h.application.Commands.PrepareWorkExecution.Handle(ctx, input)
 	}
@@ -86,11 +78,24 @@ func (h *AgentHandler) CreateWork(ctx context.Context, req *agentprivatev1.Creat
 	if err := h.application.AdmitExtensionWorkCaller(workCallerFromProto(req.GetWorkCaller())); err != nil {
 		return nil, mapAgentError(err)
 	}
-	id, err := h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: req.GetStartingUserId(), RequestID: req.GetRequestId(), WorkModel: workModelFromProto(req.GetModel()), WorkCaller: workCallerFromProto(req.GetWorkCaller()), WorkKey: workKeyFromProto(req.GetWorkKey()), FileHome: fileHomeFromProto(req.GetFileHome()), CapabilityDifferences: capabilityDifferencesFromProto(req.GetCapabilityDifferences()), StartingContext: startingContextFromProto(req.GetStartingContext()), SubjectID: req.GetSubjectId(), AgentID: req.GetAgentId(), AgentHarness: strings.TrimSpace(req.GetAgentHarness()), TraceAttributes: maps.Clone(req.GetTraceAttributes()), ComputerID: strings.TrimSpace(req.GetComputerId()), Harness: harnessChoiceFromProto(req.GetHarness())})
+	id, err := h.application.Commands.CreateWork.Handle(ctx, creationFromProto(req))
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
 	return &agentprivatev1.CreateWorkResponse{WorkId: id}, nil
+}
+
+// creationFromProto maps a private Work creation, whether called alone or
+// carried by the preparation of a new Work's first execution.
+func creationFromProto(req *agentprivatev1.CreateWorkRequest) command.CreateWork {
+	return command.CreateWork{
+		StartingUserID: req.GetStartingUserId(), SubjectID: req.GetSubjectId(), RequestID: req.GetRequestId(), AgentID: req.GetAgentId(),
+		WorkModel: workModelFromProto(req.GetModel()), AgentHarness: strings.TrimSpace(req.GetAgentHarness()),
+		WorkCaller: workCallerFromProto(req.GetWorkCaller()), WorkKey: workKeyFromProto(req.GetWorkKey()), FileHome: fileHomeFromProto(req.GetFileHome()),
+		TraceAttributes: maps.Clone(req.GetTraceAttributes()), CapabilityDifferences: capabilityDifferencesFromProto(req.GetCapabilityDifferences()),
+		StartingContext: startingContextFromProto(req.GetStartingContext()), ComputerID: strings.TrimSpace(req.GetComputerId()),
+		Harness: harnessChoiceFromProto(req.GetHarness()), PersonalVariables: personalVariableChoiceFromProto(req.GetPersonalVariables()),
+	}
 }
 
 func (h *AgentHandler) ResumeWork(ctx context.Context, req *agentprivatev1.ResumeWorkRequest) (*agentprivatev1.ResumeWorkResponse, error) {

@@ -75,6 +75,7 @@ func (h *StandaloneWorkHandler) StartWork(ctx context.Context, request *agentpub
 		Capabilities: creationCapabilitiesFromProto(msg.GetCreationCapabilities()), WorkModel: workModelFromProto(msg.GetModel()),
 		ThinkingLevel: strings.TrimSpace(msg.GetThinkingLevel()), ComputerID: strings.TrimSpace(msg.GetComputerId()),
 		Harness: harnessChoiceFromProto(msg.GetHarness()), Labels: msg.GetLabels(),
+		PersonalVariables: personalVariableChoiceFromProto(msg.GetPersonalVariables()),
 	}
 	for _, endpoint := range msg.GetApplicationMcpEndpoints() {
 		start.Capabilities.ApplicationEndpoints = append(start.Capabilities.ApplicationEndpoints, domain.ApplicationMCPEndpoint{

@@ -30,6 +30,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -138,7 +139,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	// The deployment's default: every Work requires the core plugin.
 	builtIns, err := domain.NewBuiltInPlugins([]string{"talgent"}, nil)
 	require.NoError(t, err)
-	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
+	create := command.NewCreateWorkHandler(time.Now, builtIns, &commandtest.PersonalVariables{}, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
 	app := &application.Application{
 		WorkQueries: queries, Catalog: start, Definitions: definitions, DefinitionQueries: lookup,
 		Works: works, WorkPrincipals: authorizer, Models: models, BuiltInPlugins: builtIns,

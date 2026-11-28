@@ -55,9 +55,13 @@ type agentWorkDO struct {
 	// checkout outcomes.
 	RepositoryCheckouts    string `xorm:"repository_checkouts json"`
 	AuthorizationSelection string `xorm:"authorization_selection json"`
-	ThinkingLevel          string `xorm:"thinking_level varchar(32)"`
-	PermissionMode         string `xorm:"permission_mode varchar(32)"`
-	WorkProgress           string `xorm:"work_progress mediumtext"`
+	// VariableSelection is the JSON array of the Personal Variable names the
+	// Work enabled at creation, written once; NULL, for a Work created before
+	// Personal Variables, enables none.
+	VariableSelection []byte `xorm:"'variable_selection'"`
+	ThinkingLevel     string `xorm:"thinking_level varchar(32)"`
+	PermissionMode    string `xorm:"permission_mode varchar(32)"`
+	WorkProgress      string `xorm:"work_progress mediumtext"`
 	// InitialTaskInput is the JSON of the initial task input the Work still
 	// holds; empty once handed off or for a Work created without one.
 	InitialTaskInput     string `xorm:"initial_task_input mediumtext"`

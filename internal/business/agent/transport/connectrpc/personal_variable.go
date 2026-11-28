@@ -3,6 +3,7 @@ package connectrpc
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -100,4 +101,14 @@ func mapPersonalVariableError(err error) error {
 		return connect.NewError(connect.CodeInternal, "agent: Personal Variables are unavailable").WithCause(err)
 	}
 	return connect.NewError(code, err.Error()).WithCause(err)
+}
+
+// personalVariableChoiceFromProto maps a start's Personal Variable selection:
+// an absent one enables every Personal Variable of the person, a present one
+// only the names it lists, none when it lists none.
+func personalVariableChoiceFromProto(selection *agentpublicv1.PersonalVariableSelection) domain.PersonalVariableChoice {
+	if selection == nil {
+		return domain.PersonalVariableChoice{}
+	}
+	return domain.PersonalVariableChoice{Chosen: true, Names: slices.Clone(selection.GetNames())}
 }

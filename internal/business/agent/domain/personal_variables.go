@@ -70,7 +70,7 @@ func ReservedVariableName(name string) bool {
 }
 
 // PersonalVariableSet is one person's Personal Variables, which the person's
-// Works receive at every start. Only the person reads or changes it.
+// Works enable at creation and receive at every start. Only the person reads or changes it.
 type PersonalVariableSet struct {
 	PersonID string
 	// Variables hold one value for each name, ordered by name.
@@ -144,11 +144,7 @@ func (s *PersonalVariableSet) Names(requester string) ([]string, error) {
 	if err := s.admit(requester); err != nil {
 		return nil, err
 	}
-	names := make([]string, len(s.Variables))
-	for i, variable := range s.Variables {
-		names[i] = variable.Name
-	}
-	return names, nil
+	return s.OfferedNames(), nil
 }
 
 // Reveal reads one of its person's values for that person (Personal Variable
@@ -164,11 +160,28 @@ func (s *PersonalVariableSet) Reveal(requester, name string) (string, error) {
 	return s.Variables[i].Value, nil
 }
 
+// OfferedNames are the names of every Personal Variable it holds, in name
+// order, which a new Work of its person is offered as enabled (Variable
+// selection at creation).
+func (s *PersonalVariableSet) OfferedNames() []string {
+	names := make([]string, len(s.Variables))
+	for i, variable := range s.Variables {
+		names[i] = variable.Name
+	}
+	return names
+}
+
 // CurrentValues are the values a start of one of its person's Works takes now
-// (Personal Variables at start): every Personal Variable, since a Work enables
-// all of them.
-func (s *PersonalVariableSet) CurrentValues() []PersonalVariable {
-	return slices.Clone(s.Variables)
+// (Personal Variables at start): those of the names its Work Variable
+// Selection names, skipping a name it no longer holds (Removed variable).
+func (s *PersonalVariableSet) CurrentValues(selection WorkVariableSelection) []PersonalVariable {
+	var values []PersonalVariable
+	for _, name := range selection.Names {
+		if i, found := s.find(name); found {
+			values = append(values, s.Variables[i])
+		}
+	}
+	return values
 }
 
 func (s *PersonalVariableSet) admit(requester string) error {

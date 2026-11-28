@@ -41,7 +41,7 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
 	run := newRunsAt(t, jdb, sessions, clock)
-	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID})
+	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID})
 	require.NoError(t, err)
 	feedback := func(kind command.ExecutionFeedbackKind, interaction, stop string) error {
 		return run.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id, InteractionID: interaction, ObservationSequence: 1000, RequiredInteractionIDs: []string{interaction}})

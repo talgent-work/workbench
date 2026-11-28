@@ -38,7 +38,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	clock := func() time.Time { return observed }
 	sessions := infrastructure.NewAgentWorkRepository(f.jdb, clock)
 	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners)
-	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels())).Handle(ctx, f.request)
+	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels())).Handle(ctx, f.request)
 	require.NoError(t, err)
 	observed = observed.Add(15 * time.Minute)
 	feedback := newRunsAt(t, f.jdb, sessions, clock)
@@ -96,7 +96,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	require.Len(t, histories[0].Facts, 5, "Starting, Working, Stopping, Stopped, Closed only; duplicates and failed saves add no facts")
 	// Reporting is neither the personal Recent list nor its 100-row page.
 	observed = end.Add(-time.Hour)
-	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
 	insertStartingWorks(t, f.db, f.request.AgentID, "owner", 104, observed.UnixMilli(), func() string { return project })
 	// Another Project's Work and a same-Project coordinator must not enter totals.
 	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: f.request.AgentID, SubjectID: "owner", WorkCaller: domain.WorkCaller{Kind: "project", ID: uuid.NewString()}, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}})

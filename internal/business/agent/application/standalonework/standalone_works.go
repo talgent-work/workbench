@@ -66,6 +66,9 @@ type StartWork struct {
 	Harness domain.HarnessChoice
 	// Labels are the Work Labels the owner gives the Work, kept for its life.
 	Labels map[string]string
+	// PersonalVariables is the person's choice of the Personal Variables the
+	// Work enables; choosing none enables every one.
+	PersonalVariables domain.PersonalVariableChoice
 }
 
 // standaloneWorkSpace derives a Standalone Work's identity, and with it the owner
@@ -103,6 +106,7 @@ func (p *StandaloneWorks) Start(ctx context.Context, input StartWork) (string, e
 		StartingUserID: input.Caller.self(), SubjectID: owner, RequestID: input.RequestID, AgentID: definition.AgentID,
 		WorkID: workID, WorkCaller: definition.OwnerWorkCaller, DisplayTitle: domain.DisplayTitleFrom(input.InitialMessage),
 		WorkModel: input.WorkModel, CapabilityDifferences: input.Capabilities, InitialExecution: &initial, ComputerID: input.ComputerID, Harness: input.Harness, WorkLabels: labels,
+		PersonalVariables: input.PersonalVariables,
 	})
 }
 
