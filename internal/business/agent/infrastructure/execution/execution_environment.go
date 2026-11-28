@@ -280,7 +280,7 @@ func (e *ExecutionEnvironment) Connect(ctx context.Context, execution *domain.Ag
 	}
 	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
 	defer cancel()
-	return withExecution(e.recovering(ctx, record, e.connections.connect(attempt, record)), execution)
+	return withExecution(e.recovering(ctx, record, e.connections.connect(attempt, record, execution.PersonalVariables)), execution)
 }
 
 // ReconcileComputer reconciles a Managed Computer that is reachable again;

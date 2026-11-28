@@ -36,7 +36,8 @@ type launchLayout struct {
 	// prefix begins every process.
 	prefix string
 	// own are the variables the layout's Harness launch exports itself,
-	// right after prefix, unless the run's Personal Variables set them.
+	// right after prefix, unless the run's Personal Variables set them
+	// (exports).
 	own []launchVariable
 	// diagnostic is the shell word of the Harness's diagnostics file name.
 	diagnostic func(name string) string
@@ -258,7 +259,7 @@ func (c NativeLaunchConfig) prepareRun(layout launchLayout, request domain.Launc
 	if layout.variables != nil {
 		variables = personalVariableLoader(layout.variables(owner))
 	}
-	command := layout.prefix + launchExports(layout.own, personal) + "exec 2>>" + diagnostic + "; " + launchExports([]launchVariable{repositoryInstructions}, personal) + variables + "talgent_effort=" + effort + "; unset " + effortVariable + "; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
+	command := layout.prefix + launchExports(layout.exports(), personal) + "exec 2>>" + diagnostic + "; " + variables + "talgent_effort=" + effort + "; unset " + effortVariable + "; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
 	return nativeLaunch{Command: command, SessionID: sessionID, PreparationCommand: preparation}, nil
 }
 

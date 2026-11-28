@@ -138,8 +138,8 @@ func TestReplacedVariablesNameThePlatformsOwnInNameOrder(t *testing.T) {
 	variables := []domain.PersonalVariable{{Name: "PERSONAL_ONLY"}, {Name: "ANTHROPIC_MODEL"}, {Name: repositoryInstructionsVariable}, {Name: "ANTHROPIC_BASE_URL"},
 		{Name: "TALGENT_WORK_ID"}, {Name: effortVariable}, {Name: "PATH"}}
 	platform := map[string]string{"ANTHROPIC_MODEL": "m", "ANTHROPIC_BASE_URL": "u", "TALGENT_WORK_ID": "w", effortVariable: "medium", "HOME": "/home/talgent"}
-	require.Equal(t, []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", repositoryInstructionsVariable}, replacedVariables(variables, platform))
-	require.Empty(t, replacedVariables(nil, platform))
+	require.Equal(t, []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", repositoryInstructionsVariable}, replacedVariables(variables, platform, sandboxLayout.exports()))
+	require.Empty(t, replacedVariables(nil, platform, sandboxLayout.exports()))
 }
 
 func TestTheReservedPatternIsThePrefixInAnyLetterCase(t *testing.T) {

@@ -53,34 +53,31 @@ func TestManagedLaunchLeavesItsOwnVariablesToThePersonalVariables(t *testing.T) 
 	require.Equal(t, "0", record.Env[repositoryInstructionsVariable])
 	require.Equal(t, "person-model", argument(record.Args, "--model"))
 
+	// Without case the name matches only on Windows, where Git Bash runs the
+	// command; elsewhere it is another variable, and the launch keeps its own.
+	record = runManagedLaunch(t, []string{strings.ToLower(pluginCacheVariable)}, strings.ToLower(pluginCacheVariable)+"=/person-plugins")
+	require.True(t, strings.HasSuffix(record.Env[pluginCacheVariable], "/.talgent/claude-plugins"))
+	require.Equal(t, "/person-plugins", record.Env[strings.ToLower(pluginCacheVariable)])
+
 	record = runManagedLaunch(t, nil, pluginCacheVariable+"=/machine-plugins", repositoryInstructionsVariable+"=0")
 	require.True(t, strings.HasSuffix(record.Env[pluginCacheVariable], "/.talgent/claude-plugins"), "the launch's own without Personal Variables")
 	require.Equal(t, "1", record.Env[repositoryInstructionsVariable])
 }
 
-// A Managed run's Personal Variables replace the variables of its
-// specification's environment, those Talgent Computer sets as the
-// specification asks and those its launch command exports, never a reserved
-// one or the machine's own; a set the relay cannot carry fails the start
-// definitely, naming no value.
-func TestManagedPersonalVariablesNameWhatTheyReplaceAndFitTheRelay(t *testing.T) {
-	configured := managedRequest()
-	configured.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
-	spec, err := managedSpecificationFor(configured, fixtureModels(), "execd-token")
-	require.NoError(t, err)
-	spec.Telemetry.Token = "telemetry-token"
-	document, err := json.Marshal(spec)
-	require.NoError(t, err)
-	record := executionRecord{SpecificationJSON: document, LaunchCommand: "exec claude"}
-
+// A Managed run's report names the launch command's own exports that its
+// Personal Variables replace, never a reserved one; Talgent Computer names
+// the variables of the Work and its own in its answer. A set the relay
+// cannot carry fails the start definitely, naming no value.
+func TestManagedPersonalVariablesNameTheLaunchExportsTheyReplaceAndFitTheRelay(t *testing.T) {
+	record := executionRecord{LaunchCommand: "exec claude"}
 	variables := []domain.PersonalVariable{
-		{Name: "ANTHROPIC_BASE_URL", Value: "u"}, {Name: "ANTHROPIC_AUTH_TOKEN", Value: "k"}, {Name: "CLAUDE_CODE_SUBAGENT_MODEL", Value: "m"},
-		{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Value: "e"}, {Name: "PATH", Value: "/bin"}, {Name: "MINE", Value: "v"}, {Name: "TALGENT_WORK_ID", Value: "w"},
+		{Name: pluginCacheVariable, Value: "p"}, {Name: repositoryInstructionsVariable, Value: "0"}, {Name: "PATH", Value: "/bin"},
+		{Name: "HOME", Value: "/h"}, {Name: "MINE", Value: "v"}, {Name: "TALGENT_WORK_ID", Value: "w"},
 	}
 	handover, err := ManagedEnvironment{}.deliverVariables(context.Background(), record, nil, variables)
 	require.NoError(t, err)
-	require.Equal(t, []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_SUBAGENT_MODEL", "OTEL_EXPORTER_OTLP_ENDPOINT"}, handover.replaced)
-	require.Equal(t, map[string]string{"ANTHROPIC_BASE_URL": "u", "ANTHROPIC_AUTH_TOKEN": "k", "CLAUDE_CODE_SUBAGENT_MODEL": "m", "OTEL_EXPORTER_OTLP_ENDPOINT": "e", "PATH": "/bin", "MINE": "v"}, handover.carried)
+	require.Equal(t, []string{repositoryInstructionsVariable, pluginCacheVariable}, handover.replaced)
+	require.Equal(t, map[string]string{pluginCacheVariable: "p", repositoryInstructionsVariable: "0", "PATH": "/bin", "HOME": "/h", "MINE": "v"}, handover.carried)
 
 	// Control characters take six bytes each in the request's JSON.
 	oversized := []domain.PersonalVariable{{Name: "BIG", Value: strings.Repeat("\x01", 200<<10)}}
@@ -88,4 +85,11 @@ func TestManagedPersonalVariablesNameWhatTheyReplaceAndFitTheRelay(t *testing.T)
 	cause, definite := domain.DefiniteStartCause(err)
 	require.True(t, definite)
 	require.Equal(t, "the Personal Variables are too large to reach a Managed Computer", cause)
+}
+
+// The report of the Talgent Computer that composed the Harness's
+// environment and the launch command's own exports make one list.
+func TestTheReplacedNamesOfBothSidesMakeOneList(t *testing.T) {
+	require.Equal(t, []string{"A", "HOME", "PATH"}, mergeNames([]string{"PATH", "A"}, []string{"HOME", "PATH"}))
+	require.Empty(t, mergeNames(nil, nil))
 }

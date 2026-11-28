@@ -70,10 +70,6 @@ func reservedVariablePattern() string {
 	return pattern.String() + "*"
 }
 
-// launchVariables are the variables the launch command itself exports before
-// the Personal Variables load, so a Personal Variable replaces them.
-var launchVariables = []string{repositoryInstructionsVariable}
-
 // launchUnsetVariables are variables the launch command reads and unsets
 // after the Personal Variables load, so no Personal Variable of their name
 // replaces a platform variable in the Harness's environment.
@@ -93,19 +89,17 @@ func encodePersonalVariables(variables []domain.PersonalVariable) []byte {
 }
 
 // replacedVariables names, in name order, the platform variables the
-// Personal Variables take the place of: those the sandbox's specification
-// sets and those the launch command exports. Variables the sandbox image
-// defines for itself, such as PATH or HOME, are the image's own, not the
-// platform's, and a name the launch command unsets before the Harness starts
-// replaces nothing there.
-func replacedVariables(variables []domain.PersonalVariable, platform map[string]string) []string {
+// Personal Variables take the place of: those platform sets and those the
+// launch command exports (exported). A name the launch command unsets before
+// the Harness starts replaces nothing there.
+func replacedVariables(variables []domain.PersonalVariable, platform map[string]string, exported []launchVariable) []string {
 	var replaced []string
 	for _, variable := range variables {
 		_, set := platform[variable.Name]
 		if domain.ReservedVariableName(variable.Name) || slices.Contains(launchUnsetVariables, variable.Name) {
 			continue
 		}
-		if set || slices.Contains(launchVariables, variable.Name) {
+		if set || slices.ContainsFunc(exported, func(own launchVariable) bool { return own.name == variable.Name }) {
 			replaced = append(replaced, variable.Name)
 		}
 	}
@@ -123,6 +117,10 @@ type variableDelivery interface {
 	deliverVariables(ctx context.Context, record executionRecord, client *execd.Client, variables []domain.PersonalVariable) (variableHandover, error)
 	// withdrawVariables removes delivered variables no launch loaded.
 	withdrawVariables(ctx context.Context, record executionRecord, client *execd.Client) error
+	// restoreVariables gives the launched Harness process its variables
+	// again where the environment lost them before the process ever ran, so
+	// the run keeps its variables; it changes nothing otherwise.
+	restoreVariables(ctx context.Context, record executionRecord, client *execd.Client, variables []domain.PersonalVariable) error
 }
 
 // variableHandover is how a launch hands over a run's Personal Variables:
@@ -138,7 +136,9 @@ var _ variableDelivery = cloudEnvironment{}
 
 // deliverVariables uploads a Cloud run's Personal Variables to its file,
 // readable by the sandbox user alone, and names the variables of the
-// sandbox's specification and of the launch command they replace.
+// sandbox's specification and of the launch command they replace. Variables
+// the sandbox image defines for itself, such as PATH or HOME, are the
+// image's own, not the platform's.
 func (cloudEnvironment) deliverVariables(ctx context.Context, record executionRecord, client *execd.Client, variables []domain.PersonalVariable) (variableHandover, error) {
 	var spec sdk.CreateSandboxRequest
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
@@ -147,7 +147,7 @@ func (cloudEnvironment) deliverVariables(ctx context.Context, record executionRe
 	if err := client.Upload(ctx, cloudVariableFile(record), 0o600, encodePersonalVariables(variables)); err != nil {
 		return variableHandover{}, oops.With("operation", "deliver_personal_variables").Wrap(err)
 	}
-	return variableHandover{replaced: replacedVariables(variables, spec.Env)}, nil
+	return variableHandover{replaced: replacedVariables(variables, spec.Env, sandboxLayout.exports())}, nil
 }
 
 // withdrawVariables removes a Cloud run's file of Personal Variables.
@@ -155,6 +155,12 @@ func (cloudEnvironment) withdrawVariables(ctx context.Context, record executionR
 	if err := client.Remove(ctx, cloudVariableFile(record)); err != nil {
 		return oops.With("operation", "withdraw_personal_variables").Wrap(err)
 	}
+	return nil
+}
+
+// restoreVariables has nothing to restore: a Cloud Harness loads its file
+// once, when its launch command starts, and execd keeps no values to lose.
+func (cloudEnvironment) restoreVariables(context.Context, executionRecord, *execd.Client, []domain.PersonalVariable) error {
 	return nil
 }
 

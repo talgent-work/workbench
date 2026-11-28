@@ -19,9 +19,11 @@ Profile, and every start of a Work their Agent does for them gives its Harness t
 values, in place of platform variables of the same name. On a Managed Computer this takes this
 release's Talgent Computer, to which machines upgrade on connecting: a machine still on an earlier one
 never starts the Harness of a run with Personal Variables, whose start fails at its Startup Deadline,
-until it upgrades; raise `COMPUTER_MINIMUM_VERSION` to this release to refuse such runs at Start Work
-instead. A rollback drops the columns as the script's header describes; the table and the Secret may
-stay.
+naming the outdated Talgent Computer, until it upgrades. Raising `COMPUTER_MINIMUM_VERSION` to this
+release refuses every new run on such a machine at Start Work, with or without Personal Variables. A
+rollback drops the columns as the script's header describes; the table and the Secret may stay. A
+machine downgraded to an earlier Talgent Computer ignores that a reserved Harness process was created
+with Personal Variables and would start it without them, so stop the Works starting on it first.
 
 ## The release that gives an Agent its Workspace Instructions
 

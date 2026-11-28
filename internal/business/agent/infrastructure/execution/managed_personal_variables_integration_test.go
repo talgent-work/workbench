@@ -4,11 +4,13 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
 
 // managedVariables are a run's Personal Variables that replace platform
@@ -35,6 +37,7 @@ var managedVariables = []domain.PersonalVariable{
 func TestTheManagedHarnessLaunchAloneCarriesTheRunsPersonalVariables(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
+	f.relay.set(func(m *machineRelay) { m.replacedByMachine = []string{"ANTHROPIC_BASE_URL", "DISABLE_AUTOUPDATER", "HOME"} })
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
 
@@ -63,8 +66,8 @@ func TestTheManagedHarnessLaunchAloneCarriesTheRunsPersonalVariables(t *testing.
 	}
 
 	launched := current(t, f.steps, record.ID)
-	require.Equal(t, []string{repositoryInstructionsVariable, pluginCacheVariable, "DISABLE_AUTOUPDATER", "HOME"}, launched.ReplacedVariables,
-		"the platform's own variables they replaced; the machine's own Claude login sets no model endpoint")
+	require.Equal(t, []string{"ANTHROPIC_BASE_URL", repositoryInstructionsVariable, pluginCacheVariable, "DISABLE_AUTOUPDATER", "HOME"}, launched.ReplacedVariables,
+		"the variables Talgent Computer names as replaced in the Harness's environment, with the launch command's own exports they replace")
 	replaced, err := NewExecutionQueryRepository(f.provisioning.db).ReadReplacedVariables(ctx, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, launched.ReplacedVariables, replaced)
@@ -72,8 +75,9 @@ func TestTheManagedHarnessLaunchAloneCarriesTheRunsPersonalVariables(t *testing.
 
 // A machine whose Talgent Computer does not acknowledge the Personal
 // Variables, one that predates them, never starts the Harness without them:
-// the reserved process is deleted and the launch is retried, and it starts
-// once the machine acknowledges them.
+// the reserved process is deleted and the launch is retried, its setback
+// naming the outdated Talgent Computer and no value, and it starts once the
+// machine acknowledges them, with the run's values.
 func TestAManagedHarnessNeverStartsWithoutItsPersonalVariables(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
@@ -82,18 +86,52 @@ func TestAManagedHarnessNeverStartsWithoutItsPersonalVariables(t *testing.T) {
 	input.ContextMode = domain.ContextFresh
 	begun := f.beginWith(t, input, managedVariables)
 
+	// The creation, its delivery and preparation come first; the launch
+	// follows within a bounded number of reconciliations.
+	var err error
 	for range 4 {
-		_ = f.steps.reconcile(ctx, begun.ID)
+		if err = f.steps.reconcile(ctx, begun.ID); errors.Is(err, execd.ErrVariablesIgnored) {
+			break
+		}
 	}
+	require.ErrorIs(t, err, execd.ErrVariablesIgnored, "the launch fails for its bounded retry")
 	record, _, err := f.provisioning.get(ctx, begun.ID)
 	require.NoError(t, err)
 	require.Empty(t, record.ProcessID, "no Harness without its variables")
 	require.Contains(t, f.relay.deleted, "harness-handle", "the process reserved without them is deleted")
+	run := current(t, f.steps, begun.ID)
+	require.Equal(t, "launching the Harness: the Computer's Talgent Computer predates Personal Variables and must be upgraded to receive them", run.StartupSetback)
+	require.Equal(t, domain.ExecutionStarting, run.State, "the start waits for the upgrade until its Startup Deadline")
 
 	f.relay.set(func(m *machineRelay) { m.ignoresVariables = false })
 	record = f.launch(t, begun.ID)
 	require.Equal(t, "harness-handle", record.ProcessID)
-	require.NotNil(t, f.relay.created[len(f.relay.created)-1].PersonalVariables)
+	require.Equal(t, carriedVariables(managedVariables), f.relay.created[len(f.relay.created)-1].PersonalVariables, "the retried launch carries the run's values")
+}
+
+// A Talgent Computer that restarted after the Harness process was reserved
+// and before it ever ran lost its Personal Variables; the run keeps them,
+// and gives them to the process again before Dispatcher connects it, which
+// then starts it with them rather than failing as a Harness exit.
+func TestAManagedHarnessWhoseVariablesARestartLostIsGivenThemAgain(t *testing.T) {
+	ctx := context.Background()
+	f := newManagedWork(t)
+	input := managedRequest()
+	input.ContextMode = domain.ContextFresh
+	record := f.launch(t, f.beginWith(t, input, managedVariables).ID)
+	require.Len(t, f.receiver.requests, 1)
+
+	f.relay.set(func(m *machineRelay) { m.awaiting = true })
+	require.NoError(t, f.steps.reconcile(ctx, record.ID), "the connection that ended is taken up again")
+
+	require.Equal(t, []map[string]string{carriedVariables(managedVariables)}, f.relay.restored, "the process is given the run's values again")
+	require.Len(t, f.receiver.requests, 2, "and only then handed to Dispatcher")
+	launched := current(t, f.steps, record.ID)
+	require.Equal(t, record.ProcessID, launched.Process.ID, "the same process, never a second one")
+	require.False(t, launched.Process.Exited)
+
+	require.NoError(t, f.steps.reconcile(ctx, record.ID))
+	require.Len(t, f.relay.restored, 1, "a process that holds its values is given none again")
 }
 
 func mapValues(values map[string]string) []string {

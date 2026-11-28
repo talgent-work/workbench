@@ -8,19 +8,23 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
 
-// A Managed run's Personal Variables reach its Harness only (Personal
-// Variables at launch only): the Harness's process creation carries them to
-// Talgent Computer, which layers them last over the machine's environment,
-// the Work's and its own variables, TALGENT_ ones excepted, and keeps them in
-// memory only. Neither the Work's environment, which every process of the
-// Work gets, nor the Managed specification holds them: the execution keeps
-// them sealed apart from it (Run variable sealing). A machine that does not
-// acknowledge them never starts the Harness without them (createHarness).
+// A Managed run's Personal Variables reach its Harness only: the Harness's
+// process creation carries them to Talgent Computer, which layers them last
+// over the machine's environment, the Work's and its own variables,
+// TALGENT_ ones excepted, keeps them in memory only and names the Work's and
+// its own variables they replaced. Neither the Work's environment, which
+// every process of the Work gets, nor the Managed specification holds them:
+// the execution keeps them sealed apart from it. A machine that does not
+// acknowledge them never starts the Harness without them (createHarness),
+// and one that lost them before the Harness ever ran, as by restarting, is
+// given them again before the Harness connects (restoreVariables).
 
 var _ variableDelivery = ManagedEnvironment{}
 
 // relayRequestLimit is the largest request body Computer Gateway's relay
-// forwards to a machine.
+// forwards to a machine (docs/computer-protocol.md, Relay). The relay's own
+// bound lives in the Computer Gateway context, which Agent reaches only
+// through the relay's protocol and does not import, so it is restated here.
 const relayRequestLimit = 1 << 20
 
 // errVariablesBeyondRelay is the definite failure of a run whose Personal
@@ -28,29 +32,18 @@ const relayRequestLimit = 1 << 20
 var errVariablesBeyondRelay = domain.InvalidLaunchSpecification("the Personal Variables are too large to reach a Managed Computer")
 
 // deliverVariables gives the run's Personal Variables, reserved names left
-// out, to the Harness's process creation and names the platform variables
-// they replace: those of the Managed specification's environment, those
-// Talgent Computer sets for the platform and those the launch command
-// exports.
+// out, to the Harness's process creation and names the launch command's own
+// exports they replace; Talgent Computer names the rest in its answer.
 func (ManagedEnvironment) deliverVariables(_ context.Context, record executionRecord, _ *execd.Client, variables []domain.PersonalVariable) (variableHandover, error) {
-	spec, err := decodeManagedSpecification(record)
-	if err != nil {
-		return variableHandover{}, err
-	}
-	carried := make(map[string]string, len(variables))
-	for _, variable := range variables {
-		if !domain.ReservedVariableName(variable.Name) {
-			carried[variable.Name] = variable.Value
-		}
-	}
-	size, err := execd.CreationBytes("/workspace", record.LaunchCommand, carried)
+	carried := carriedVariables(variables)
+	size, err := execd.CreationBytes(domain.WorkspacePath, record.LaunchCommand, carried)
 	if err != nil {
 		return variableHandover{}, oops.With("operation", "measure_personal_variables").Wrap(err)
 	}
 	if size > relayRequestLimit {
 		return variableHandover{}, errVariablesBeyondRelay
 	}
-	return variableHandover{replaced: replacedVariables(variables, spec.platformVariables()), carried: carried}, nil
+	return variableHandover{replaced: replacedVariables(variables, nil, machineLayout.exports()), carried: carried}, nil
 }
 
 // withdrawVariables has nothing to remove: the values travelled in the
@@ -60,22 +53,20 @@ func (ManagedEnvironment) withdrawVariables(context.Context, executionRecord, *e
 	return nil
 }
 
-// platformVariables are the variables the platform sets in a Managed
-// Harness's environment: the specification's environment, those Talgent
-// Computer sets as the specification asks (the machine's HOME, the model
-// proxy's endpoint and token on a Model Configuration, and where telemetry
-// goes) and those the launch command exports. The machine's own variables
-// are not the platform's.
-func (s managedSpecification) platformVariables() map[string]string {
-	platform := map[string]string{"HOME": "", "OTEL_EXPORTER_OTLP_ENDPOINT": "", "OTEL_EXPORTER_OTLP_HEADERS": ""}
-	for name := range s.Environment {
-		platform[name] = ""
+// restoreVariables gives the launched Harness process the run's Personal
+// Variables again when its Talgent Computer awaits them: it restarted after
+// the process was reserved and before it ever ran, losing the values it
+// held in memory only. Until then the process neither starts nor fails.
+func (ManagedEnvironment) restoreVariables(ctx context.Context, record executionRecord, client *execd.Client, variables []domain.PersonalVariable) error {
+	awaiting, err := client.AwaitsVariables(ctx, record.ProcessID)
+	if err != nil {
+		return oops.With("operation", "observe_personal_variables").Wrap(err)
 	}
-	if s.ModelEndpoint != "" {
-		platform["ANTHROPIC_BASE_URL"], platform["ANTHROPIC_AUTH_TOKEN"] = "", ""
+	if !awaiting {
+		return nil
 	}
-	for _, variable := range machineLayout.own {
-		platform[variable.name] = ""
+	if err := client.RestoreVariables(ctx, record.ProcessID, carriedVariables(variables)); err != nil {
+		return oops.With("operation", "restore_personal_variables").Wrap(err)
 	}
-	return platform
+	return nil
 }
