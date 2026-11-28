@@ -23,7 +23,7 @@ import (
 func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
 	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(ctx, id)
@@ -93,7 +93,7 @@ func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T
 func TestAReachResumeMarkPersistsAndIsFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.jdb, creationModels()))
 	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
 	// The Work recovery its creation wakes hands off its initial task input.

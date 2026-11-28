@@ -35,9 +35,12 @@ type WorkCreationRequest struct {
 	StartedBy          string
 	RepositoryInput    WorkRepositoryInput
 	AuthorizationInput WorkAuthorizationInput
-	Admission          StartAdmission
-	ThinkingLevel      string
-	WorkModel          WorkModelSelection
+	// VariableInput supplies the Personal Variables a new Work may enable; a
+	// reused Work keeps its own selection.
+	VariableInput WorkVariableInput
+	Admission     StartAdmission
+	ThinkingLevel string
+	WorkModel     WorkModelSelection
 	// ComputerManaged reports that the Work starts on a Managed Computer.
 	ComputerManaged bool
 	// HarnessChoice is how its starter runs the Harness, its permission mode
@@ -208,6 +211,7 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 		StartedBy:          request.StartedBy,
 		RepositoryInput:    request.RepositoryInput,
 		AuthorizationInput: request.AuthorizationInput,
+		VariableInput:      request.VariableInput,
 		ThinkingLevel:      request.ThinkingLevel,
 		ID:                 workID, AgentID: a.ID, WorkCaller: request.WorkCaller, WorkKey: request.WorkKey, FileHome: request.FileHome, DisplayTitle: request.DisplayTitle,
 		WorkModel: request.WorkModel, Capabilities: request.Capabilities, RepresentedPerson: a.RepresentedPerson(), OwningApplication: a.OwningApplication(), StartingUser: request.StartingUser,

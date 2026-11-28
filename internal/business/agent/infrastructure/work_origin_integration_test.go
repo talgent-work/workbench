@@ -53,7 +53,7 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: purpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: purpose}})
 		require.NoError(t, err)
 		require.NoError(t, agents.Save(ctx, definition))
-		id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}})
+		id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}})
 		require.NoError(t, err)
 		ids[purpose], definitions[purpose] = id, definition.ID
 	}

@@ -26,7 +26,7 @@ func modelHandler(t *testing.T, store *sessionStore) (*domain.AgentDefinition, *
 	require.NoError(t, err)
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: deploymentModel, ThinkingLevels: []string{"low"}, DefaultThinkingLevel: "low"})
 	computers := capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}
-	return agent, command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computers, store.preparation(models))
+	return agent, command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agentStore{agent}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computers, store.preparation(models))
 }
 
 func modelCreation(agentID, computerID string, model domain.WorkModelSelection, thinking string) command.CreateWork {
@@ -80,7 +80,7 @@ func TestThePMCoordinatorRunsOnlyOnACloud(t *testing.T) {
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: deploymentModel, ThinkingLevels: []string{"low"}, DefaultThinkingLevel: "low"})
 	for computer, refused := range map[string]bool{managedComputer: true, "": false} {
 		store, seats := &sessionStore{}, &seatCount{capacityCheck: capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}}
-		handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{coordinator}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), seats, store.preparation(models))
+		handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agentStore{coordinator}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), seats, store.preparation(models))
 		creation := modelCreation(coordinator.ID, computer, deploymentModel, "")
 		creation.WorkCaller = domain.WorkCaller{Kind: "project", ID: "project"}
 		_, err := handler.Handle(t.Context(), creation)
@@ -184,7 +184,7 @@ func TestAManagedWorkIsCreatedWithoutProviderAuthorizedConnectors(t *testing.T) 
 	require.NoError(t, err)
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: deploymentModel, ThinkingLevels: []string{"low"}, DefaultThinkingLevel: "low"})
 	computers := capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, models, commandtest.StartCatalog(githubCatalog{}, authorizationcatalogtest.Empty{}), computers, store.preparation(models))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agentStore{agent}, store, store, models, commandtest.StartCatalog(githubCatalog{}, authorizationcatalogtest.Empty{}), computers, store.preparation(models))
 	creation := modelCreation(agent.ID, managedComputer, domain.MachineLoginModel(), "")
 	creation.CapabilityDifferences.Connectors = []domain.ConnectorChoice{{ConnectorID: connectorcatalogtest.GitHub().ID, Include: true}}
 	_, err = handler.Handle(t.Context(), creation)

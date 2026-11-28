@@ -22,7 +22,7 @@ func TestWorkUsesOneHumanForPluginsHomeAndAuthorization(t *testing.T) {
 	})
 	require.NoError(t, err)
 	store := &sessionStore{}
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store,
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agentStore{agent}, store, store,
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
 		commandtest.StartCatalog(personalCatalog{}, ownerAuthorizationCatalog{}), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
 	input := command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), AgentID: agent.ID,
@@ -70,7 +70,7 @@ func TestAutomatedWorkUsesRequiredPluginsWithoutPersonalDefaults(t *testing.T) {
 	})
 	require.NoError(t, err)
 	store := &sessionStore{}
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store,
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agentStore{agent}, store, store,
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
 		commandtest.StartCatalog(personalCatalog{}, ownerAuthorizationCatalog{}), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
 	id, err := handler.Handle(t.Context(), command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(),

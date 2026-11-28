@@ -15,9 +15,10 @@ running against them. Its `apply.sh` creates, once and never replacing it, the S
 `agent-personal-variable-key`, the Agent key that seals Personal Variables. A deployment that
 manages its own Secrets creates that Secret with key `key`, 32 random bytes base64-encoded, before
 deploying; `controlplane` does not start without it. A person now keeps Personal Variables on
-Profile, and every start of a Cloud Work their Agent does for them gives its Harness their current
-values, in place of platform variables of the same name. A rollback drops the columns as the
-script's header describes; the table and the Secret may stay.
+Profile and chooses, when starting a Work, which of them it enables, all by default; every start of
+a Cloud Work their Agent does for them gives its Harness the current values of those it enabled, in
+place of platform variables of the same name. Works created before this release enable none. A
+rollback drops the columns as the script's header describes; the table and the Secret may stay.
 
 ## The release that gives an Agent its Workspace Instructions
 

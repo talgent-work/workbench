@@ -306,25 +306,30 @@ func fixtureAdmissionAt(agentID string, at time.Time) domain.StartAdmission {
 	return admission
 }
 
-// An execution begins with the current values of the Personal Variables of
-// the person its Work's Agent represents; a Work that represents no person
+// An execution begins with the current values of the Personal Variables its
+// Work's selection names, from the set of the person its Work's Agent
+// represents: a name the person no longer keeps is skipped, one they keep but
+// the Work did not enable stays out, and a Work that represents no person
 // takes none, whoever keeps variables.
-func TestBeginExecutionTakesTheRepresentedPersonsPersonalVariables(t *testing.T) {
+func TestBeginExecutionTakesTheSelectedPersonalVariables(t *testing.T) {
 	ctx := context.Background()
 	variables := &commandtest.PersonalVariables{}
 	set, err := domain.NewPersonalVariableSet("person-a")
 	require.NoError(t, err)
-	_, err = set.SetVariable("person-a", domain.PersonalVariable{Name: "API_TOKEN", Value: "secret"})
-	require.NoError(t, err)
+	for _, variable := range []domain.PersonalVariable{{Name: "API_TOKEN", Value: "secret"}, {Name: "LATER", Value: "added later"}} {
+		_, err = set.SetVariable("person-a", variable)
+		require.NoError(t, err)
+	}
 	require.NoError(t, variables.Save(ctx, set))
 
+	selection := domain.WorkVariableSelection{Names: []string{"API_TOKEN", "REMOVED"}}
 	for person, want := range map[string][]domain.PersonalVariable{
 		"person-a": {{Name: "API_TOKEN", Value: "secret"}},
 		"person-b": nil,
 		"":         nil,
 	} {
 		w := newWorld(t, startingSession(t))
-		w.work().RepresentedPerson = person
+		w.work().RepresentedPerson, w.work().VariableSelection = person, selection
 		w.coordination = command.NewExecutionCoordination(w.now, w.works, commandtest.Definitions{}, variables, w.executions, w.computers, w.harness)
 		require.Equal(t, want, w.begin(t).PersonalVariables, person)
 	}

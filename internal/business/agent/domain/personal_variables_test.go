@@ -48,7 +48,7 @@ func TestPersonalVariableSetRemovesANameAndIgnoresAnAbsentOne(t *testing.T) {
 	require.False(t, changed)
 	_, err = set.Reveal("person-a", "TOKEN")
 	require.ErrorIs(t, err, ErrPersonalVariableNotFound)
-	require.Empty(t, set.CurrentValues())
+	require.Empty(t, set.CurrentValues(WorkVariableSelection{Names: []string{"TOKEN"}}), "a removed name is skipped")
 }
 
 func TestPersonalVariableSetAdmitsOnlyItsPerson(t *testing.T) {
@@ -65,7 +65,7 @@ func TestPersonalVariableSetAdmitsOnlyItsPerson(t *testing.T) {
 		_, err = set.Reveal(requester, "TOKEN")
 		require.ErrorIs(t, err, ErrPersonalVariableForbidden)
 	}
-	require.Equal(t, []PersonalVariable{{Name: "TOKEN", Value: "v"}}, set.CurrentValues())
+	require.Equal(t, []PersonalVariable{{Name: "TOKEN", Value: "v"}}, set.CurrentValues(WorkVariableSelection{Names: []string{"TOKEN"}}))
 }
 
 func TestPersonalVariableSetRefusesNamesAndValuesAnEnvironmentCannotCarry(t *testing.T) {

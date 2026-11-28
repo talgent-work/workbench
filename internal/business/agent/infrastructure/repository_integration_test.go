@@ -73,7 +73,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "# Repositories\nRun make check.", agent.WorkspaceInstructions)
 
 	traceAttributes := map[string]string{"talgent.project_id": "project-1", "talgent.owner_id": "case"}
-	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, TraceAttributes: traceAttributes})
+	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, TraceAttributes: traceAttributes})
 	require.NoError(t, err)
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -196,7 +196,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	require.NoError(t, agents.Save(ctx, agent))
 	const workers = 8
 	lookup := &creationRaceLookup{AgentWorkRepository: sessions, workers: workers, arrived: make(chan struct{}, workers), release: make(chan struct{})}
-	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, agents, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels()))
 	request := command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project-a"}, WorkKey: domain.WorkKey{Kind: "case", ID: "Work-A"}, TraceAttributes: map[string]string{"talgent.project_id": "project-a"}}
 	type result struct {
 		id  string
@@ -253,7 +253,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	jdb, err = jimuxorm.New(db)
 	require.NoError(t, err)
 	sessions = infrastructure.NewAgentWorkRepository(jdb, time.Now)
-	handler = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, infrastructure.NewAgentDefinitionRepository(jdb, time.Now), sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels()))
+	handler = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, &commandtest.PersonalVariables{}, infrastructure.NewAgentDefinitionRepository(jdb, time.Now), sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(jdb).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(jdb, creationModels()))
 	request.AgentHarness = "claude-code"
 	request.CapabilityDifferences = domain.CapabilityDifferences{Plugins: []domain.PluginChoice{{Slug: "duplicate", Include: true}, {Slug: "duplicate", Include: true}}}
 	id, err := handler.Handle(ctx, request)
