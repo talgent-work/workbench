@@ -18,6 +18,7 @@ import { SkillHighlight } from "../composer/skill-completion";
 import { useSlashCompletion, type SlashCandidate } from "../composer/use-slash-completion";
 import { ConnectorsMenu, PluginsMenu } from "./work-start-catalog";
 import { AgentPicker, ComputerPicker, HarnessPicker, RepositoryPicker } from "./work-start-tray";
+import { WorkStartVariablesPrototype } from "./work-start-variables-prototype";
 import "./work-start-tray.css";
 
 type Menu = "Computer" | "Permissions" | "Repository" | "Agent" | "Plugins" | "Connectors";
@@ -157,6 +158,8 @@ export function WorkStartForm({ source, disabled: blocked = false, unavailable, 
       <AgentPicker agents={agents} value={draft.agent} disabled={controlsDisabled} open={menu === "Agent"} onOpenChange={openMenu("Agent")} onChange={agent => update({ agent })} />
       <PluginsMenu rows={rows} catalog={catalog.data ?? []} draft={draft} update={update} disabled={controlsDisabled} open={menu === "Plugins"} onOpenChange={openMenu("Plugins")} view={pluginView} onViewChange={setPluginView} errors={submitted ? choices.errors : {}} />
       <ConnectorsMenu rows={connectorRows} update={update} disabled={controlsDisabled} open={menu === "Connectors"} onOpenChange={openMenu("Connectors")} returnTo={pathname} />
+      {/* PROTOTYPE ONLY: Personal Variables for this Work (?variant=A|B|C). */}
+      <WorkStartVariablesPrototype disabled={controlsDisabled} />
     </div>
     {submitted && (problems.length > 0 || Object.keys(choices.errors).length > 0 || agentMissing || offline) && <div className="wst-feedback" role="alert">
       {problems.map(row => <p key={row.slug} className="wpb-feedback-error"><AlertTriangle size={14} aria-hidden="true" /> {row.name}: {row.problem.toLowerCase()}. <Button size="sm" variant="ghost" onPress={() => { setPluginView(row.slug); setMenu("Plugins"); }}>Fix</Button></p>)}

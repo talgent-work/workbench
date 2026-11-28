@@ -5,6 +5,7 @@ import { ProviderRows } from "../components/marketplace/provider-pages";
 import { useProviderAuthorizationCallback } from "../components/profile/provider-callback";
 import { WorkAgentAppearance } from "../components/profile/work-agent-appearance";
 import { WorkAgentGuidance } from "../components/profile/work-agent-guidance";
+import { PersonalVariablesPrototype } from "../components/profile/personal-variables-prototype";
 import { useCurrentUser, useLogout } from "../lib/account-service";
 import { avatarInitial, safeAvatarUrl, safeDisplayName, safeEmail } from "../lib/user-display";
 import "../components/marketplace/marketplace.css";
@@ -53,6 +54,8 @@ export function ProfilePage() {
         </header>
         <WorkAgentAppearance />
         <WorkAgentGuidance />
+        {/* PROTOTYPE ONLY: personal variables variants (?variant=A|B|C). */}
+        <PersonalVariablesPrototype />
         <section className="mk-section" aria-labelledby="pf-providers">
           <div className="flex items-center gap-2">
             <h3 id="pf-providers" className="mk-section-title">Providers</h3>

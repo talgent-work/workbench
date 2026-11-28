@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prototype": "vite --config prototype/vite.config.ts"
   },
   "dependencies": {
     "@heroui/react": "^3.1.0",
