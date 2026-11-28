@@ -52,7 +52,7 @@ export function WorkThinkingControl({ sessionId, option, initialLevel = "", canA
       {levels.length > 0 && <ThinkingEffort levels={levels} value={level} disabled={!canAdjust || current.isError || change.isPending} onChange={next => change.mutate(next)} />}
       {change.error && <p className="wpb-popover-error" role="alert">Thinking effort wasn’t changed: {change.error.message}</p>}
       {current.isError && <p className="wpb-popover-error" role="alert">Thinking effort couldn’t be read. <Button size="sm" variant="ghost" onPress={() => void current.refetch()}>Retry</Button></p>}
-      {replacedVariables.length > 0 && <PopoverFootnote><span className="wpb-replaced-note">Your variables replace the platform’s <VariableNames names={replacedVariables} />.<ManageVariablesLink className="mt-1 block w-fit" /></span></PopoverFootnote>}
+      {replacedVariables.length > 0 && <PopoverFootnote><span className="wpb-replaced-note">Your variables replace the platform’s <VariableNames names={replacedVariables} /><ManageVariablesLink className="mt-1 block w-fit" /></span></PopoverFootnote>}
     </Popover.Dialog></Popover.Content>
   </Popover>;
 }
