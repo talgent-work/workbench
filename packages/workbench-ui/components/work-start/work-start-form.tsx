@@ -6,11 +6,12 @@ import { useLocation } from "react-router-dom";
 import type { WorkStartInput } from "../../lib/start-work-request";
 import { useConnectors, useInstalledPlugins, usePluginCatalog, usePluginReleases } from "../../lib/marketplace-catalog";
 import { useUsableComputers } from "../../lib/computer-service";
+import { usePersonalVariables } from "../../lib/personal-variable-service";
 import { startModels, startModelSelection } from "../../lib/work-model";
 import { defaultPermissionMode } from "../../lib/permission-modes";
 import { useWorkStartDraft } from "../../lib/work-start-draft";
 import type { WorkStartSource } from "../../lib/work-start-source";
-import { connectorChoices, connectorLoadout, pluginChoices, pluginLoadout } from "../../lib/work-start-loadout";
+import { connectorChoices, connectorLoadout, enabledVariables, pluginChoices, pluginLoadout } from "../../lib/work-start-loadout";
 import { startWorkErrorMessage } from "./start-work-launch-state";
 import { PromptBar } from "../composer/prompt-bar";
 import { PromptAddMenu, PromptModelControl } from "../composer/prompt-bar-controls";
@@ -18,9 +19,10 @@ import { SkillHighlight } from "../composer/skill-completion";
 import { useSlashCompletion, type SlashCandidate } from "../composer/use-slash-completion";
 import { ConnectorsMenu, PluginsMenu } from "./work-start-catalog";
 import { AgentPicker, ComputerPicker, HarnessPicker, RepositoryPicker } from "./work-start-tray";
+import { VariablesMenu } from "./work-start-variables";
 import "./work-start-tray.css";
 
-type Menu = "Computer" | "Permissions" | "Repository" | "Agent" | "Plugins" | "Connectors";
+type Menu = "Computer" | "Permissions" | "Repository" | "Agent" | "Plugins" | "Connectors" | "Variables";
 
 // `unavailable` shows the form disabled with the reason, without anyone's
 // personal loadout: a Work runs with its owner's own choices.
@@ -37,6 +39,7 @@ export function WorkStartForm({ source, disabled: blocked = false, unavailable, 
   const catalog = usePluginCatalog();
   const installed = useInstalledPlugins();
   const connectors = useConnectors();
+  const variables = usePersonalVariables(!unavailable);
   // Only a source that chooses a Computer offers the choice; without one the platform's default runs the Work.
   const computers = useUsableComputers(Boolean(source.chooseComputer) && !unavailable);
   const computerList = source.chooseComputer ? computers.data : undefined;
@@ -90,13 +93,15 @@ export function WorkStartForm({ source, disabled: blocked = false, unavailable, 
     setInvalid(false); setError(""); setSubmitted(true);
     if (!draft.instruction.trim()) { setInvalid(true); setError("Enter an initial instruction."); input.current?.focus(); return; }
     // Load failures are reported with a retry; there is nothing to correct here.
-    if (options.isError || catalog.isError || installed.isError) return;
+    if (options.isError || catalog.isError || installed.isError || variables.isError) return;
     if (!model || (thinking && !model.thinkingLevels.includes(thinking))) { setError("Choose an available model and thinking level before starting."); return; }
     // Blocking problems are reported before submission; missing authorization is not one.
     if (problems.length || Object.keys(choices.errors).length || agentMissing || offline) return;
     if (computerMissing) { setError("Choose a Computer before starting."); return; }
     // A Computer list that failed to load is reported with a retry.
     if (computerUnconfirmed) { if (!computers.isError) setError("Computers are still loading. Try again in a moment."); return; }
+    // The Work enables exactly the variables the card showed, so it waits for their list.
+    if (!variables.data) { setError("Variables are still loading. Try again in a moment."); return; }
     // Chosen repositories are checked once their discovery answers; the start waits for it.
     const reachable = new Set((repositories.data?.repositories ?? []).map(repository => repository.id));
     if (draft.repositories.length && repositories.isPending) { setError("Repositories are still loading. Try again in a moment."); return; }
@@ -117,6 +122,7 @@ export function WorkStartForm({ source, disabled: blocked = false, unavailable, 
         repositorySelections: draft.repositories.map(repositoryId => ({ repositoryId, baseBranch: "" })),
         ...(computer && { computerId: computer.id }),
         ...(harness && { harness }),
+        personalVariables: { names: enabledVariables(variables.data, draft.variablesOff) },
         ...(choices.plugins.length || connectorsChanged.length || draft.agent ? { creationCapabilities: { plugins: choices.plugins, connectors: connectorsChanged, ...(draft.agent ? { startupAgent: draft.agent } : {}) } } : {}),
       });
       update({ files: [] });
@@ -157,6 +163,8 @@ export function WorkStartForm({ source, disabled: blocked = false, unavailable, 
       <AgentPicker agents={agents} value={draft.agent} disabled={controlsDisabled} open={menu === "Agent"} onOpenChange={openMenu("Agent")} onChange={agent => update({ agent })} />
       <PluginsMenu rows={rows} catalog={catalog.data ?? []} draft={draft} update={update} disabled={controlsDisabled} open={menu === "Plugins"} onOpenChange={openMenu("Plugins")} view={pluginView} onViewChange={setPluginView} errors={submitted ? choices.errors : {}} />
       <ConnectorsMenu rows={connectorRows} update={update} disabled={controlsDisabled} open={menu === "Connectors"} onOpenChange={openMenu("Connectors")} returnTo={pathname} />
+      <VariablesMenu variables={variables.data ?? []} loading={variables.isPending && !unavailable} failed={variables.isError} off={draft.variablesOff} disabled={controlsDisabled} open={menu === "Variables"} onOpenChange={openMenu("Variables")}
+        onChange={variablesOff => update({ variablesOff })} onRetry={() => void variables.refetch()} />
     </div>
     {submitted && (problems.length > 0 || Object.keys(choices.errors).length > 0 || agentMissing || offline) && <div className="wst-feedback" role="alert">
       {problems.map(row => <p key={row.slug} className="wpb-feedback-error"><AlertTriangle size={14} aria-hidden="true" /> {row.name}: {row.problem.toLowerCase()}. <Button size="sm" variant="ghost" onPress={() => { setPluginView(row.slug); setMenu("Plugins"); }}>Fix</Button></p>)}
@@ -167,6 +175,7 @@ export function WorkStartForm({ source, disabled: blocked = false, unavailable, 
     {draft.submitting && <p className="sr-only" role="status">{uploading ? `Uploading ${uploading}…` : "Submitting startup request…"}</p>}
     {computerMissing && <p className="wpb-feedback" role="alert">The Computer you chose is no longer available. <Button size="sm" variant="ghost" onPress={() => setMenu("Computer")}>Choose a Computer</Button></p>}
     {source.chooseComputer && computers.isError && !computerList && <p className="wpb-feedback" role="alert">Computers could not be loaded. <Button size="sm" variant="ghost" onPress={() => void computers.refetch()}>Retry</Button></p>}
+    {variables.isError && <p className="wpb-feedback" role="alert">Variables could not be loaded. <Button size="sm" variant="ghost" onPress={() => void variables.refetch()}>Retry</Button></p>}
     {(options.isError || catalog.isError || installed.isError) && <p className="wpb-feedback" role="alert">Startup configuration could not be loaded. <Button size="sm" variant="ghost" onPress={() => { void options.refetch(); void catalog.refetch(); void installed.refetch(); }}>Retry</Button></p>}
     {error && <p id={`${id}-error`} className="wpb-feedback wpb-feedback-error" role="alert">{error}</p>}
   </form>;
