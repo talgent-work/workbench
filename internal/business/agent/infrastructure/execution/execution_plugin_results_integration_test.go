@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -31,7 +33,7 @@ func beginPluginRun(t *testing.T, repository *AgentExecutionRepository, workID s
 	prepared, err := run.RecordPreparation(domain.PreparationReport{Installations: installations})
 	require.NoError(t, err)
 	require.True(t, prepared)
-	_, err = run.RecordLaunch("process-" + run.ID)
+	_, err = run.RecordLaunch(domain.HarnessLaunch{ProcessID: "process-" + run.ID})
 	require.NoError(t, err)
 	require.NoError(t, repository.Save(context.Background(), run))
 	stored, err := repository.Get(context.Background(), run.ID)
@@ -59,7 +61,7 @@ func reportLoads(t *testing.T, repository *AgentExecutionRepository, run *domain
 func TestAgentExecutionRepositoryKeepsPluginOutcomesWithTheRun(t *testing.T) {
 	ctx := context.Background()
 	_, db := executionDatabase(t)
-	repository := NewAgentExecutionRepository(db, time.Now)
+	repository := NewAgentExecutionRepository(db, sealingtest.Sealer(), time.Now)
 	run := beginPluginRun(t, repository, uuid.NewString(), time.Now(),
 		domain.PluginInstallation{Slug: "runtime", Reason: "installation_failed"}, domain.PluginInstallation{Slug: "tools", Installed: true})
 	require.Equal(t, []domain.PluginResult{
@@ -101,7 +103,7 @@ func TestCurrentPluginResultsReadTheLatestExecutionOnly(t *testing.T) {
 	ctx := context.Background()
 	_, jdb := executionDatabase(t)
 	at := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(jdb, func() time.Time { return at })
+	repository := NewAgentExecutionRepository(jdb, sealingtest.Sealer(), func() time.Time { return at })
 	results := infrastructure.NewExecutionQueryRepository(jdb)
 	workID := uuid.NewString()
 

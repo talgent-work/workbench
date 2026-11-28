@@ -35,6 +35,11 @@ type ExecutionQueryRepository interface {
 	// run: those its most recently begun AgentExecution recorded (Plugin
 	// result reading).
 	ListCurrentPluginResults(ctx context.Context, workID string) ([]PluginResult, error)
+	// ReadReplacedVariables names, never with values, the platform variables
+	// that the Personal Variables of a Work's current run replaced at its
+	// launch (Replacement report): those its most recently begun
+	// AgentExecution recorded; none before it launched.
+	ReadReplacedVariables(ctx context.Context, workID string) ([]string, error)
 	ReadServiceAccess(ctx context.Context, workID string) ([]ServiceAccessObservation, error)
 	ReadRepositoryPreparation(ctx context.Context, workID string) ([]RepositoryPreparation, error)
 	// RunTelemetryAttribution authenticates the telemetry a Managed Work's

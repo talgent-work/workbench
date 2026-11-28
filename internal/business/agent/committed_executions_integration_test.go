@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -29,7 +31,7 @@ func TestCommittedExecutionWakesAndDispatchesOnlyAfterItsCommit(t *testing.T) {
 	require.NoError(t, err)
 	events := &recordedEvents{}
 	var woken []string
-	executions := newCommittedExecutions(jdb, time.Now, &workStateUpdates{reader: unavailableViews{}, logger: slog.New(slog.DiscardHandler)}, events)
+	executions := newCommittedExecutions(jdb, sealingtest.Sealer(), time.Now, &workStateUpdates{reader: unavailableViews{}, logger: slog.New(slog.DiscardHandler)}, events)
 	executions.wake = func(_ context.Context, id string) { woken = append(woken, id) }
 
 	launch := domain.LaunchSpecification{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "committed-work", HarnessSessionReference: "context",
@@ -47,7 +49,7 @@ func TestCommittedExecutionWakesAndDispatchesOnlyAfterItsCommit(t *testing.T) {
 	commandtest.Submit(current)
 	_, err = current.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: current.ID})
 	require.NoError(t, err)
-	_, err = current.RecordLaunch("process")
+	_, err = current.RecordLaunch(domain.HarnessLaunch{ProcessID: "process"})
 	require.NoError(t, err)
 	changed, err := current.ConfirmReady(domain.ReadinessReport{Prepared: true, Started: true}, time.Now())
 	require.NoError(t, err)

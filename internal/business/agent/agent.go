@@ -80,6 +80,10 @@ var Module = fx.Module("domain.agent",
 	// Each run of a Work is an AgentExecution; the Policies between the two
 	// Roots pass the Work's execution requests and the execution's reports.
 	fx.Provide(fx.Annotate(newCommittedExecutions, fx.As(fx.Self()), fx.As(new(domain.AgentExecutionRepository)))),
+	// Each person's Personal Variables, and those each execution took at its
+	// start, stay sealed under the Agent key.
+	fx.Provide(newPersonalVariableSealer, fx.Private),
+	fx.Provide(fx.Annotate(infrastructure.NewPersonalVariableSetRepository, fx.As(new(domain.PersonalVariableSetRepository)))),
 	fx.Provide(command.NewExecutionCoordination),
 	fx.Provide(eventhandler.NewBeginExecution, eventhandler.NewRequestProcessExit, eventhandler.NewRetireExecution, eventhandler.NewApplyExecutionReport, eventhandler.NewRecordCheckouts, eventhandler.NewConfirmComputeRelease),
 	// Storage owns every space a Work uses; the workspace reader reads a
@@ -164,6 +168,7 @@ func RegisterRPCHandlers(server connectrpc.Server, app *application.Application,
 		agentpublicv1connect.RegisterAgentWorkServiceHandler(public, transport.NewWorkHandler(app))
 		agentpublicv1connect.RegisterIdentityServiceHandler(public, transport.NewIdentityHandler(app))
 		agentpublicv1connect.RegisterWorkWorkspaceServiceHandler(public, transport.NewWorkWorkspaceHandler(app))
+		agentpublicv1connect.RegisterPersonalVariableServiceHandler(public, transport.NewPersonalVariableHandler(app))
 	}, connectrpc.WithInterceptors(authn.NewPrincipalInterceptor()))
 	server.Register(func(private *connect.Server) {
 		agentprivatev1connect.RegisterAgentServiceHandler(private, transport.NewAgentHandler(app, config.ControlToken))

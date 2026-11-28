@@ -198,3 +198,17 @@ type workProgressItemRecord struct {
 	Status     string `json:"status"`
 	ActiveForm string `json:"active_form,omitempty"`
 }
+
+// personalVariableSetDO is one person's PersonalVariableSet; its variables
+// stay sealed under the Agent key, bound to the person.
+type personalVariableSetDO struct {
+	ID        string `xorm:"id pk varchar(36)"`
+	PersonID  string `xorm:"person_id varchar(255)"`
+	Variables []byte `xorm:"variables mediumblob"`
+	Version   int    `xorm:"'version' int"`
+	CreatedAt int64  `xorm:"created_at bigint"`
+	UpdatedAt int64  `xorm:"updated_at bigint"`
+	DeletedAt int64  `xorm:"deleted_at bigint"`
+}
+
+func (personalVariableSetDO) TableName() string { return "agent_personal_variable_set" }

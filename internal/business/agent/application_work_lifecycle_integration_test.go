@@ -23,9 +23,10 @@ import (
 // ownerClients reach the public Work APIs as one owner, through the
 // identity headers the entry writes.
 type ownerClients struct {
-	ctx   context.Context
-	works agentpublicv2connect.WorkServiceClient
-	work  agentpublicv1connect.AgentWorkServiceClient
+	ctx       context.Context
+	works     agentpublicv2connect.WorkServiceClient
+	work      agentpublicv1connect.AgentWorkServiceClient
+	variables agentpublicv1connect.PersonalVariableServiceClient
 }
 
 func (m *lifecycleModule) as(principal, subject string) ownerClients {
@@ -35,7 +36,7 @@ func (m *lifecycleModule) as(principal, subject string) ownerClients {
 	info.RequestHeader().Set(authn.HeaderPrincipal, principal)
 	info.RequestHeader().Set(authn.HeaderSubject, subject)
 	client := connect.NewClient(connecthttp.NewTransport(m.public, m.url, connecthttp.WithReadMaxBytes(0)))
-	return ownerClients{ctx: ctx, works: agentpublicv2connect.NewWorkServiceClient(client), work: agentpublicv1connect.NewAgentWorkServiceClient(client)}
+	return ownerClients{ctx: ctx, works: agentpublicv2connect.NewWorkServiceClient(client), work: agentpublicv1connect.NewAgentWorkServiceClient(client), variables: agentpublicv1connect.NewPersonalVariableServiceClient(client)}
 }
 
 func (c ownerClients) start(t *testing.T, requestID, message string) (string, error) {

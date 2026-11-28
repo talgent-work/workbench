@@ -50,6 +50,10 @@ type launchLayout struct {
 	// only a Managed Computer's Works have; elsewhere the Harness bypasses
 	// permission prompts.
 	harnessChoice bool
+	// variables is the file a run's Personal Variables wait in for its
+	// Harness launch (personal_variable_delivery.go); nil where the layout
+	// delivers none.
+	variables func(owner SandboxOwner) string
 }
 
 // sandboxDiagnostics is where a Cloud sandbox keeps Harness diagnostics.
@@ -59,6 +63,7 @@ const sandboxDiagnostics = "/tmp/"
 // mounted HOME with the Harness state mounted where the Agent Harness keeps
 // it, and preparation bounded by coreutils timeout.
 var sandboxLayout = launchLayout{
+	variables:  sandboxVariableFile,
 	diagnostic: func(name string) string { return shellWord(sandboxDiagnostics + name) },
 	server:     func(connector domain.SelectedConnector) (map[string]any, bool) { return nativeServer(connector), true },
 	recovered:  recoveredContext,
@@ -225,7 +230,11 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 		// starts it as a fresh start would.
 		recovered = layout.recovered(harness, sessionID, freshContext(request.StartingContext, sessionID))
 	}
-	command := layout.prefix + "exec 2>>" + diagnostic + "; " + repositoryInstructions + "talgent_effort=" + effort + "; unset CLAUDE_CODE_EFFORT_LEVEL; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
+	variables := ""
+	if layout.variables != nil {
+		variables = personalVariableLoader(layout.variables(owner))
+	}
+	command := layout.prefix + "exec 2>>" + diagnostic + "; " + repositoryInstructions + variables + "talgent_effort=" + effort + "; unset CLAUDE_CODE_EFFORT_LEVEL; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
 	return nativeLaunch{Command: command, SessionID: sessionID, PreparationCommand: preparation}, nil
 }
 
@@ -256,7 +265,9 @@ func repositoryDirectories(request domain.LaunchSpecification) []string {
 // Every instruction file stays in context side by side: the Harness neither
 // orders nor reconciles conflicting ones, so a repository's instructions
 // govern by what they say, below the Work's system prompt.
-const repositoryInstructions = "export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1; "
+const repositoryInstructions = "export " + repositoryInstructionsVariable + "=1; "
+
+const repositoryInstructionsVariable = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD"
 
 // diagnosticName is the file a live execution's Harness writes its
 // diagnostics to, in its layout's place for them.

@@ -150,13 +150,13 @@ func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *doma
 	}
 	launch, release := context.WithTimeout(ctx, launchTimeout)
 	defer release()
-	processID, err := h.environments.Launch(launch, execution, h.holding(execution))
+	harness, err := h.environments.Launch(launch, execution, h.holding(execution))
 	if err != nil {
 		return h.failed(ctx, executionID, "launching the Harness", err)
 	}
 	launched := false
 	if err := h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
-		changed, err := execution.RecordLaunch(processID)
+		changed, err := execution.RecordLaunch(harness)
 		launched = changed
 		return changed, err
 	}); err != nil || !launched {

@@ -160,7 +160,7 @@ func TestRequestExitKeepsTheFirstStopIdentity(t *testing.T) {
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepWithdrawCredentials, domain.StepSignalExit}, kinds(decide(t, execution, runningEnvironment("env-1"), execution.Desk.SeatedAt)))
 	require.True(t, execution.RecordCredentialsWithdrawn())
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepSignalExit}, kinds(decide(t, execution, runningEnvironment("env-1"), execution.Desk.SeatedAt)))
-	launched, err := execution.RecordLaunch("process-2")
+	launched, err := execution.RecordLaunch(domain.HarnessLaunch{ProcessID: "process-2"})
 	require.NoError(t, err)
 	require.False(t, launched, "a second process is never launched")
 }

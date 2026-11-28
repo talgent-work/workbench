@@ -80,12 +80,12 @@ func (e *interruptedEnvironments) Prepare(ctx context.Context, _ *domain.AgentEx
 	return domain.PreparationReport{}, nil
 }
 
-func (e *interruptedEnvironments) Launch(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (string, error) {
+func (e *interruptedEnvironments) Launch(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.HarnessLaunch, error) {
 	if err := holding(ctx); err != nil {
-		return "", err
+		return domain.HarnessLaunch{}, err
 	}
 	e.launched.Add(1)
-	return launchedProcess, nil
+	return domain.HarnessLaunch{ProcessID: launchedProcess}, nil
 }
 
 // awaitExitRequest waits, off the test's goroutine, until the Work's

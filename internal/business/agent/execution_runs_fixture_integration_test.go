@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
@@ -70,11 +72,11 @@ func (realizedEnvironments) WithdrawCredentials(context.Context, *domain.AgentEx
 func (realizedEnvironments) Prepare(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.PreparationReport, error) {
 	return domain.PreparationReport{}, holding(ctx)
 }
-func (realizedEnvironments) Launch(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (string, error) {
+func (realizedEnvironments) Launch(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.HarnessLaunch, error) {
 	if err := holding(ctx); err != nil {
-		return "", err
+		return domain.HarnessLaunch{}, err
 	}
-	return launchedProcess, nil
+	return domain.HarnessLaunch{ProcessID: launchedProcess}, nil
 }
 func (realizedEnvironments) Connect(context.Context, *domain.AgentExecution) error { return nil }
 func (realizedEnvironments) RenewLease(_ context.Context, _ *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
@@ -173,7 +175,7 @@ func (r *moduleRuns) realize(t *testing.T, ctx context.Context, workID string) {
 			_, err := e.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: e.ID})
 			require.NoError(t, err)
 		}
-		launched, err := e.RecordLaunch(launchedProcess)
+		launched, err := e.RecordLaunch(domain.HarnessLaunch{ProcessID: launchedProcess})
 		require.NoError(t, err)
 		return launched
 	})
@@ -231,7 +233,7 @@ func launches(t *testing.T, db *xorm.Engine) []domain.LaunchSpecification {
 	require.NoError(t, db.Table("agent_execution").Cols("id").OrderBy("created_at, id").Find(&ids))
 	jdb, err := jimuxorm.New(db)
 	require.NoError(t, err)
-	repository := execution.NewAgentExecutionRepository(jdb, time.Now)
+	repository := execution.NewAgentExecutionRepository(jdb, sealingtest.Sealer(), time.Now)
 	result := make([]domain.LaunchSpecification, 0, len(ids))
 	for _, id := range ids {
 		begun, err := repository.Get(context.Background(), id)

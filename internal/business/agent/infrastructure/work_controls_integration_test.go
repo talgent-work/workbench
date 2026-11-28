@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/nativeprocess"
 
 	"connectrpc.com/connect/v2"
@@ -109,7 +111,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			CloseWork:   command.NewCloseWorkHandler(sessions, principal, executionsOf(db), &commandtest.InputBuffer{}),
-		}, Queries: application.Queries{GetWorkView: query.NewGetWorkViewHandler(principal, reader)}}
+		}, Queries: application.Queries{GetWorkView: query.NewGetWorkViewHandler(principal, reader, execution.NewExecutionQueryRepository(db))}}
 		handler := connecttest.Handler(func(s *connect.Server) {
 			agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
 		}, authn.NewPrincipalInterceptor())

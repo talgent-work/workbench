@@ -200,15 +200,21 @@ func (n *NativeConnections) prepare(ctx context.Context, record executionRecord,
 	return n.prepareEnvironment(ctx, &record, box.client, admitted)
 }
 
-// launch starts the Harness in the bound environment and returns its
-// process. The execution records it before it is connected; an uncertain
+// launch starts the Harness in the bound environment, with the run's
+// Personal Variables handed over right before it where the authority
+// delivers them, and returns its process and the platform variables they
+// replaced. The execution records it before it is connected; an uncertain
 // record leaves the process to the environment's deletion.
-func (n *NativeConnections) launch(ctx context.Context, record executionRecord, holding command.EnvironmentHolding) (string, error) {
+func (n *NativeConnections) launch(ctx context.Context, record executionRecord, variables []domain.PersonalVariable, holding command.EnvironmentHolding) (domain.HarnessLaunch, error) {
+	authority, err := n.provisioning.authority(record)
+	if err != nil {
+		return domain.HarnessLaunch{}, err
+	}
 	box, err := n.resolve(ctx, record)
 	if err != nil {
-		return "", err
+		return domain.HarnessLaunch{}, err
 	}
-	var id string
+	var launched domain.HarnessLaunch
 	err = n.credentials.withLock(ctx, record.SandboxID, func() error {
 		// An exit asked while preparation ran must not start the Harness
 		// (Exit request ends delivery).
@@ -222,10 +228,15 @@ func (n *NativeConnections) launch(ctx context.Context, record executionRecord, 
 		if current.LaunchCommand == "" || current.NativeSessionID == "" {
 			return domain.ErrExecutionRequest
 		}
-		id, err = box.client.Create(ctx, "/workspace", current.LaunchCommand)
+		if delivery, delivers := authority.(variableDelivery); delivers && len(variables) > 0 {
+			if launched.ReplacedVariables, err = delivery.deliverVariables(ctx, current, box.client, variables); err != nil {
+				return err
+			}
+		}
+		launched.ProcessID, err = box.client.Create(ctx, "/workspace", current.LaunchCommand)
 		return err
 	})
-	return id, err
+	return launched, err
 }
 
 // connect hands the launched process to Dispatcher. It resolves the

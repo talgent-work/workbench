@@ -199,7 +199,7 @@ func TestCoordinateRepairsLostDomainEvents(t *testing.T) {
 		prepared, err := execution.RecordPreparation(domain.PreparationReport{})
 		require.NoError(t, err)
 		require.True(t, prepared)
-		_, err = execution.RecordLaunch("process")
+		_, err = execution.RecordLaunch(domain.HarnessLaunch{ProcessID: "process"})
 		require.NoError(t, err)
 		_, err = execution.ConfirmReady(domain.ReadinessReport{Prepared: true, Started: true}, w.now())
 		require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestCoordinateRepairsLostRetirementAndRelease(t *testing.T) {
 		prepared, err := execution.RecordPreparation(domain.PreparationReport{})
 		require.NoError(t, err)
 		require.True(t, prepared)
-		_, err = execution.RecordLaunch("process")
+		_, err = execution.RecordLaunch(domain.HarnessLaunch{ProcessID: "process"})
 		require.NoError(t, err)
 		_, err = execution.ConfirmReady(domain.ReadinessReport{Prepared: true, Started: true}, w.now())
 		require.NoError(t, err)
@@ -304,4 +304,28 @@ func fixtureAdmissionAt(agentID string, at time.Time) domain.StartAdmission {
 	admission := nextAdmission(agentID)
 	admission.AdmittedAt = at
 	return admission
+}
+
+// An execution begins with the current values of the Personal Variables of
+// the person its Work's Agent represents; a Work that represents no person
+// takes none, whoever keeps variables.
+func TestBeginExecutionTakesTheRepresentedPersonsPersonalVariables(t *testing.T) {
+	ctx := context.Background()
+	variables := &commandtest.PersonalVariables{}
+	set, err := domain.NewPersonalVariableSet("person-a")
+	require.NoError(t, err)
+	_, err = set.SetVariable("person-a", domain.PersonalVariable{Name: "API_TOKEN", Value: "secret"})
+	require.NoError(t, err)
+	require.NoError(t, variables.Save(ctx, set))
+
+	for person, want := range map[string][]domain.PersonalVariable{
+		"person-a": {{Name: "API_TOKEN", Value: "secret"}},
+		"person-b": nil,
+		"":         nil,
+	} {
+		w := newWorld(t, startingSession(t))
+		w.work().RepresentedPerson = person
+		w.coordination = command.NewExecutionCoordination(w.now, w.works, commandtest.Definitions{}, variables, w.executions, w.computers, w.harness)
+		require.Equal(t, want, w.begin(t).PersonalVariables, person)
+	}
 }

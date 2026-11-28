@@ -283,6 +283,8 @@ data:
     agent-rpc:
       control-token: ${AGENT_CONTROL_TOKEN:}
       feedback-token: ${AGENT_FEEDBACK_TOKEN:}
+    agent-personal-variables:
+      key-path: /etc/talgent/agent/personal-variable-key
     agent-computer:
       address: "${COMPUTER_ADDRESS:http://127.0.0.1:8080}"
       token: "${COMPUTER_CONTROL_TOKEN:}"
@@ -1267,6 +1269,9 @@ spec:
             - mountPath: /etc/talgent/account
               name: account-master-key
               readOnly: true
+            - mountPath: /etc/talgent/agent
+              name: agent-personal-variable-key
+              readOnly: true
             - mountPath: /etc/talgent/models
               name: agent-models
               readOnly: true
@@ -1303,6 +1308,12 @@ spec:
             items:
               - key: master-key
                 path: master-key
+        - name: agent-personal-variable-key
+          secret:
+            secretName: agent-personal-variable-key
+            items:
+              - key: key
+                path: personal-variable-key
         - name: agent-models
           configMap:
             name: agent-models
@@ -1545,6 +1556,26 @@ spec:
       backendRefs:
         - name: controlplane
           port: 8080
+    # A person keeps their own Personal Variables.
+    - name: personal-variable-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.PersonalVariableService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.PersonalVariableService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
     # A Work's Agent asks who it is.
     - name: agent-identity-api
       matches:
@@ -1757,6 +1788,10 @@ spec:
       kind: HTTPRoute
       name: web-api
       sectionName: work-workspace-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: personal-variable-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: web-api

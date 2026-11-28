@@ -138,7 +138,7 @@ func launched(t *testing.T) func(*domain.AgentExecution) {
 		prepared, err := execution.RecordPreparation(domain.PreparationReport{})
 		require.NoError(t, err)
 		require.True(t, prepared)
-		_, err = execution.RecordLaunch("process")
+		_, err = execution.RecordLaunch(domain.HarnessLaunch{ProcessID: "process"})
 		require.NoError(t, err)
 	}
 }
@@ -362,7 +362,7 @@ func TestCredentialChangeReachesTheReconciliationOfItsWorks(t *testing.T) {
 		prepared, err := execution.RecordPreparation(domain.PreparationReport{})
 		require.NoError(t, err)
 		require.True(t, prepared)
-		launched, err := execution.RecordLaunch("process")
+		launched, err := execution.RecordLaunch(domain.HarnessLaunch{ProcessID: "process"})
 		require.NoError(t, err)
 		return launched
 	})

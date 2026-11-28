@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -37,7 +39,7 @@ func registerAs(ctx context.Context, p *Provisioning, launch domain.LaunchSpecif
 	if err != nil {
 		return executionRecord{}, err
 	}
-	if err := NewAgentExecutionRepository(p.db, p.now).Save(ctx, run); err != nil {
+	if err := NewAgentExecutionRepository(p.db, sealingtest.Sealer(), p.now).Save(ctx, run); err != nil {
 		return executionRecord{}, err
 	}
 	record, _, err := p.get(ctx, run.ID)
@@ -71,7 +73,7 @@ func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeCon
 	t.Helper()
 	environment, err := NewExecutionEnvironment(p, connections, owners, managed)
 	require.NoError(t, err)
-	executions := NewAgentExecutionRepository(p.db, now)
+	executions := NewAgentExecutionRepository(p.db, sealingtest.Sealer(), now)
 	steps := &executionSteps{environment: environment, executions: executions, desks: &cloudDesks{}, harness: commandtest.NewHarness()}
 	steps.handler = command.NewReconcileExecutionHandler(now, fixtureLease, fixtureCreationWaits, executions, environment, steps.harness, steps.desks, commandtest.Supplies(mounts, &commandtest.Accounts{Now: now}))
 	return steps

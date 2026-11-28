@@ -42,6 +42,7 @@ type workViewRow struct {
 	WorkFacts           workFactColumns `xorm:"extends"`
 	AgentOwner          string          `xorm:"agent_owner"`
 	StartedBy           string          `xorm:"started_by"`
+	RepresentedPerson   string          `xorm:"represented_person"`
 	State               uint8           `xorm:"state"`
 	HarnessProcess      string          `xorm:"harness_process"`
 	StopReason          string          `xorm:"stop_reason"`
@@ -77,7 +78,7 @@ func (r *WorkQueryRepository) workView(ctx context.Context, id string) (query.Wo
 		return query.WorkView{}, err
 	}
 	found, err := tx.SQL(`SELECT s.id,s.model_configuration_id,s.model_machine_login,s.permission_mode,s.computer_id,s.capabilities,`+workFactSelect+`,
- `+agentOwnerColumn+` AS agent_owner,s.started_by,s.state,s.harness_process,s.work_progress,
+ `+agentOwnerColumn+` AS agent_owner,s.started_by,s.represented_person,s.state,s.harness_process,s.work_progress,
  s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at,s.version,s.end_request,
  s.visibility_public,s.reach_resume_due,s.initial_task_input,s.thinking_level,s.repository_selection,s.repository_checkouts,
  COALESCE((SELECT e.state FROM agent_execution e WHERE e.session_id=s.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1),'') AS execution_state
@@ -130,7 +131,7 @@ func workViewFromRow(row workViewRow) (query.WorkView, error) {
 	if err := json.Unmarshal([]byte(row.HarnessProcess), &process); err != nil {
 		return query.WorkView{}, oops.Wrap(err)
 	}
-	result := query.WorkView{Version: row.Version, WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, WorkID: row.ID, WorkCaller: row.WorkFacts.caller(), WorkKey: row.WorkFacts.key(), FileHome: row.WorkFacts.home(), AgentOwner: row.AgentOwner, StartedBy: row.StartedBy, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic},
+	result := query.WorkView{Version: row.Version, WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, WorkID: row.ID, WorkCaller: row.WorkFacts.caller(), WorkKey: row.WorkFacts.key(), FileHome: row.WorkFacts.home(), AgentOwner: row.AgentOwner, StartedBy: row.StartedBy, RepresentedPerson: row.RepresentedPerson, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic},
 		PermissionMode: domain.PermissionMode(row.PermissionMode), ComputerID: row.ComputerID,
 		StateReason: row.StopReason, StopRequestID: row.StopRequest, DiagnosticReason: row.Failure, DisconnectedSince: fromUnixMillis(row.DisconnectedSince),
 		CreatedAt: time.UnixMilli(row.CreatedAt).UTC(), UpdatedAt: time.UnixMilli(row.UpdatedAt).UTC(), ResumeOnReconnection: row.ReachResumeDue}

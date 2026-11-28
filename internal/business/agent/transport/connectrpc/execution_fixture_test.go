@@ -112,7 +112,7 @@ func (r *rpcExecutions) Save(ctx context.Context, execution *domain.AgentExecuti
 				r.mu.Unlock()
 				return err
 			}
-			if _, err := stored.RecordLaunch(launchedProcess); err != nil {
+			if _, err := stored.RecordLaunch(domain.HarnessLaunch{ProcessID: launchedProcess}); err != nil {
 				r.mu.Unlock()
 				return err
 			}
@@ -200,7 +200,7 @@ func loadedExecution(saved domain.AgentExecution) *domain.AgentExecution {
 func executionWorld(now func() time.Time, works domain.AgentWorkRepository, computers command.ComputerPort, buffer command.DispatcherPort) (*syncEvents, *rpcExecutions, *command.ExecutionCoordination) {
 	events := &syncEvents{}
 	executions := &rpcExecutions{events: events, now: now}
-	coordination := command.NewExecutionCoordination(now, works, commandtest.Definitions{}, executions, computers, buffer)
+	coordination := command.NewExecutionCoordination(now, works, commandtest.Definitions{}, &commandtest.PersonalVariables{}, executions, computers, buffer)
 	logger := slog.Default()
 	events.subscribe(eventhandler.NewBeginExecution(coordination, logger))
 	events.subscribe(eventhandler.NewRequestProcessExit(coordination, logger))

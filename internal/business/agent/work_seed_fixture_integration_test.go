@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -110,7 +112,7 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	if seedState(work, run, seed, now) {
 		require.NoError(t, works.Save(ctx, work))
 	}
-	require.NoError(t, execution.NewAgentExecutionRepository(jdb, time.Now).Save(ctx, run))
+	require.NoError(t, execution.NewAgentExecutionRepository(jdb, sealingtest.Sealer(), time.Now).Save(ctx, run))
 	stored, err := works.Get(ctx, work.ID)
 	require.NoError(t, err)
 	return seededWork{AgentWork: stored, execution: run}
@@ -133,7 +135,7 @@ func seedExecution(t *testing.T, work *domain.AgentWork, computerName, purpose s
 	require.True(t, commandtest.Submit(run))
 	_, err = run.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: run.ID})
 	require.NoError(t, err)
-	launched, err := run.RecordLaunch(launchedProcess)
+	launched, err := run.RecordLaunch(domain.HarnessLaunch{ProcessID: launchedProcess})
 	require.NoError(t, err)
 	require.True(t, launched)
 	return run

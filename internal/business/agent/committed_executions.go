@@ -9,6 +9,7 @@ import (
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing"
 )
 
 // committedExecutions decorates AgentExecution persistence at composition,
@@ -26,8 +27,8 @@ type committedExecutions struct {
 	wake func(context.Context, string)
 }
 
-func newCommittedExecutions(db *jimuxorm.DB, now func() time.Time, updates *workStateUpdates, events domainevent.Dispatcher) *committedExecutions {
-	return &committedExecutions{AgentExecutionRepository: execution.NewAgentExecutionRepository(db, now), updates: updates, events: events}
+func newCommittedExecutions(db *jimuxorm.DB, sealer *sealing.Sealer, now func() time.Time, updates *workStateUpdates, events domainevent.Dispatcher) *committedExecutions {
+	return &committedExecutions{AgentExecutionRepository: execution.NewAgentExecutionRepository(db, sealer, now), updates: updates, events: events}
 }
 
 func (r *committedExecutions) Save(ctx context.Context, e *domain.AgentExecution) error {

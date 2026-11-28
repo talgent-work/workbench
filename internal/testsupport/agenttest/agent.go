@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
@@ -147,7 +149,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 		Queries: application.Queries{
 			GetWorkPreparation: query.NewGetWorkPreparationHandler(queries, authorizer),
 			GetWork:            query.NewGetWorkHandler(definitions, works, authorizer, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
-			GetWorkView:        query.NewGetWorkViewHandler(authorizer, queries),
+			GetWorkView:        query.NewGetWorkViewHandler(authorizer, queries, execution.NewExecutionQueryRepository(adapter)),
 			GetWorkOrigin:      query.NewGetWorkOriginHandler(queries),
 			GetAgentDefinition: query.NewGetAgentDefinitionHandler(definitions, application.AssembleAgentDefinition),
 			ListWorks:          query.NewListWorksHandler(queries),

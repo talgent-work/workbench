@@ -68,7 +68,7 @@ func launchedExecution(t *testing.T) (*domain.AgentWork, *domain.AgentExecution)
 	work, execution := boundExecution(t)
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepPrepare}, kinds(decide(t, execution, runningEnvironment("env-1"), execution.Desk.SeatedAt)))
 	require.True(t, recordPreparation(t, execution))
-	launched, err := execution.RecordLaunch("process-1")
+	launched, err := execution.RecordLaunch(domain.HarnessLaunch{ProcessID: "process-1"})
 	require.NoError(t, err)
 	require.True(t, launched)
 	return work, execution

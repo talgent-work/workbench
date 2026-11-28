@@ -153,17 +153,17 @@ func (e *Environment) Prepare(ctx context.Context, _ *domain.AgentExecution, hol
 	return report, nil
 }
 
-func (e *Environment) Launch(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (string, error) {
+func (e *Environment) Launch(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.HarnessLaunch, error) {
 	if err := holding(ctx); err != nil {
-		return "", err
+		return domain.HarnessLaunch{}, err
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Launched++
 	if e.ProcessID == "" {
-		return "process", e.StepErr
+		return domain.HarnessLaunch{ProcessID: "process"}, e.StepErr
 	}
-	return e.ProcessID, e.StepErr
+	return domain.HarnessLaunch{ProcessID: e.ProcessID}, e.StepErr
 }
 
 func (e *Environment) Connect(context.Context, *domain.AgentExecution) error {

@@ -29,7 +29,7 @@ func runningCloudStart(t *testing.T, configure func(*lifecycleFixture)) *cloudSt
 	require.NotEmpty(t, run.Environment)
 	_, err = run.RecordPreparation(domain.PreparationReport{})
 	require.NoError(t, err)
-	_, err = run.RecordLaunch("process-1")
+	_, err = run.RecordLaunch(domain.HarnessLaunch{ProcessID: "process-1"})
 	require.NoError(t, err)
 	_, err = run.ConfirmReady(domain.ReadinessReport{Prepared: true, Started: true}, f.now())
 	require.NoError(t, err)

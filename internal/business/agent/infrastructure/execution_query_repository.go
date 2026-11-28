@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
@@ -141,4 +142,27 @@ func (r *ExecutionQueryRepository) ListCurrentPluginResults(ctx context.Context,
 			LoadingReported: row.LoadingReported, Loaded: row.Loaded, LoadingReason: row.LoadingReason, LoadedVersion: row.LoadedVersion, UpdatedAt: time.UnixMilli(row.UpdatedAt).UTC()})
 	}
 	return results, nil
+}
+
+func (r *ExecutionQueryRepository) ReadReplacedVariables(ctx context.Context, workID string) ([]string, error) {
+	var row struct {
+		ReplacedVariables []byte `xorm:"replaced_variables"`
+	}
+	session, err := r.db.Session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := session.SQL(`SELECT e.replaced_variables FROM agent_execution e
+ WHERE e.session_id = ? ORDER BY e.created_at DESC, e.id DESC LIMIT 1`, workID).Get(&row)
+	if err != nil {
+		return nil, oops.With("operation", "agent.replaced_variables", "agent_work_id", workID).Wrap(err)
+	}
+	var names []string
+	if !found || len(row.ReplacedVariables) == 0 {
+		return names, nil
+	}
+	if err := json.Unmarshal(row.ReplacedVariables, &names); err != nil {
+		return nil, oops.With("operation", "agent.replaced_variables", "agent_work_id", workID).Wrap(err)
+	}
+	return names, nil
 }

@@ -90,9 +90,16 @@ type executionRecord struct {
 	// repository and service access goes through them, so a credential change
 	// finds its Works.
 	AuthorizationIDs []byte `xorm:"'authorization_ids'"`
-	Version          int    `xorm:"'version'"`
-	CreatedAt        int64  `xorm:"'created_at'"`
-	UpdatedAt        int64  `xorm:"'updated_at'"`
+	// PersonalVariables are the Personal Variables the execution took at its
+	// start, sealed under the Agent key and bound to the execution; NULL for
+	// none. Written once, at its insertion.
+	PersonalVariables []byte `xorm:"'personal_variables'"`
+	// ReplacedVariables is the JSON array of the platform variable names its
+	// Personal Variables replaced at its launch; JSON null until then.
+	ReplacedVariables []byte `xorm:"'replaced_variables'"`
+	Version           int    `xorm:"'version'"`
+	CreatedAt         int64  `xorm:"'created_at'"`
+	UpdatedAt         int64  `xorm:"'updated_at'"`
 
 	// Technical columns of the execution environment adapter.
 	ServiceAccessJSON  []byte `xorm:"'service_access_json'"`

@@ -35,6 +35,7 @@ type Option struct {
 	AgentAccount            agent.AccountConfig            `json:"agent-account" yaml:"agent-account" toml:"agent-account"`
 	Storage                 storage.Config                 `json:"storage" yaml:"storage" toml:"storage"`
 	AgentRPC                agent.RPCConfig                `json:"agent-rpc" yaml:"agent-rpc" toml:"agent-rpc"`
+	AgentPersonalVariables  agent.PersonalVariableConfig   `json:"agent-personal-variables" yaml:"agent-personal-variables" toml:"agent-personal-variables"`
 	AgentMarketplace        agent.PluginCatalogConfig      `json:"agent-marketplace" yaml:"agent-marketplace" toml:"agent-marketplace"`
 	AgentBuiltInPlugins     agent.BuiltInPluginsConfig     `json:"agent-built-in-plugins" yaml:"agent-built-in-plugins" toml:"agent-built-in-plugins"`
 	AgentComputer           agent.ComputerConfig           `json:"agent-computer" yaml:"agent-computer" toml:"agent-computer"`

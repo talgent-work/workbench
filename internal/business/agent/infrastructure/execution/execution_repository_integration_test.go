@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 
@@ -67,7 +69,7 @@ func TestAgentExecutionRepositoryRoundTripsUnderItsVersion(t *testing.T) {
 	ctx := context.Background()
 	_, jdb := executionDatabase(t)
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(jdb, func() time.Time { return now })
+	repository := NewAgentExecutionRepository(jdb, sealingtest.Sealer(), func() time.Time { return now })
 
 	_, err := repository.Get(ctx, "01900000-0000-7000-8000-00000000ffff")
 	require.ErrorIs(t, err, domain.ErrExecutionNotFound)
@@ -105,7 +107,7 @@ func TestAgentExecutionRepositoryRoundTripsUnderItsVersion(t *testing.T) {
 	changed, err := stored.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "sandbox-round-trip"})
 	require.NoError(t, err)
 	require.True(t, changed)
-	_, err = stored.RecordLaunch("process-round-trip")
+	_, err = stored.RecordLaunch(domain.HarnessLaunch{ProcessID: "process-round-trip"})
 	require.NoError(t, err)
 	require.True(t, stored.RecordCredentialDelivery(domain.CredentialDelivery{Delivered: true, Digest: "digest", ExpiresAt: now.Add(time.Hour)}))
 	_, err = stored.RequestExit(domain.WorkStopRequested{WorkID: launch.WorkID, StartAdmittedAt: now, StopRequestID: "stop-round-trip", CancelWaitingTurn: true})
@@ -145,7 +147,7 @@ func TestAgentExecutionRepositoryAdmitsOneUnretiredExecutionPerWork(t *testing.T
 	ctx := context.Background()
 	_, jdb := executionDatabase(t)
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(jdb, func() time.Time { return now })
+	repository := NewAgentExecutionRepository(jdb, sealingtest.Sealer(), func() time.Time { return now })
 	first := begin(t, repository, "admission", now, domain.RealizationCloud)
 
 	launch := request()
@@ -169,7 +171,7 @@ func TestExecutionQueryRepositoryFindsTheExecutionsAChangeConcerns(t *testing.T)
 	ctx := context.Background()
 	_, jdb := executionDatabase(t)
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(jdb, func() time.Time { return now })
+	repository := NewAgentExecutionRepository(jdb, sealingtest.Sealer(), func() time.Time { return now })
 	lookups := infrastructure.NewExecutionQueryRepository(jdb)
 
 	live := begin(t, repository, "lookup-live", now, domain.RealizationCloud)
@@ -222,7 +224,7 @@ func TestAgentExecutionRepositoryRoundTripsCheckoutResults(t *testing.T) {
 	ctx := context.Background()
 	_, jdb := executionDatabase(t)
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
-	repository := NewAgentExecutionRepository(jdb, func() time.Time { return now })
+	repository := NewAgentExecutionRepository(jdb, sealingtest.Sealer(), func() time.Time { return now })
 	launch := request()
 	launch.WorkID = "checkout-round-trip"
 	launch.RepositorySelection, launch.RemainingRepositories = checkoutSelection(), []string{"github:1", "github:2"}

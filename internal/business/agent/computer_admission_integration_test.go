@@ -79,7 +79,7 @@ func startOneRoomCloudWith(t *testing.T, ctx context.Context, environments comma
 	server := connecttest.NewFronted(t)
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return environments }), fx.Supply(domain.LeaseTerms{}, commandtest.CreationWaits), runs.option(),
-		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud()),
+		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, personalVariableConfig(t), defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud()),
 		mysqltest.Provide(t, "execution", db),
 		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return kube }),

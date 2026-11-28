@@ -35,3 +35,13 @@ type AgentExecutionRepository interface {
 	// ErrConcurrentModification when it changed since.
 	Save(context.Context, *AgentExecution) error
 }
+
+// PersonalVariableSetRepository holds each person's PersonalVariableSet.
+type PersonalVariableSetRepository interface {
+	// Get returns the person's set, answering ErrPersonalVariableSetNotFound
+	// for a person who keeps none yet.
+	Get(ctx context.Context, personID string) (*PersonalVariableSet, error)
+	// Save inserts a new set or updates a loaded one, answering
+	// ErrConcurrentModification when it changed since.
+	Save(context.Context, *PersonalVariableSet) error
+}

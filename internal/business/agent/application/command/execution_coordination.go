@@ -20,13 +20,14 @@ type ExecutionCoordination struct {
 	now         func() time.Time
 	works       domain.AgentWorkRepository
 	definitions domain.AgentDefinitionRepository
+	variables   domain.PersonalVariableSetRepository
 	executions  domain.AgentExecutionRepository
 	computers   ComputerPort
 	buffer      DispatcherPort
 }
 
-func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkRepository, definitions domain.AgentDefinitionRepository, executions domain.AgentExecutionRepository, computers ComputerPort, buffer DispatcherPort) *ExecutionCoordination {
-	return &ExecutionCoordination{now: now, works: works, definitions: definitions, executions: executions, computers: computers, buffer: buffer}
+func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkRepository, definitions domain.AgentDefinitionRepository, variables domain.PersonalVariableSetRepository, executions domain.AgentExecutionRepository, computers ComputerPort, buffer DispatcherPort) *ExecutionCoordination {
+	return &ExecutionCoordination{now: now, works: works, definitions: definitions, variables: variables, executions: executions, computers: computers, buffer: buffer}
 }
 
 // Coordinate applies every report the Work's current execution made, its
@@ -43,11 +44,13 @@ func (c *ExecutionCoordination) Coordinate(ctx context.Context, workID string) e
 }
 
 // BeginExecution begins the AgentExecution of the Work's admitted start
-// (Begin execution), with the LaunchSpecification taken from the Work and
-// where its Computer realizes it. An earlier execution still unretired, whose
-// retirement request was lost, retires first (Superseded execution). A start
-// that has its execution already changes nothing, so a concurrent beginning
-// that won is taken as done.
+// (Begin execution), with the LaunchSpecification taken from the Work, where
+// its Computer realizes it and the current values of the Personal Variables
+// of the person its Agent represents (Personal Variables at start). An
+// earlier execution still unretired, whose retirement request was lost,
+// retires first (Superseded execution). A start that has its execution
+// already changes nothing, so a concurrent beginning that won is taken as
+// done.
 func (c *ExecutionCoordination) BeginExecution(ctx context.Context, workID string) error {
 	work, err := c.works.Get(ctx, workID)
 	if err != nil {
@@ -98,11 +101,32 @@ func (c *ExecutionCoordination) begin(ctx context.Context, work *domain.AgentWor
 	if work.OnManagedComputer() {
 		realization = domain.RealizationManaged
 	}
-	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: launch, Realization: realization})
+	variables, err := c.personalVariables(ctx, work)
+	if err != nil {
+		return err
+	}
+	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: launch, Realization: realization, PersonalVariables: variables})
 	if err != nil {
 		return err
 	}
 	return c.executions.Save(ctx, execution)
+}
+
+// personalVariables are the current values a start of the Work takes: every
+// Personal Variable of the person its Agent represents. A Work representing
+// no person, such as an Application's, takes none.
+func (c *ExecutionCoordination) personalVariables(ctx context.Context, work *domain.AgentWork) ([]domain.PersonalVariable, error) {
+	if work.RepresentedPerson == "" {
+		return nil, nil
+	}
+	set, err := c.variables.Get(ctx, work.RepresentedPerson)
+	if errors.Is(err, domain.ErrPersonalVariableSetNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return set.CurrentValues(), nil
 }
 
 // RequestProcessExit records the Work's request that its process exit on the

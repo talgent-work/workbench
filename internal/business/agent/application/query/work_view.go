@@ -31,7 +31,10 @@ type WorkView struct {
 	WorkID     string
 	// AgentOwner is the Work's Agent Owner, its definition's Owner; StartedBy
 	// is who started it, a fact.
-	AgentOwner, StartedBy                string
+	AgentOwner, StartedBy string
+	// RepresentedPerson is the person the Work's Agent represents, whose
+	// Personal Variables its starts receive; empty for none.
+	RepresentedPerson                    string
 	Visibility                           domain.WorkVisibility
 	WorkShares                           []string
 	State, StateReason, DiagnosticReason string
@@ -64,6 +67,10 @@ type WorkStartupRequest struct {
 	RequestID, InitialMessage, InitialThinkingLevel, StartupAgent string
 	Plugins                                                       []string
 	Repositories                                                  []WorkStartupRepository
+	// ReplacedVariables name the platform variables the current run's
+	// Personal Variables replaced, read only for the Work's represented
+	// person (Replacement report).
+	ReplacedVariables []string
 }
 
 // WorkStartupRepository is a retained selection with its checkout outcome once
@@ -75,10 +82,11 @@ type GetWorkView struct{ ActorID, WorkID string }
 type GetWorkViewHandler struct {
 	authorization access.WorkAuthorizer
 	reader        WorkQueryRepository
+	executions    ExecutionQueryRepository
 }
 
-func NewGetWorkViewHandler(authorization access.WorkAuthorizer, reader WorkQueryRepository) *GetWorkViewHandler {
-	return &GetWorkViewHandler{authorization: authorization, reader: reader}
+func NewGetWorkViewHandler(authorization access.WorkAuthorizer, reader WorkQueryRepository, executions ExecutionQueryRepository) *GetWorkViewHandler {
+	return &GetWorkViewHandler{authorization: authorization, reader: reader, executions: executions}
 }
 
 // Handle reads the owner's own Work. Read-side affordances mirror work
@@ -93,6 +101,14 @@ func (h *GetWorkViewHandler) Handle(ctx context.Context, request GetWorkView) (W
 	value, err := h.reader.GetWorkView(ctx, request.WorkID)
 	if err != nil {
 		return WorkView{}, err
+	}
+	// Only the person whose Personal Variables the Work receives learns which
+	// platform variables they replaced; every other reader sees nothing of
+	// them (Value confinement).
+	if value.StartupRequest != nil && value.RepresentedPerson != "" && request.ActorID == value.RepresentedPerson {
+		if value.StartupRequest.ReplacedVariables, err = h.executions.ReadReplacedVariables(ctx, request.WorkID); err != nil {
+			return WorkView{}, err
+		}
 	}
 	if value.ArchivePending || value.ResumePending {
 		return value, nil

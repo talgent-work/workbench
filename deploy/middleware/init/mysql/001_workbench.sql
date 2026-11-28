@@ -165,6 +165,18 @@ CREATE TABLE IF NOT EXISTS `agent_work_label` (
   KEY `idx_label_key_label_value_work_id` (`label_key`,`label_value`,`work_id`) COMMENT 'Listings narrow Works to those carrying a label'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Work Labels of an AgentWork, owned by agent_session and fixed at its creation';
 
+CREATE TABLE IF NOT EXISTS `agent_personal_variable_set` (
+  `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'UUIDv7 row identity',
+  `person_id` varchar(255) COLLATE utf8mb4_bin NOT NULL COMMENT 'The person whose Personal Variables these are; identity of the PersonalVariableSet',
+  `variables` mediumblob NOT NULL COMMENT 'Every Personal Variable of the person, names and values, sealed with AES-256-GCM under the Agent key and bound to the person',
+  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic persistence version',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
+  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last change time in Unix milliseconds',
+  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; 0 means active',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_person_id` (`person_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='PersonalVariableSet aggregate: one person''s Personal Variables, which the Works their Agent does for them receive at every start';
+
 CREATE TABLE IF NOT EXISTS `application` (
   `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Application UUIDv7 identity; its OAuth client id and the subject of its Identity Tokens',
   `owner_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Account id of the Application Owner, the person who registered it; never changes',
@@ -303,6 +315,8 @@ CREATE TABLE IF NOT EXISTS `agent_execution` (
   `ownership_label` char(48) COLLATE utf8mb4_bin GENERATED ALWAYS AS (LEFT(SHA2(`id`, 256), 48)) STORED COMMENT 'Value of the ownership label its sandboxes carry; finds the execution an observed sandbox belongs to',
   `credentials_delivered` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Credentials were delivered into the bound environment, before the native launch',
   `preparation_recovering` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Latest environment preparation attempt had a recoverable error',
+  `personal_variables` mediumblob NULL COMMENT 'Personal Variables the execution took at its start, sealed with AES-256-GCM under the Agent key and bound to the execution; NULL for none; never part of the environment specification',
+  `replaced_variables` json DEFAULT NULL COMMENT 'Names of the platform variables its Personal Variables replaced at its launch, never values; SQL NULL or JSON null until launched',
   PRIMARY KEY (`id`),
   KEY `idx_deleted_at_updated_at_id` (`deleted_at`, `updated_at`, `id`),
   KEY `idx_retired_released_at_id` (`retired`, `released_at`, `id`),

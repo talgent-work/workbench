@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	jimuxorm "github.com/go-jimu/contrib/transaction/xorm"
@@ -69,7 +71,7 @@ func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
 	var reconnection *command.ComputerReconnectionHandler
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.Supply(domain.LeaseTerms{}, commandtest.CreationWaits), runs.option(),
-		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud()),
+		server.Option(), fx.Supply(slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, personalVariableConfig(t), defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud()),
 		mysqltest.Provide(t, "execution", db),
 		mysqltest.Provide(t, "workbench", db),
 		fx.Provide(func() kubernetes.Interface { return kube }),
@@ -122,7 +124,7 @@ func (q *managedQueue) executionsOf(t *testing.T, workID string) []*domain.Agent
 	require.NoError(t, q.db.Table("agent_execution").Cols("id").Where("session_id = ?", workID).OrderBy("created_at, id").Find(&ids))
 	db, err := jimuxorm.New(q.db)
 	require.NoError(t, err)
-	repository := execution.NewAgentExecutionRepository(db, time.Now)
+	repository := execution.NewAgentExecutionRepository(db, sealingtest.Sealer(), time.Now)
 	var result []*domain.AgentExecution
 	for _, id := range ids {
 		e, err := repository.Get(context.Background(), id)

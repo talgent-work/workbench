@@ -257,14 +257,16 @@ func (e *ExecutionEnvironment) Prepare(ctx context.Context, execution *domain.Ag
 	return report, nil
 }
 
-// Launch starts the Harness in the bound environment and returns its process.
-func (e *ExecutionEnvironment) Launch(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (string, error) {
+// Launch starts the Harness in the bound environment with the execution's
+// Personal Variables and returns its process and the platform variables they
+// replaced. A Managed Computer's launch carries none yet.
+func (e *ExecutionEnvironment) Launch(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (domain.HarnessLaunch, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
-		return "", err
+		return domain.HarnessLaunch{}, err
 	}
-	id, err := e.connections.launch(ctx, record, holding)
-	return id, withExecution(e.recovering(ctx, record, err), execution)
+	launched, err := e.connections.launch(ctx, record, execution.PersonalVariables, holding)
+	return launched, withExecution(e.recovering(ctx, record, err), execution)
 }
 
 // Connect hands the launched process to Dispatcher.

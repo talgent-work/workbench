@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing/sealingtest"
+
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
@@ -33,7 +35,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 	require.NoError(t, err)
 	provider, _, _ := sandboxClient(t)
 	provisioning := NewProvisioning(jdb, provider, fixtureSandboxCredentials(db, jdb, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
-	executions := NewAgentExecutionRepository(jdb, time.Now)
+	executions := NewAgentExecutionRepository(jdb, sealingtest.Sealer(), time.Now)
 	empty, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}}, nil)
 	require.NoError(t, err)
 	components, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"review"}}, []domain.PluginRelease{{CatalogName: "talgent", Slug: "review", Source: "owned", Version: "1", RetrievalRef: "archive:review-1", NativeEntry: []byte(`{"name":"review","version":"1"}`), Skills: []domain.SkillComponent{}, Agents: []domain.AgentComponent{}, MCPServers: []domain.MCPComponent{}}})
@@ -52,7 +54,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			works := infrastructure.NewAgentWorkRepository(jdb, time.Now)
 			work.DefinitionVersion = definition.Version
 			require.NoError(t, works.Save(ctx, work))
-			require.NoError(t, command.NewExecutionCoordination(time.Now, works, commandtest.Definitions{}, executions, &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID))
+			require.NoError(t, command.NewExecutionCoordination(time.Now, works, commandtest.Definitions{}, &commandtest.PersonalVariables{}, executions, &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID))
 			begun, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 			require.True(t, found)
@@ -71,7 +73,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			require.Equal(t, snapshot.Connectors, recovered.CapabilitySnapshot.Connectors)
 			_, err = recovered.RecoverExecution()
 			require.NoError(t, err)
-			require.NoError(t, command.NewExecutionCoordination(time.Now, recoveredWorks, commandtest.Definitions{}, NewAgentExecutionRepository(reopenedDB, time.Now), &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID), "recovery must reuse the admitted execution")
+			require.NoError(t, command.NewExecutionCoordination(time.Now, recoveredWorks, commandtest.Definitions{}, &commandtest.PersonalVariables{}, NewAgentExecutionRepository(reopenedDB, sealingtest.Sealer(), time.Now), &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID), "recovery must reuse the admitted execution")
 			retained, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 			require.True(t, found)

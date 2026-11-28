@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -9,26 +10,30 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/sealing"
 	"xorm.io/xorm"
 )
 
 // AgentExecutionRepository keeps every AgentExecution in agent_execution
 // and its Plugin outcomes in execution_plugin_result. It writes the
 // execution's facts under its optimistic version and leaves the technical
-// columns to the execution environment adapter.
+// columns to the execution environment adapter. The Personal Variables an
+// execution took at its start stay sealed under the Agent key, apart from
+// its stored environment specification (Run variable sealing).
 type AgentExecutionRepository struct {
 	records
-	now func() time.Time
+	sealer *sealing.Sealer
+	now    func() time.Time
 }
 
 var _ domain.AgentExecutionRepository = (*AgentExecutionRepository)(nil)
 
-func NewAgentExecutionRepository(db *jimuxorm.DB, now func() time.Time) *AgentExecutionRepository {
-	return &AgentExecutionRepository{records: records{db: db}, now: now}
+func NewAgentExecutionRepository(db *jimuxorm.DB, sealer *sealing.Sealer, now func() time.Time) *AgentExecutionRepository {
+	return &AgentExecutionRepository{records: records{db: db}, sealer: sealer, now: now}
 }
 
 // factColumns are the columns holding an execution's facts.
-var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted_at", "creation_deadline", "creation_answered", "start_rejected", "sandbox_id", "lease_expires_at", "credentials_delivered", "preparation_ended", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "start_failure", "rejection_reason", "startup_setback", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "checkout_results", "request_json", "version", "updated_at"}
+var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted_at", "creation_deadline", "creation_answered", "start_rejected", "sandbox_id", "lease_expires_at", "credentials_delivered", "preparation_ended", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "start_failure", "rejection_reason", "startup_setback", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "checkout_results", "replaced_variables", "request_json", "version", "updated_at"}
 
 func (r *AgentExecutionRepository) Get(ctx context.Context, id string) (*domain.AgentExecution, error) {
 	record, found, err := r.get(ctx, id)
@@ -58,6 +63,11 @@ func (r *AgentExecutionRepository) restore(ctx context.Context, record execution
 	if err != nil {
 		return nil, err
 	}
+	if len(record.PersonalVariables) > 0 {
+		if execution.PersonalVariables, err = r.sealer.Open(record.PersonalVariables, sealing.Execution(record.ID)); err != nil {
+			return nil, oops.With("operation", "open_execution_variables", "execution_id", record.ID).Wrap(err)
+		}
+	}
 	if execution.PluginResults, err = pluginResults(ctx, r.db, execution.ID); err != nil {
 		return nil, err
 	}
@@ -80,6 +90,11 @@ func (r *AgentExecutionRepository) Save(ctx context.Context, execution *domain.A
 			return err
 		}
 		if execution.Version == 0 {
+			if len(execution.PersonalVariables) > 0 {
+				if record.PersonalVariables, err = r.sealer.Seal(execution.PersonalVariables, sealing.Execution(execution.ID)); err != nil {
+					return oops.With("operation", "seal_execution_variables", "execution_id", execution.ID).Wrap(err)
+				}
+			}
 			err = insertExecution(tx, record, execution.Launch.AuthorizationSelection, now)
 		} else {
 			err = updateExecution(tx, record, execution.Version)
@@ -134,9 +149,13 @@ func recordFromExecution(e *domain.AgentExecution) (executionRecord, error) {
 	if err != nil {
 		return executionRecord{}, err
 	}
+	replaced, err := json.Marshal(e.ReplacedVariables)
+	if err != nil {
+		return executionRecord{}, err
+	}
 	return executionRecord{
-		CheckoutResults: checkouts,
-		ID:              e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch,
+		CheckoutResults: checkouts, ReplacedVariables: replaced,
+		ID: e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch,
 		State: string(e.State), StartAdmittedAt: millis(e.StartAdmittedAt), DeskID: e.Desk.ID, SeatedAt: millis(e.Desk.SeatedAt), DeskLeftAt: millis(e.Desk.LeftAt),
 		SubmittedAt: millis(e.Creation.SubmittedAt), CreationDeadline: millis(e.Creation.Deadline), CreationAnswered: e.Creation.Answered, StartRejected: e.Outcome.Rejected, SandboxID: e.Environment, LeaseExpiresAt: millis(e.Lease),
 		CredentialsDelivered: e.Credentials.Delivered, PreparationEnded: e.Process.PreparationEnded,
@@ -157,9 +176,15 @@ func executionFromRecord(r executionRecord) (*domain.AgentExecution, error) {
 	if err != nil {
 		return nil, oops.With("operation", "decode_execution_checkouts", "execution_id", r.ID).Wrap(err)
 	}
+	var replaced []string
+	if len(r.ReplacedVariables) > 0 {
+		if err := json.Unmarshal(r.ReplacedVariables, &replaced); err != nil {
+			return nil, oops.With("operation", "decode_execution_replaced_variables", "execution_id", r.ID).Wrap(err)
+		}
+	}
 	execution := &domain.AgentExecution{
-		CheckoutResults: checkouts,
-		ID:              r.ID, WorkID: r.SessionID, StartAdmittedAt: fromMillis(r.StartAdmittedAt), Realization: domain.ExecutionRealization(r.Realization),
+		CheckoutResults: checkouts, ReplacedVariables: replaced,
+		ID: r.ID, WorkID: r.SessionID, StartAdmittedAt: fromMillis(r.StartAdmittedAt), Realization: domain.ExecutionRealization(r.Realization),
 		Desk:        domain.ExecutionDesk{ID: r.DeskID, SeatedAt: fromMillis(r.SeatedAt), LeftAt: fromMillis(r.DeskLeftAt)},
 		Launch:      launch,
 		Creation:    domain.CreationSubmission{SubmittedAt: fromMillis(r.SubmittedAt), Deadline: fromMillis(r.CreationDeadline), Answered: r.CreationAnswered},

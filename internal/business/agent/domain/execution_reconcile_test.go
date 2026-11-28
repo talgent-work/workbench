@@ -144,7 +144,7 @@ func TestARunningRunConnectsAndKeepsItsCredentialsCurrent(t *testing.T) {
 	expiry := expiring.Desk.SeatedAt.Add(time.Hour)
 	require.True(t, expiring.RecordCredentialDelivery(domain.CredentialDelivery{ExpiresAt: expiry}))
 	require.True(t, recordPreparation(t, expiring))
-	_, err = expiring.RecordLaunch("process-1")
+	_, err = expiring.RecordLaunch(domain.HarnessLaunch{ProcessID: "process-1"})
 	require.NoError(t, err)
 	// A ready run outlives its Startup Deadline; a failed start would
 	// replace nothing.
