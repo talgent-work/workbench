@@ -68,17 +68,6 @@ html {
   :where(:not(.modal__backdrop, .alert-dialog__backdrop)) { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 }
 
-/* An open overlay (Popover, Modal) locks page scroll by setting
-   `overflow: hidden` on the root, and sets `scrollbar-gutter: stable` there
-   only when the page shows a scrollbar, expecting the gutter to stay. Chrome
-   drops the custom 12px gutter above once the root's overflow is hidden, so
-   every centred element moved 6px right; this pads the gutter back while the
-   lock holds. Remove it if Chrome keeps a custom gutter under overflow:
-   hidden. */
-@supports selector(::-webkit-scrollbar) {
-  :root[style*="scrollbar-gutter: stable"][style*="overflow: hidden"] { padding-right: 12px; }
-}
-
 body {
   min-width: 0;
   min-height: 100dvh;

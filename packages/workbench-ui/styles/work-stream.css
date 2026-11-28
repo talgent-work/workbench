@@ -120,7 +120,9 @@
 .stream-panel {
   position: relative;
   display: flex;
-  height: calc(100vh - 70px);
+  /* The window under the topbar, less .p-page's 16px top and 32px bottom
+     padding, so the page itself never scrolls. */
+  height: calc(100dvh - var(--topbar-height) - 48px);
   min-height: 640px;
   min-width: 0;
   flex-direction: column;
